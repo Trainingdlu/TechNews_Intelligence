@@ -3,7 +3,7 @@
 ![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_DeepSeek-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
-> **项目概述**：一个端到端（End-to-End）的数据工程与商业智能解决方案。旨在通过自动化流水线解决科技行业的信息过载问题，实时采集 Hacker News 与 TechCrunch 的非结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘为决策提供量化支持。
+> **项目概述**：一个端到端的数据工程与商业智能解决方案。旨在通过自动化流水线解决科技行业的信息过载问题，实时采集 Hacker News 与 TechCrunch 的非结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘为决策提供量化支持。
 
 **[在线演示 Dashboard](https://dashboard.trainingcqy.com)** | **[项目源码](https://github.com/Trainingdlu/TechNews_Intelligence)**
 
@@ -14,46 +14,35 @@
 本项目遵循现代化的 **ELT (Extract, Load, Transform)** 架构设计，确保了数据流的高可用性与可扩展性。所有组件均已容器化，运行于 Azure 云基础设施之上。
 
 ```mermaid
-graph LR
-    %% 定义样式
-    classDef source fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    classDef process fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
-    classDef logic fill:#fff3e0,stroke:#e65100,stroke-width:2px,stroke-dasharray: 5 5;
-    classDef db fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-    classDef bi fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+flowchart LR
+    classDef node fill:#ffffff,stroke:#000000,stroke-width:1px,color:#000000,rx:0,ry:0;
+    classDef logic fill:#ffffff,stroke:#000000,stroke-width:1px,color:#000000;
+    classDef db fill:#ffffff,stroke:#000000,stroke-width:1px,shape:cylinder,color:#000000;
+    
+    A[RSS / Hacker News]
+    B[n8n Automation]
+    C{Is New Data?}
+    D[Jina Reader API]
+    E[DeepSeek-V3 LLM]
+    F[Update Points]
+    G[(PostgreSQL)]
+    H[Metabase BI]
 
-    subgraph "1. Ingestion (采集层)"
-        A(RSS / Hacker News) -->|定时触发| B[n8n 自动化引擎]
-    end
+    A -->|Trigger| B
+    B --> C
+    
+    C -- Yes --> D
+    D -->|Full Text| E
+    E -->|JSON Output| G
+    
+    C -- No --> F
+    F -.->|Update| G
+    
+    G -->|SQL Query| H
 
-    B --> C{数据是否存在?}
-
-    subgraph "2. Branching Logic (分流处理)"
-        C -- 已存在 --> D[更新热度/Points]
-        C -- 新新闻 --> E{{Jina Reader API}}
-    end
-
-    subgraph "3. AI Processing (深度分析)"
-        E -->|全文内容| F{{DeepSeek-V3 LLM}}
-        F -->|生成摘要/分类/情感| G[构造 JSON]
-    end
-
-    subgraph "4. Storage (存储层)"
-        D -->|Update| H[(PostgreSQL)]
-        G -->|Insert| H
-    end
-
-    subgraph "5. Visualization (展示层)"
-        H -->|SQL 查询| I[Metabase Dashboard]
-    end
-
-    %% 应用样式
-    class A source;
-    class B,D,G process;
+    class A,B,D,E,F,H node;
     class C logic;
-    class E,F process;
-    class H db;
-    class I bi;
+    class G db;
 ```
 
 ---
@@ -62,17 +51,17 @@ graph LR
 
 ### 2.1 数据采集与处理层
 利用 **n8n** 作为工作流编排引擎，实现了数据获取的自动化与智能化。
-*   **多源异构数据获取**：通过 RSS 协议定时获取 Hacker News 及 TechCrunch 的更新，解决信息源分散问题。
+*   **多源异构数据获取**：“构建了基于 HTTP Polling 的混合采集层，兼容 REST API (Hacker News) 与 RSS 订阅源 (TechCrunch)，实现了多源异构数据的统一接入。
 *   **非结构化数据清洗**：集成 **Jina Reader** 将杂乱的 HTML 网页转换为干净的 Markdown 文本，提高 LLM 的准确率和效率。
 *   **AI 语义增强**：调用 **DeepSeek-V3** 模型，对长文本进行 NLP 处理，输出标准化的 JSON 数据：
     *   **智能摘要**：生成 100 字以内的高密度关键事实摘要。
     *   **情感量化**：自动标记新闻情感倾向（Positive/Neutral/Negative）。
     *   **自动分类**：基于内容上下文自动提取赛道标签（如 AI、商业、安全）。
-    *   **成本控制**：采用 DeepSeek-V3 模型，在保证中文语义理解能力接近 GPT-4 的前提下，将 Token 推理成本降低了 90%，实现了高性价比的大规模文本清洗。
+    *   **成本控制**：采用 DeepSeek-V3 模型，在模型能力，降低推理成本，实现了高性价比的文本清洗。
 
 ### 2.2 数据仓库与建模层
 使用 **PostgreSQL 15** 作为核心数据仓库，通过分层设计保证数据的一致性与查询效率。
-*   **Schema 设计**：设计了包含 `original_url` 唯一约束的表结构，有效防止数据冗余和重复抓取。
+*   **Schema 设计**：设计了包含 `url` 唯一约束的表结构，有效防止数据冗余和重复抓取。
 *   **视图抽象**：构建 `view_dashboard_news` 视图层，封装了底层逻辑：
     *   **时区标准化**：将 UTC 时间转换为 UTC+8（北京时间）。
     *   **数据去重**：基于 URL 自动归类去重。
@@ -84,15 +73,15 @@ graph LR
     *   逻辑：`Score = Points / (Time + 2)^1.8`
     *   价值：引入时间衰减因子，识别“当前上升速度最快”的热点，而非单纯的历史高分内容。
 *   **赛道周环比增长**：
-    *   逻辑：使用 CTE (Common Table Expressions) 与 Self-Join 技术。
+    *   逻辑：使用 CTE 与 Self-Join 技术。
     *   价值：量化不同技术赛道（如 Rust, AI）的热度变化趋势，捕捉潜在的市场风口。
 *   **巨头声量份额分析**：
     *   逻辑：使用 `UNION ALL` 解决多标签重叠统计问题。
-    *   价值：精确计算 OpenAI、Google 等科技巨头在舆论场中的存在感与热度对比。
+    *   价值：计算 OpenAI、Google 等科技巨头的讨论热度与占比。
 
 ### 2.4 可视化与交互层
-基于 **Metabase** 构建企业级 BI 仪表盘，强调交互体验与信息分层。
-*   **主从联动交互**：利用 SQL 变量注入技术 (`[[AND id = {{selected_id}}]]`)，实现了点击左侧列表标题，右侧详情卡片毫秒级刷新摘要的功能。
+基于 **Metabase** 构建 BI 仪表盘，强调交互体验与信息分层。
+*   **主从联动交互**：利用 SQL 变量注入技术 (`[[AND id = {{selected_id}}]]`)，实现了点击左侧列表标题，右侧详情卡片刷新摘要的功能。
 
 ---
 
