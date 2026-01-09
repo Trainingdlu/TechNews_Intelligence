@@ -1,5 +1,5 @@
 {
-  "name": "First",
+  "name": "Tech_News",
   "nodes": [
     {
       "parameters": {
@@ -30,7 +30,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer sk-f7bd65c7e87547189d4912142a49b145"
+              "value": "Bearer sk-YOUR_API_KEY"
             }
           ]
         },
@@ -229,7 +229,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer jina_aefcec52fbd2471b897d60d14959ad59ZGkSbd97EnuAHtCa2IOkKrTO-WgI"
+              "value": "Bearer jina_YOUR_API_KEY"
             }
           ]
         },
