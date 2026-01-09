@@ -126,13 +126,13 @@ TechNews_Intelligence/
 *   已安装 Docker & Docker Compose
 *   获取 DeepSeek API Key 及 Jina Reader API Key
 
-### 1: 克隆仓库
+### 克隆仓库
 ```bash
 git clone https://github.com/Trainingdlu/TechNews_Intelligence.git
 cd TechNews_Intelligenceo
 ```
 
-### 2: 环境配置
+### 环境配置
 复制配置文件模板并填入凭证。
 *注意：`docker-compose.yml` 已配置为生产环境模式。*
 
@@ -141,13 +141,13 @@ cp deployment/.env.example deployment/.env
 # 使用文本编辑器修改 .env 文件，填入你的数据库密码及 API Keys
 ```
 
-### 3: 启动服务
+### 启动服务
 ```bash
 cd deployment
 docker-compose up -d
 ```
 
-### 4: 导入工作流
+### 导入工作流
 1.  访问 `http://localhost:5678` 进入 n8n 管理界面。
 2.  导入 `etl_workflow/tech_news_pipeline.json` 文件。
 3.  **重要**：在 n8n 界面中配置 PostgreSQL 凭证。
