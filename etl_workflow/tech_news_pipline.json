@@ -30,7 +30,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer sk-YOUR_API_KEY"
+              "value": "={{ \"Bearer \" + $env.DEEPSEEK_API_KEY }}"
             }
           ]
         },
@@ -229,7 +229,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer jina_YOUR_API_KEY"
+              "value": "={{ \"Bearer \" + $env.JINA_API_KEY }}"
             }
           ]
         },
