@@ -1,6 +1,5 @@
 ﻿# AI 驱动的科技新闻系统
 
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)
 ![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_DeepSeek-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
@@ -14,37 +13,47 @@
 
 本项目遵循现代化的 **ELT (Extract, Load, Transform)** 架构设计，确保了数据流的高可用性与可扩展性。所有组件均已容器化，运行于 Azure 云基础设施之上。
 
-```mermaid 
+```mermaid
 graph LR
     %% 定义样式
     classDef source fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
     classDef process fill:#fff9c4,stroke:#fbc02d,stroke-width:2px;
+    classDef logic fill:#fff3e0,stroke:#e65100,stroke-width:2px,stroke-dasharray: 5 5;
     classDef db fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     classDef bi fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
 
-    subgraph "1. Ingestion (采集与清洗)"
-        A(RSS / Hacker News) -->|Trigger| B[n8n 自动化引擎]
-        B <-->|全文抓取| C{{Jina Reader API}}
+    subgraph "1. Ingestion (采集层)"
+        A(RSS / Hacker News) -->|定时触发| B[n8n 自动化引擎]
     end
 
-    subgraph "2. Processing (AI 分析)"
-        B <-->|NLP 推理| D{{DeepSeek-V3 LLM}}
+    B --> C{数据是否存在?}
+
+    subgraph "2. Branching Logic (分流处理)"
+        C -- 已存在 --> D[更新热度/Points]
+        C -- 新新闻 --> E{{Jina Reader API}}
     end
 
-    subgraph "3. Storage (结构化存储)"
-        B -->|JSON 写入| E[(PostgreSQL)]
+    subgraph "3. AI Processing (深度分析)"
+        E -->|全文内容| F{{DeepSeek-V3 LLM}}
+        F -->|生成摘要/分类/情感| G[构造 JSON]
     end
 
-    subgraph "4. Visualization (商业智能)"
-        E -->|SQL 查询| F[Metabase Dashboard]
+    subgraph "4. Storage (存储层)"
+        D -->|Update| H[(PostgreSQL)]
+        G -->|Insert| H
+    end
+
+    subgraph "5. Visualization (展示层)"
+        H -->|SQL 查询| I[Metabase Dashboard]
     end
 
     %% 应用样式
     class A source;
-    class B,C,D process;
-    class E db;
-    class F bi;
-```
+    class B,D,G process;
+    class C logic;
+    class E,F process;
+    class H db;
+    class I bi;
 
 ---
 
@@ -164,4 +173,4 @@ docker-compose up -d
 
 ## 6. 作者
 
-**Trainingcqy** [trainingcqy@gmail.com](mailto:trainingcqy@gmail.com)
+**Trainingcqy**<br> [trainingcqy@gmail.com](mailto:trainingcqy@gmail.com)
