@@ -1,13 +1,12 @@
 {
-  "name": "Tech_News",
+  "name": "Tech_Intelligence",
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
             {
-              "field": "hours",
-              "hoursInterval": 3
+              "field": "hours"
             }
           ]
         }
@@ -36,7 +35,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent ? rawContent.slice(0, 12000) : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech news:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- Tag Priority: [AI] > [安全] > [硬件] > [开发] > [商业] > [生态].\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Critical)\n- Key: 'summary'\n- Mode: High-density Fact Extraction.\n- Source: Extract specific numbers, version names, benchmarks, or financial figures from FULL_CONTENT.\n- Length: Max 100 Chinese characters (Keep it short for dashboard).\n- **Fallback Logic**: If content starts with \"CONTENT_UNAVAILABLE\", you MUST still return valid JSON summary: \"Analysis failed due to content access issues.\"\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n{\n  \"translation\": \"[AI] DeepSeek发布V3开源模型\",\n  \"summary\": \"DeepSeek-V3参数量达671B，MMLU得分88.5，训练成本仅550万美元，已在HuggingFace开源。\",\n  \"sentiment\": \"Positive\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"deepseek-chat\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON.\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/\\\\/g, '/').slice(0, 15000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech news:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- Tag Priority: [AI] > [安全] > [硬件] > [开发] > [商业] > [生态].\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Critical)\n- Key: 'summary'\n- Mode: High-density Fact Extraction.\n- Source: Extract specific numbers, version names, benchmarks, or financial figures from FULL_CONTENT.\n- Length: Max 100 Chinese characters (Keep it short for dashboard).\n- **Fallback Logic**: If content starts with \"CONTENT_UNAVAILABLE\", you MUST still return valid JSON summary: \"Analysis failed due to content access issues.\"\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n{\n  \"translation\": \"[AI] DeepSeek发布V3开源模型\",\n  \"summary\": \"DeepSeek-V3参数量达671B，MMLU得分88.5，训练成本仅550万美元，已在HuggingFace开源。\",\n  \"sentiment\": \"Positive\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"deepseek-chat\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON.\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -46,7 +45,8 @@
         -496
       ],
       "id": "bfeb0672-2e99-4b21-977c-78b93f2963b5",
-      "name": "AI_Processor"
+      "name": "AI_Processor",
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -795,7 +795,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "saveManualExecutions": true
   },
-  "versionId": "aaa302c0-7330-4664-a9c2-c121c85c2ff5",
+  "versionId": "bc97ee93-34f9-4455-89f5-9977a6315d9c",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "b34d3cb882c7a78c2c7d3d7442451077b1960925e250e55186dfbf8c7c071352"
