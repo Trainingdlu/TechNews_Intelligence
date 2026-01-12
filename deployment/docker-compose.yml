@@ -59,14 +59,13 @@ services:
     environment:
       - MB_DB_FILE=/metabase-data/metabase.db
     volumes:
-      - metabase_data:/metabase-data
+      - ./metabase_seed:/metabase-data
     networks:
       - app_network
 
 volumes:
   pg_data:
   n8n_data:
-  metabase_data:
 
 networks:
   app_network:
