@@ -112,7 +112,7 @@ TechNews_Intelligence/
 │       ├── _table_hackernews_top.sql         # Hacker News 热榜
 │       └── _table_techcrunch_latest.sql      # TechCrunch 快讯
 │
-├── deployment/                  # Docker Compose 配置文件与环境模板
+├── deployment/                  # Docker 配置文件、环境模板、Metabase示例
 └── assets/                      # 项目文档截图
 ```
 
@@ -129,7 +129,7 @@ TechNews_Intelligence/
 ### 克隆仓库
 ```bash
 git clone https://github.com/Trainingdlu/TechNews_Intelligence.git
-cd TechNews_Intelligenceo
+cd TechNews_Intelligence
 ```
 
 ### 环境配置
