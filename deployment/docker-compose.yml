@@ -59,7 +59,7 @@ services:
     environment:
       - MB_DB_FILE=/metabase-data/metabase.db
     volumes:
-      - ./metabase_seed:/metabase-data
+      - ./metabase:/metabase-data
     networks:
       - app_network
 
