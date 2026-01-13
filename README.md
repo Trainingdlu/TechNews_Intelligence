@@ -11,7 +11,7 @@
 
 ## 1. 系统架构设计
 
-本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，确保了数据流的高可用性与可扩展性。所有组件均已容器化，可复现。
+本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，确保了数据流的高可用性与可扩展性。所有组件均已容器化，可复现，并部署到Azure虚拟机。
 
 ```mermaid
 flowchart LR
