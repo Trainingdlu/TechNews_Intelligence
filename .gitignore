@@ -3,7 +3,7 @@
 Thumbs.db
 *.db
 *.mv.db
-metabase.db
+metabase.db.mv.db
 
 # Secrets
 .env
