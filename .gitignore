@@ -8,5 +8,3 @@ Thumbs.db
 
 # Docker
 docker-data/
-
-!deployment/metabase/metabase.db.mv.db
