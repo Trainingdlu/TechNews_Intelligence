@@ -1,4 +1,4 @@
-﻿# AI 驱动的科技新闻系统
+# AI 驱动的科技新闻系统
 
 ![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_DeepSeek-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
@@ -11,7 +11,7 @@
 
 ## 1. 系统架构设计
 
-本项目遵循现代化的 **ELT (Extract, Load, Transform)** 架构设计，确保了数据流的高可用性与可扩展性。所有组件均已容器化，运行于 Azure 云基础设施之上。
+本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，确保了数据流的高可用性与可扩展性。所有组件均已容器化，可复现。
 
 ```mermaid
 flowchart LR
