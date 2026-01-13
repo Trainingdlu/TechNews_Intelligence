@@ -1,6 +1,9 @@
 ﻿# OS
 .DS_Store
 Thumbs.db
+*.db
+*.mv.db
+metabase.db
 
 # Secrets
 .env
