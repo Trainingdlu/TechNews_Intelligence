@@ -3,14 +3,14 @@
 ![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_DeepSeek-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
-> **项目概述**：一个端到端的数据工程与商业智能解决方案。该系统旨在通过自动化流水线减轻科技行业的信息过载问题，实时采集 Hacker News 与 TechCrunch 的低结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘与自动化日报为决策提供量化支持。
+> **项目概述**：一个端到端的数据工程与商业智能解决方案。该系统旨在通过自动化流水线减轻科技行业的信息过载，实时采集 Hacker News 与 TechCrunch 的低结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘与自动化日报为决策提供量化支持。
 
 **[在线演示](https://dashboard.trainingcqy.com)**
 ---
 
 ## 1. 系统架构设计
 
-本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，所有组件均已容器化，可复现，并部署到Azure虚拟机。
+本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，并部署到Azure虚拟机。项目已容器化，利于复现。
 
 ```mermaid
 flowchart LR
@@ -58,7 +58,7 @@ flowchart LR
 *   **多源异构数据获取**：“构建了基于 HTTP Polling 的混合采集层，兼容 REST API (Hacker News) 与 RSS 订阅源 (TechCrunch)，实现了多源异构数据的统一接入。
 *   **非结构化数据清洗**：集成 **Jina Reader** 将杂乱的 HTML 网页转换为干净的 Markdown 文本，提高 LLM 的准确率和效率。
 *   **AI 语义增强**：调用 **DeepSeek-V3** 模型，对长文本进行 NLP 处理，输出标准化的 JSON 数据：
-    *   **智能摘要**：生成字数限制的高密度关键事实摘要。
+    *   **智能摘要**：生成字数限制下的高密度关键事实摘要。
     *   **情感量化**：自动标记新闻情感倾向（Positive/Neutral/Negative）。
     *   **自动分类**：基于内容上下文自动提取赛道标签（如 AI、商业、安全）。
     *   **成本控制**：采用 DeepSeek-V3 模型，在模型能力可接受的范围内，降低推理成本，实现了高性价比的文本清洗。
@@ -72,13 +72,13 @@ flowchart LR
     *   **CDC 支持**：配置了 `updated_at` 触发器，自动记录数据变更时间。
 
 ### 2.3 业务分析与算法层
-本项目不仅仅是数据的展示，更包含了深度的业务逻辑分析。核心算法包括：
+本项目不仅仅是数据的展示，也包含了业务逻辑分析。核心算法包括：
 *   **Hacker News 重力算法复刻**：
     *   逻辑：`Score = Points / (Time + 2)^1.8`
     *   价值：引入时间衰减因子，识别“当前上升速度最快”的热点，而非单纯的历史高分内容。
 *   **赛道周环比增长**：
     *   逻辑：使用 CTE 与 Self-Join 技术。
-    *   价值：量化不同技术赛道（如 Rust, AI）的热度变化趋势，捕捉潜在的市场风口。
+    *   价值：量化不同技术赛道（如 AI ）的热度变化趋势，捕捉潜在的市场风口。
 *   **巨头声量份额分析**：
     *   逻辑：使用 `UNION ALL` 解决多标签重叠统计问题。
     *   价值：计算 OpenAI、Google 等科技巨头的讨论热度与占比。
@@ -94,9 +94,9 @@ flowchart LR
 
 ---
 
-## 3. 目录结构与 SQL
+## 3. 目录结构
 
-项目采用标准的工程化目录结构，实现基础设施代码 (IaC) 与业务逻辑分离。
+项目采用标准的工程化目录结构，实现基础设施代码与业务逻辑分离。
 
 ```text
 TechNews_Intelligence/
@@ -137,7 +137,7 @@ TechNews_Intelligence/
 本项目完全容器化，支持一键部署。
 
 ### 前置条件
-*   已安装 Docker & Docker Compose
+*   已安装 Docker
 *   获取 DeepSeek API Key 及 Jina Reader API Key
 
 ### 克隆仓库
@@ -147,7 +147,7 @@ cd TechNews_Intelligence
 ```
 
 ### 环境配置
-复制配置文件模板并填入凭证。
+复制配置文件模板并根据运行环境更改。
 *注意：`docker-compose.yml` 已配置为生产环境模式。*
 
 ```bash
@@ -163,9 +163,8 @@ docker-compose up -d
 
 ### 导入工作流
 1.  访问 `http://localhost:5678` 进入 n8n 管理界面。
-2.  导入 `etl_workflow/` 中的文件。
-3.  **重要**：在 n8n 界面中配置 PostgreSQL 凭证并添加 Gmail App Password 以启用日报和报警功能。
-4.  激活工作流。
+2.  导入 `etl_workflow/` 中的文件。**重要**：在 n8n 界面中配置 PostgreSQL 凭证并添加 Gmail App Password 以启用日报和报警功能。
+3.  激活工作流。
 
 ---
 
@@ -177,4 +176,4 @@ docker-compose up -d
 
 ## 6. 作者
 
-**Trainingcqy**<br> [trainingcqy@gmail.com](mailto:trainingcqy@gmail.com)
+**Trainingcqy** <br> [trainingcqy@gmail.com](mailto:trainingcqy@gmail.com)
