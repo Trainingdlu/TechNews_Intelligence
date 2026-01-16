@@ -19,7 +19,7 @@ flowchart LR
     classDef db fill:#ffffff,stroke:#000000,stroke-width:1px,shape:cylinder,color:#000000;
     classDef notify fill:#f0f0f0,stroke:#000000,stroke-width:2px,color:#000000;
     
-    A[RSS / Hacker News]
+    A([RSS / Hacker News])
     B[n8n Automation]
     C{Is New Data?}
     D[Jina Reader API]
@@ -40,7 +40,7 @@ flowchart LR
     F -->|Update| G
     
     G -->|SQL Query| H
-    G -->|Daily Report Data| I  
+    G -->|Daily Brief| I  
     B -->|Error Alert| I
 
     class A,B,D,E,F,H node;
