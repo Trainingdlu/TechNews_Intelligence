@@ -1,0 +1,90 @@
+{
+  "name": "System_Alert_Service",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ad9c2431-6c70-4774-9edf-35c427c81679",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "fromEmail": "trainingcqy@gmail.com",
+        "toEmail": "trainingcqy@gmail.com",
+        "subject": "={{ $json.source }} 模块故障",
+        "html": "=<div style=\"font-family: 'Google Sans', Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; background-color: #f0f2f5; padding: 40px 0; color: #1f1f1f;\">\n  \n  <div style=\"max-width: 580px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #e0e2e6; box-shadow: 0 1px 2px rgba(0,0,0,0.05);\">\n   \n\n    <div style=\"padding: 24px;\">\n      \n      <div style=\"margin-bottom: 24px;\">\n        <p style=\"margin: 0 0 8px 0; font-size: 12px; color: #5e5e5e; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;\">Error Message</p>\n        <p style=\"margin: 0; font-size: 16px; color: #1f1f1f; line-height: 1.5;\">\n          {{ $json.error_message || $execution.error.message }}\n        </p>\n      </div>\n\n      <div style=\"background-color: #f8f9fa; border-radius: 8px; padding: 16px; border: 1px solid #edf2f7;\">\n        <table style=\"width: 100%; border-collapse: collapse;\">\n          <tr>\n            <td style=\"padding: 8px 0; font-size: 13px; color: #5e5e5e; width: 80px;\">Source:</td>\n            <td style=\"padding: 8px 0; font-size: 13px; color: #1f1f1f; font-weight: 500;\">\n              <span style=\"background-color: #e3e3e3; padding: 2px 6px; border-radius: 4px;\">{{ $json.source || $execution.lastNodeExecuted }}</span>\n            </td>\n          </tr>\n          <tr>\n            <td style=\"padding: 8px 0; font-size: 13px; color: #5e5e5e;\">Time:</td>\n            <td style=\"padding: 8px 0; font-size: 13px; color: #1f1f1f;\">{{ new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'}) }}</td>\n          </tr>\n          <tr>\n            <td style=\"padding: 8px 0; font-size: 13px; color: #5e5e5e; vertical-align: top;\">Target:</td>\n            <td style=\"padding: 8px 0; font-size: 13px; color: #0b57d0; word-break: break-all;\">\n              <a href=\"{{ $json.url }}\" style=\"text-decoration: none; color: #0b57d0;\">{{ $json.url }}</a>\n            </td>\n          </tr>\n        </table>\n      </div>\n\n      <div style=\"margin-top: 24px; text-align: center;\">\n        <a href=\"http://localhost:5678\" style=\"background-color: #0b57d0; color: #ffffff; padding: 10px 20px; border-radius: 20px; text-decoration: none; font-size: 14px; font-weight: 500; display: inline-block;\">\n          Open N8n Console\n        </a>\n      </div>\n\n    </div>\n  </div>\n  \n  <div style=\"text-align: center; margin-top: 20px; font-size: 11px; color: #757575;\">\n    &copy; TechNews Intelligence\n  </div>\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "67ddf4de-8dfb-42c7-82a9-7f013cb41fc6",
+      "name": "Send email",
+      "webhookId": "0cf5b080-1809-4958-b12f-bfdfa2137713",
+      "credentials": {
+        "smtp": {
+          "id": "sWp9jBi4W6DtqvZL",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -160
+      ],
+      "id": "970050d7-89ce-4a6a-ba66-c68234ea6226",
+      "name": "Error Trigger"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "73d3021b-004b-401d-8189-2d00f4ffffa6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
+  },
+  "id": "r4mRi5yxtJsH06JOp42lk",
+  "tags": []
+}

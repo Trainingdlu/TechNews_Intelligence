@@ -3,21 +3,21 @@
 ![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_DeepSeek-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
-> **项目概述**：一个端到端的数据工程与商业智能解决方案。旨在通过自动化流水线解决科技行业的信息过载问题，实时采集 Hacker News 与 TechCrunch 的非结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘为决策提供量化支持。
+> **项目概述**：一个端到端的数据工程与商业智能解决方案。该系统旨在通过自动化流水线减轻科技行业的信息过载问题，实时采集 Hacker News 与 TechCrunch 的低结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘与自动化日报为决策提供量化支持。
 
-**[在线演示 Dashboard](https://dashboard.trainingcqy.com)** | **[项目源码](https://github.com/Trainingdlu/TechNews_Intelligence)**
-
+**[在线演示](https://dashboard.trainingcqy.com)**
 ---
 
 ## 1. 系统架构设计
 
-本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，确保了数据流的高可用性与可扩展性。所有组件均已容器化，可复现，并部署到Azure虚拟机。
+本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，所有组件均已容器化，可复现，并部署到Azure虚拟机。
 
 ```mermaid
 flowchart LR
     classDef node fill:#ffffff,stroke:#000000,stroke-width:1px,color:#000000,rx:0,ry:0;
-    classDef logic fill:#ffffff,stroke:#000000,stroke-width:1px,color:#000000;
+    classDef logic fill:#ffffff,stroke:#000000,stroke-width:1px,stroke-dasharray: 5 5,color:#000000;
     classDef db fill:#ffffff,stroke:#000000,stroke-width:1px,shape:cylinder,color:#000000;
+    classDef notify fill:#f0f0f0,stroke:#000000,stroke-width:2px,color:#000000;
     
     A[RSS / Hacker News]
     B[n8n Automation]
@@ -27,6 +27,7 @@ flowchart LR
     F[Update Points]
     G[(PostgreSQL)]
     H[Metabase BI]
+    I(Email Notification)
 
     A -->|Trigger| B
     B --> C
@@ -40,9 +41,13 @@ flowchart LR
     
     G -->|SQL Query| H
 
+    B -.->|Daily Report| I
+    B -.->|Error Alert| I
+
     class A,B,D,E,F,H node;
     class C logic;
     class G db;
+    class I notify;
 ```
 
 ---
@@ -54,10 +59,10 @@ flowchart LR
 *   **多源异构数据获取**：“构建了基于 HTTP Polling 的混合采集层，兼容 REST API (Hacker News) 与 RSS 订阅源 (TechCrunch)，实现了多源异构数据的统一接入。
 *   **非结构化数据清洗**：集成 **Jina Reader** 将杂乱的 HTML 网页转换为干净的 Markdown 文本，提高 LLM 的准确率和效率。
 *   **AI 语义增强**：调用 **DeepSeek-V3** 模型，对长文本进行 NLP 处理，输出标准化的 JSON 数据：
-    *   **智能摘要**：生成 100 字以内的高密度关键事实摘要。
+    *   **智能摘要**：生成字数限制的高密度关键事实摘要。
     *   **情感量化**：自动标记新闻情感倾向（Positive/Neutral/Negative）。
     *   **自动分类**：基于内容上下文自动提取赛道标签（如 AI、商业、安全）。
-    *   **成本控制**：采用 DeepSeek-V3 模型，在模型能力，降低推理成本，实现了高性价比的文本清洗。
+    *   **成本控制**：采用 DeepSeek-V3 模型，在模型能力可接受的范围内，降低推理成本，实现了高性价比的文本清洗。
 
 ### 2.2 数据仓库与建模层
 使用 **PostgreSQL 15** 作为核心数据仓库，通过分层设计保证数据的一致性与查询效率。
@@ -83,6 +88,11 @@ flowchart LR
 基于 **Metabase** 构建 BI 仪表盘，强调交互体验与信息分层。
 *   **主从联动交互**：利用 SQL 变量注入技术 (`[[AND id = {{selected_id}}]]`)，实现了点击左侧列表标题，右侧详情卡片刷新摘要的功能。
 
+### 2.5 自动化分发与可观测性
+为了提升系统的稳定性和信息触达效率，构建了完整的主动推送机制。
+*   **全链路异常捕获**：设计了全局错误捕获工作流。当 API 超时、解析失败或数据库写入错误时，自动捕获错误与节点信息。
+*   **智能日报推送**：每天08:00基于 SQL 筛选出最新与最热新闻，渲染为 HTML 邮件自动发送。
+
 ---
 
 ## 3. 目录结构与 SQL
@@ -91,12 +101,17 @@ flowchart LR
 
 ```text
 TechNews_Intelligence/
+├── etl_workflow/                   # n8n 自动化工作流配置
+│   ├── Tech_Intelligence.json      # 核心采集流程
+│   ├── System_Alert_Service.json   # 异常捕获流程
+│   └── Daily_Tech_Brief.json       # 日报推送流程
+│
 ├── sql/
-│   ├── infrastructure/          # DDL: 基础设施层 (建表与视图)
+│   ├── infrastructure/        # DDL: 基础设施层 (建表与视图)
 │   │   ├── _schema_ddl.sql    # 数据库表结构定义 (含 Trigger/Index)
 │   │   └── _view_logic.sql    # 视图层逻辑 (时区转换、清洗、指标预计算)
 │   │
-│   └── analytics/               # DML: 业务分析层 (Metabase 核心逻辑)
+│   └── analytics/                            # DML: 业务分析层 (Metabase 核心逻辑)
 │       ├── _algo_gravity_ranking.sql         # HN 重力排名算法
 │       ├── _analysis_category_growth.sql     # 赛道周环比增长率
 │       ├── _analysis_heatmap.sql             # 黄金发布时间热力图
@@ -149,8 +164,8 @@ docker-compose up -d
 
 ### 导入工作流
 1.  访问 `http://localhost:5678` 进入 n8n 管理界面。
-2.  导入 `etl_workflow/tech_news_pipeline.json` 文件。
-3.  **重要**：在 n8n 界面中配置 PostgreSQL 凭证。
+2.  导入 `etl_workflow/` 中的文件。
+3.  **重要**：在 n8n 界面中配置 PostgreSQL 凭证并添加 Gmail App Password 以启用日报和报警功能。
 4.  激活工作流。
 
 ---

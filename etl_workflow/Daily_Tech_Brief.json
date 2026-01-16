@@ -1,0 +1,167 @@
+{
+  "name": "Daily_Tech_Brief",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "dc1ffce1-e2c1-41af-84b9-96e7961bab34",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "(\n    SELECT \n        title_cn,\n        summary,\n        points,\n        sentiment,\n        'HackerNews' as source_type,\n        discussion_link,\n        created_at\n    FROM view_dashboard_news\n    WHERE created_at > NOW() - INTERVAL '24 hours'\n      AND source_type = 'HackerNews'\n    ORDER BY points DESC\n    LIMIT 7\n)\nUNION ALL\n(\n    SELECT \n        title_cn,\n        summary,\n        points,\n        sentiment,\n        'TechCrunch' as source_type,\n        discussion_link,\n        created_at\n    FROM view_dashboard_news\n    WHERE created_at > NOW() - INTERVAL '24 hours'\n      AND source_type = 'TechCrunch'\n    ORDER BY created_at DESC\n    LIMIT 7\n)\nORDER BY created_at DESC;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        208,
+        0
+      ],
+      "id": "1fe60881-d9d9-46c4-88d7-354c6891bbe2",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "16OTc6Oi6SG8mPOF",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst dateStr = new Date().toLocaleDateString('zh-CN', {month: 'long', day: 'numeric'});\n\nif (items.length === 0) {\n  return [{json: { subject: \"Tech Briefing\", email_body: \"暂无内容\" }}];\n}\n\nlet html = `\n<div style=\"font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #202124;\">\n  \n  <div style=\"padding-bottom: 16px; border-bottom: 1px solid #dfe1e5; margin-bottom: 24px;\">\n    <h1 style=\"margin: 0; font-size: 24px; font-weight: 400; letter-spacing: -0.5px;\">Tech Briefing</h1>\n    <p style=\"margin: 4px 0 0 0; color: #5f6368; font-size: 13px;\">${dateStr}</p>\n  </div>\n\n  <div>\n`;\n\nfor (const item of items) {\n    const news = item.json;\n    \n    let sourceLabel = \"\";\n    let valueLabel = \"\";\n    \n    if (news.source_type === 'HackerNews') {\n        sourceLabel = \"Hacker News\";\n        valueLabel = `${news.points || 0} Points`;\n    } else {\n        sourceLabel = \"TechCrunch\";\n        const dateObj = new Date(news.created_at);\n        valueLabel = dateObj.toLocaleTimeString('zh-CN', {\n            timeZone: 'Asia/Shanghai', \n            hour: '2-digit', \n            minute:'2-digit', \n            hour12: false\n        });\n    }\n\n    let rawSentiment = news.sentiment || 'Neutral';\n    let sentimentText = rawSentiment.charAt(0).toUpperCase() + rawSentiment.slice(1).toLowerCase();\n    \n    let sentimentColor = \"#5f6368\";\n    if (sentimentText === 'Positive') sentimentColor = \"#137333\";\n    if (sentimentText === 'Negative') sentimentColor = \"#c5221f\";\n\n    html += `\n    <div style=\"margin-bottom: 28px;\">\n        \n        <!-- Meta: Source • Value • Sentiment -->\n        <div style=\"font-size: 12px; color: #5f6368; margin-bottom: 4px;\">\n            <span style=\"color: #202124; font-weight: 500;\">${sourceLabel}</span>\n            <span style=\"margin: 0 6px; color: #dadce0;\">•</span>\n            <span>${valueLabel}</span>\n            <span style=\"margin: 0 6px; color: #dadce0;\">•</span>\n            <span style=\"color: ${sentimentColor}; font-weight: 500;\">${sentimentText}</span>\n        </div>\n        \n        <h3 style=\"margin: 0 0 6px 0; font-size: 18px; line-height: 1.4; font-weight: 400;\">\n            <a href=\"${news.discussion_link}\" style=\"text-decoration: none; color: #1a0dab;\">\n                ${news.title_cn}\n            </a>\n        </h3>\n        \n        <p style=\"margin: 0; font-size: 14px; color: #4d5156; line-height: 1.6;\">\n            ${news.summary || \"暂无摘要...\"}\n        </p>\n        \n    </div>\n    `;\n}\n\nconst dashboardUrl = \"https://dashboard.trainingcqy.com\"; \n\nhtml += `\n  </div>\n  <div style=\"padding-top: 30px; border-top: 1px solid #dfe1e5; text-align: center;\">\n    \n    <a href=\"${dashboardUrl}\" style=\"display: inline-block; background-color: #1a73e8; color: #ffffff; padding: 12px 24px; border-radius: 4px; text-decoration: none; font-size: 14px; font-weight: 500; margin-bottom: 20px;\">\n      View Dashboard\n    </a>\n    \n    <p style=\"margin: 0; color: #70757a; font-size: 12px;\">\n      &copy; 2026 trainingcqy. All rights reserved.\n    </p>\n    \n  </div>\n</div>\n`;\n\nreturn [{\n    json: {\n        email_body: html,\n        subject: \"Tech Briefing\"\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "33b9aaf0-9807-415c-8f66-63cc3cfb875d",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "fromEmail": "trainingcqy@gmail.com",
+        "toEmail": "trainingcqy@gmail.com",
+        "subject": "={{ $json.subject }}",
+        "html": "={{ $json.email_body }}",
+        "options": {
+          "bccEmail": "={{ $json.bcc_list }}"
+        }
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        832,
+        0
+      ],
+      "id": "c5f0e541-4472-42b9-98dd-4d4dacf956b6",
+      "name": "Send email",
+      "webhookId": "cf50574a-7209-49ca-b9e5-0f7eb757ca9a",
+      "alwaysOutputData": false,
+      "executeOnce": false,
+      "retryOnFail": false,
+      "credentials": {
+        "smtp": {
+          "id": "sWp9jBi4W6DtqvZL",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n    STRING_AGG(email, ', ') as bcc_list,\n    \n    $${{ $('Code in JavaScript').item.json.email_body }}$$ as email_body,\n    \n    $${{ $('Code in JavaScript').item.json.subject }}$$ as subject\n\nFROM subscribers\nWHERE is_active = TRUE;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        624,
+        0
+      ],
+      "id": "05d98569-041f-4c88-b310-a705f9586f87",
+      "name": "Get_Subscribers",
+      "credentials": {
+        "postgres": {
+          "id": "16OTc6Oi6SG8mPOF",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Get_Subscribers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get_Subscribers": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "7c504166-5023-4a0a-86dd-852e553bda1a",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
+  },
+  "id": "w-P-ozqniwrxeq8or1cMH",
+  "tags": []
+}
