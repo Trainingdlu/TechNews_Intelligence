@@ -37,12 +37,11 @@ flowchart LR
     E -->|JSON Output| G
     
     C -- No --> F
-    F -.->|Update| G
+    F -->|Update| G
     
     G -->|SQL Query| H
-
-    B -.->|Daily Report| I
-    B -.->|Error Alert| I
+    G -->|Daily Report Data| I  
+    B -->|Error Alert| I
 
     class A,B,D,E,F,H node;
     class C logic;
