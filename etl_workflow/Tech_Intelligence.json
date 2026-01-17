@@ -35,7 +35,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/\\\\/g, '/').slice(0, 15000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech news:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- Tag Priority: [AI] > [安全] > [硬件] > [开发] > [商业] > [生态].\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Critical)\n- Key: 'summary'\n- Mode: High-density Fact Extraction.\n- Source: Extract specific numbers, version names, benchmarks, or financial figures from FULL_CONTENT.\n- Length: Max 100 Chinese characters (Keep it short for dashboard).\n- **Fallback Logic**: If content starts with \"CONTENT_UNAVAILABLE\", you MUST still return valid JSON summary: \"Analysis failed due to content access issues.\"\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n{\n  \"translation\": \"[AI] DeepSeek发布V3开源模型\",\n  \"summary\": \"DeepSeek-V3参数量达671B，MMLU得分88.5，训练成本仅550万美元，已在HuggingFace开源。\",\n  \"sentiment\": \"Positive\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"deepseek-chat\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON.\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/\\\\/g, '/').slice(0, 15000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech content:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- Tag Priority: [AI] > [安全] > [硬件] > [开发] > [商业] > [生态].\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Scenario-Based)\n**SCENARIO A: Standard News (TechCrunch/Blog)**\n- Action: Extract key facts (Who, What, Numbers, Impact).\n- Style: \"DeepSeek发布V3，参数量671B，成本降低90%。\"\n\n**SCENARIO B: Community Discussion (Hacker News Comments)**\n- Trigger: If content contains many usernames/timestamps or is a list of comments.\n- Action: **Synthesize the consensus.** DO NOT say \"User A said this\". Instead, list the **Top 3 mentioned tools/solutions** or the **Main Controversy**.\n- Style: \"社区热议个人网站托管，推荐最多的方案是: 1.GitHub Pages; 2.Cloudflare; 3.Hugo。\" (Keep it dense!)\n- Length: Max 100 Chinese characters.\n\n**SCENARIO C: Content Missing**\n- Action: Return \"Analysis failed due to content access issues.\".\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n**Example 1 (News):**\n{\n  \"translation\": \"[AI] DeepSeek发布V3开源模型\",\n  \"summary\": \"DeepSeek-V3参数量达671B，MMLU得分88.5，训练成本仅550万美元，已在HuggingFace开源。\",\n  \"sentiment\": \"Positive\"\n}\n**Example 2 (Discussion):**\n{\n  \"translation\": \"[社区] HN热议：最好的个人博客方案\",\n  \"summary\": \"讨论集中在静态网站生成器。主流推荐使用 Hugo 或 Jekyll 配合 GitHub Pages 免费托管，部分用户推荐 Notion 转网站方案。\",\n  \"sentiment\": \"Neutral\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"deepseek-chat\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON.\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -191,6 +191,12 @@
               "id": "6f76c08d-1729-4eb8-b5dd-b9bc9a650fe7",
               "name": "created_at",
               "value": "={{ new Date($json.time * 1000).toISOString() }}",
+              "type": "string"
+            },
+            {
+              "id": "13ba9b0c-8d68-4044-a781-35cf56d09851",
+              "name": "=url",
+              "value": "={{    $json.url.startsWith('http')    ? $json.url    : 'https://news.ycombinator.com/' + $json.url  }}",
               "type": "string"
             }
           ]
@@ -912,7 +918,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "4b48f314-31ea-41e0-8f5a-26227c0d9751",
+  "versionId": "a155bc50-c034-487b-96ac-0475a420e49c",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
