@@ -397,7 +397,7 @@
       "typeVersion": 2.6,
       "position": [
         1056,
-        -896
+        -832
       ],
       "id": "0cd0c7e5-9266-486e-bfcf-c7f5f95fbfd2",
       "name": "Insert or update rows in a table",
@@ -573,7 +573,7 @@
       "typeVersion": 2.6,
       "position": [
         816,
-        -896
+        -832
       ],
       "id": "312f2190-2f6c-43eb-92aa-2b789faead68",
       "name": "Update_Points_Only",
@@ -777,7 +777,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        592,
+        608,
         -1344
       ],
       "id": "8321601f-2920-40b8-ae82-0e8681ee76db",
@@ -792,7 +792,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1152,
+        1056,
         -1440
       ],
       "id": "b54fe085-4483-434d-ba8d-2394fd114e83",
@@ -1297,7 +1297,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "4955a8b9-d676-4555-9243-fc9acc9f3949",
+  "versionId": "3c627ded-52d1-4a44-8a9d-007a18e68660",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
