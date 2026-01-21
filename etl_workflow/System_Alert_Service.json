@@ -9,7 +9,7 @@
       "typeVersion": 1.1,
       "position": [
         0,
-        0
+        96
       ],
       "id": "ad9c2431-6c70-4774-9edf-35c427c81679",
       "name": "When Executed by Another Workflow"
@@ -18,15 +18,15 @@
       "parameters": {
         "fromEmail": "trainingcqy@gmail.com",
         "toEmail": "trainingcqy@gmail.com",
-        "subject": "={{ $json.source }} 模块故障",
+        "subject": "={{ $json.source }} 故障",
         "html": "=<div style=\"font-family: 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #ffffff; color: #202124; padding: 20px 0;\">\n  \n  <div style=\"max-width: 600px; margin: 0 auto; border: 1px solid #dadce0; border-radius: 8px; overflow: hidden;\">\n    \n    <div style=\"padding: 32px;\">\n      \n      <div style=\"margin-bottom: 32px;\">\n        <h1 style=\"margin: 0; font-size: 22px; font-weight: 400; color: #d93025; letter-spacing: -0.5px;\">System Alert Triggered</h1>\n      </div>\n      <div style=\"margin-bottom: 24px;\">\n        <div style=\"font-size: 14px; font-weight: 600; color: #202124;\">\n          {{ new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'}) }}\n        </div>\n      </div>\n\n      <div style=\"margin-bottom: 24px;\">\n        <div style=\"font-size: 11px; font-weight: 700; color: #5f6368; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.8px;\">Source</div>\n        <div style=\"font-size: 14px; font-weight: 500; color: #202124;\">\n          {{ $json.source || $execution.lastNodeExecuted }}\n        </div>\n      </div>\n\n      <div style=\"margin-bottom: 32px;\">\n        <div style=\"font-size: 11px; font-weight: 700; color: #5f6368; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.8px;\">Error Message</div>\n        <div style=\"font-size: 14px; font-weight: 500; color: #202124; line-height: 1.6;\">\n          {{ $json.error_message || $execution.error.message }}\n        </div>\n      </div>\n\n      <div style=\"margin-bottom: 24px;\">\n        <div style=\"font-size: 11px; font-weight: 600; color: #5f6368; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.8px;\">Target</div>\n        <div style=\"font-size: 14px; font-weight: 600; color: #202124; font-family: 'Menlo', monospace; word-break: break-all;\">\n          {{ $json.url }}\n        </div>\n      </div>\n\n      <div style=\"text-align: center;\">\n        <a href=\"http://localhost:5678\" style=\"background-color: #1a73e8; color: #ffffff; padding: 10px 24px; border-radius: 4px; text-decoration: none; font-size: 14px; font-weight: 500; display: inline-block;\">\n          Open Console\n        </a>\n      </div>\n\n    </div>\n  </div>\n  \n  <div style=\"text-align: center; margin-top: 24px; font-size: 12px; color: #70757a;\">\n    &copy; 2026 TechNews Intelligence\n  </div>\n</div>",
         "options": {}
       },
       "type": "n8n-nodes-base.emailSend",
       "typeVersion": 2.1,
       "position": [
-        208,
-        0
+        224,
+        -144
       ],
       "id": "67ddf4de-8dfb-42c7-82a9-7f013cb41fc6",
       "name": "Send email",
@@ -44,10 +44,111 @@
       "typeVersion": 1,
       "position": [
         0,
-        -160
+        -192
       ],
       "id": "970050d7-89ce-4a6a-ba66-c68234ea6226",
       "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list",
+          "cachedResultName": "system_logs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "event_type": "ERROR",
+            "source": "={{ $json.source || $execution.lastNodeExecuted }}",
+            "target_url": "={{ $json.url }}",
+            "message": "={{ $json.error_message || $execution.error.message }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "event_type",
+              "displayName": "event_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "target_url",
+              "displayName": "target_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        224,
+        48
+      ],
+      "id": "ac892594-4332-4f83-81e8-9fc99a80bb22",
+      "name": "Insert rows in system log",
+      "credentials": {
+        "postgres": {
+          "id": "16OTc6Oi6SG8mPOF",
+          "name": "Postgres account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -55,6 +156,11 @@
     "When Executed by Another Workflow": {
       "main": [
         [
+          {
+            "node": "Insert rows in system log",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "Send email",
             "type": "main",
@@ -67,11 +173,21 @@
       "main": [
         [
           {
+            "node": "Insert rows in system log",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Send email",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "Insert rows in system log": {
+      "main": [
+        []
       ]
     }
   },
@@ -80,7 +196,7 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "637dc1e4-f859-4c9d-863b-b6f8d9bef16f",
+  "versionId": "0956399b-12f2-480f-ac1b-36ca8f0c8437",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
