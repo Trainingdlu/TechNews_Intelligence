@@ -15,7 +15,7 @@
       "typeVersion": 1.3,
       "position": [
         -1632,
-        -592
+        -848
       ],
       "id": "584d416d-fcb6-4399-8d69-d5e3d069f4a1",
       "name": "Schedule Trigger"
@@ -42,7 +42,7 @@
       "typeVersion": 4.3,
       "position": [
         384,
-        -656
+        -1104
       ],
       "id": "83e6b22f-8355-4b9f-b155-d285111296b6",
       "name": "AI_Processor",
@@ -90,8 +90,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        608,
-        -656
+        592,
+        -1104
       ],
       "id": "707ddec1-a111-4834-af46-c21191aaa5d1",
       "name": "Edit Fields"
@@ -105,7 +105,7 @@
       "typeVersion": 1.2,
       "position": [
         -1408,
-        -672
+        -944
       ],
       "id": "3824930c-3e30-4ebe-be37-19007cf3e644",
       "name": "RSS Read",
@@ -117,7 +117,7 @@
       "typeVersion": 3.2,
       "position": [
         -960,
-        -592
+        -848
       ],
       "id": "43b43f90-a1b2-4834-9968-3889de963b8c",
       "name": "Merge"
@@ -131,7 +131,7 @@
       "typeVersion": 4.3,
       "position": [
         -1408,
-        -480
+        -752
       ],
       "id": "931427e3-2317-42fb-8013-0dfc5ba30288",
       "name": "HTTP Request"
@@ -165,7 +165,7 @@
               "type": "string"
             },
             {
-              "id": "0e770229-fc09-4bbf-bd7a-510ad3a386cb",
+              "id": "77a6ff9a-e017-4531-a9d8-67f15dbb7b3b",
               "name": "id",
               "value": "0",
               "type": "string"
@@ -178,7 +178,7 @@
       "typeVersion": 3.4,
       "position": [
         -1184,
-        -672
+        -944
       ],
       "id": "c694297d-66dc-46e3-8f32-f5c7c4c13347",
       "name": "Edit Fields RSS"
@@ -208,7 +208,7 @@
       "typeVersion": 3.4,
       "position": [
         -1184,
-        -480
+        -752
       ],
       "id": "97f93308-acea-493a-87e6-4410055e9cc4",
       "name": "Edit Fields HTTP"
@@ -222,7 +222,7 @@
       "typeVersion": 3,
       "position": [
         -736,
-        -592
+        -848
       ],
       "id": "d8024abf-86cc-4fa6-95e8-d005870394b9",
       "name": "Loop Over Items"
@@ -245,7 +245,7 @@
       "typeVersion": 4.3,
       "position": [
         -64,
-        -944
+        -1328
       ],
       "id": "80a21eb2-6f6f-4972-afed-28f99fe88110",
       "name": "Jina_Reader",
@@ -396,8 +396,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        848,
-        -464
+        1056,
+        -896
       ],
       "id": "0cd0c7e5-9266-486e-bfcf-c7f5f95fbfd2",
       "name": "Insert or update rows in a table",
@@ -418,7 +418,7 @@
       "typeVersion": 2.6,
       "position": [
         -512,
-        -864
+        -1120
       ],
       "id": "514c900e-c2a8-411f-94f3-fdc55505cbb0",
       "name": "Check_Existence",
@@ -572,8 +572,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        608,
-        -464
+        800,
+        -896
       ],
       "id": "312f2190-2f6c-43eb-92aa-2b789faead68",
       "name": "Update_Points_Only",
@@ -615,7 +615,7 @@
       "typeVersion": 2.3,
       "position": [
         -288,
-        -864
+        -1120
       ],
       "id": "ce5b222b-5715-4cec-8ec8-a46d21dc55cf",
       "name": "Check_unique"
@@ -649,7 +649,7 @@
       "typeVersion": 2.3,
       "position": [
         160,
-        -944
+        -1328
       ],
       "id": "735ef69e-4141-4733-90b7-6cb226e521ea",
       "name": "Jina_Check"
@@ -677,12 +677,96 @@
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.3,
       "position": [
-        608,
-        -880
+        1488,
+        -1344
       ],
       "id": "37ed930a-5aac-4814-92e1-8dd15a852986",
       "name": "Call 'System_Alert_Service'",
       "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d5254c2a-04ff-4bff-b0a4-ce58f9f8cf62",
+              "leftValue": "={{ $json.title_cn }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "ce826707-ff54-4451-b6b3-2727097d925b",
+              "leftValue": "={{ $json.title_cn }}",
+              "rightValue": "null",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "ec044579-e819-4a12-8a05-d2d4ca7f0891",
+              "leftValue": "={{ $json.summary }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "bd0e75dc-071e-46c4-a54b-90cbb1539e7d",
+              "leftValue": "={{ $json.summary }}",
+              "rightValue": "Analysis failed due to content access issues.",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        816,
+        -1104
+      ],
+      "id": "eeb2a161-4c8e-4cc3-8bec-66a52fe2b011",
+      "name": "Data_check"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH run_stats AS (\n    SELECT \n        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '10 minutes') as new_count,\n        \n        COUNT(*) FILTER (WHERE updated_at > NOW() - INTERVAL '10 minutes' \n                           AND created_at < NOW() - INTERVAL '10 minutes') as update_count\n    FROM tech_news\n)\nINSERT INTO system_logs (event_type, source, message)\nSELECT \n    'BATCH_COMPLETE',\n    'Tech_Intelligence',\n    '执行结束。本次新增 ' || new_count || ' 条，刷新 ' || update_count || ' 条。'\nFROM run_stats;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -512,
+        -864
+      ],
+      "id": "fad3ccde-1875-404d-95a9-b1b1dcfb8ed0",
+      "name": "System_log",
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "16OTc6Oi6SG8mPOF",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {
@@ -693,11 +777,251 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        384,
-        -880
+        592,
+        -1344
       ],
       "id": "8321601f-2920-40b8-ae82-0e8681ee76db",
-      "name": "Prepare_Error_Data"
+      "name": "Prepare_Jina_Error_Data"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{\n  {\n    \"source\": \"AI_request\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error_message\": \"AI节点分析失败\"\n  }\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1152,
+        -1440
+      ],
+      "id": "b54fe085-4483-434d-ba8d-2394fd114e83",
+      "name": "Prepare_AI_Error_Data"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tech_news_failed",
+          "mode": "list",
+          "cachedResultName": "tech_news_failed"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "original_title": "={{ $('Merge').item.json.title }}",
+            "title_cn": "={{ $('Edit Fields').item.json.title_cn }}",
+            "url": "={{ $('Edit Fields').item.json.url }}",
+            "error_reason": "AI Analysis Failed",
+            "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
+            "created_at": "={{ new Date().toISOString() }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "original_title",
+              "displayName": "original_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title_cn",
+              "displayName": "title_cn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_type",
+              "displayName": "source_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_reason",
+              "displayName": "error_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1056,
+        -1120
+      ],
+      "id": "1b76166d-17a7-4869-a3ad-dea243eb96b4",
+      "name": "Insert rows in failed (AI)",
+      "credentials": {
+        "postgres": {
+          "id": "16OTc6Oi6SG8mPOF",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tech_news_failed",
+          "mode": "list",
+          "cachedResultName": "tech_news_failed"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "original_title": "={{ $('Loop Over Items').item.json.title }}",
+            "url": "={{ $('Loop Over Items').item.json.url }}",
+            "error_reason": "Content Fetch Failed",
+            "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
+            "created_at": "={{ new Date().toISOString() }}",
+            "title_cn": "null"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "original_title",
+              "displayName": "original_title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title_cn",
+              "displayName": "title_cn",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "url",
+              "displayName": "url",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source_type",
+              "displayName": "source_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_reason",
+              "displayName": "error_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        384,
+        -1536
+      ],
+      "id": "c1215d69-1508-45ec-afdb-982fd0acd31d",
+      "name": "Insert rows in failed (Jina)",
+      "credentials": {
+        "postgres": {
+          "id": "16OTc6Oi6SG8mPOF",
+          "name": "Postgres account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -733,7 +1057,7 @@
       "main": [
         [
           {
-            "node": "Insert or update rows in a table",
+            "node": "Data_check",
             "type": "main",
             "index": 0
           }
@@ -797,7 +1121,13 @@
     },
     "Loop Over Items": {
       "main": [
-        [],
+        [
+          {
+            "node": "System_log",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Check_Existence",
@@ -873,7 +1203,12 @@
       "main": [
         [
           {
-            "node": "Prepare_Error_Data",
+            "node": "Prepare_Jina_Error_Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Insert rows in failed (Jina)",
             "type": "main",
             "index": 0
           }
@@ -898,7 +1233,30 @@
         ]
       ]
     },
-    "Prepare_Error_Data": {
+    "Data_check": {
+      "main": [
+        [
+          {
+            "node": "Prepare_AI_Error_Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Insert rows in failed (AI)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Insert or update rows in a table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare_Jina_Error_Data": {
       "main": [
         [
           {
@@ -907,6 +1265,27 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "Prepare_AI_Error_Data": {
+      "main": [
+        [
+          {
+            "node": "Call 'System_Alert_Service'",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert rows in failed (AI)": {
+      "main": [
+        []
+      ]
+    },
+    "Insert rows in failed (Jina)": {
+      "main": [
+        []
       ]
     }
   },
@@ -918,7 +1297,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "37d8ca34-bcb4-48de-8b09-093f64579c1d",
+  "versionId": "839e6b7d-2c68-4f06-9c7a-7e4bfa631e9c",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
