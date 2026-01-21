@@ -90,7 +90,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        592,
+        608,
         -1104
       ],
       "id": "707ddec1-a111-4834-af46-c21191aaa5d1",
@@ -572,7 +572,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        800,
+        816,
         -896
       ],
       "id": "312f2190-2f6c-43eb-92aa-2b789faead68",
@@ -749,7 +749,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH run_stats AS (\n    SELECT \n        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '10 minutes') as new_count,\n        \n        COUNT(*) FILTER (WHERE updated_at > NOW() - INTERVAL '10 minutes' \n                           AND created_at < NOW() - INTERVAL '10 minutes') as update_count\n    FROM tech_news\n)\nINSERT INTO system_logs (event_type, source, message)\nSELECT \n    'BATCH_COMPLETE',\n    'Tech_Intelligence',\n    '执行结束。本次新增 ' || new_count || ' 条，刷新 ' || update_count || ' 条。'\nFROM run_stats;",
+        "query": "WITH run_stats AS (\n    SELECT \n        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '10 minutes') as new_count,\n        \n        COUNT(*) FILTER (WHERE updated_at > NOW() - INTERVAL '10 minutes' \n                           AND created_at < NOW() - INTERVAL '10 minutes') as update_count\n    FROM tech_news\n)\nINSERT INTO system_logs (event_type, source, message)\nSELECT \n    'BATCH_COMPLETE',\n    'Tech_Intelligence',\n    '执行成功。本次新增 ' || new_count || ' 条，刷新 ' || update_count || ' 条。'\nFROM run_stats;",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -815,7 +815,7 @@
           "mappingMode": "defineBelow",
           "value": {
             "original_title": "={{ $('Merge').item.json.title }}",
-            "title_cn": "={{ $('Edit Fields').item.json.title_cn }}",
+            "title_cn": "={{ $('Edit Fields').item.json.title_cn || null }}",
             "url": "={{ $('Edit Fields').item.json.url }}",
             "error_reason": "AI Analysis Failed",
             "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
@@ -931,7 +931,7 @@
             "error_reason": "Content Fetch Failed",
             "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
             "created_at": "={{ new Date().toISOString() }}",
-            "title_cn": "null"
+            "title_cn": "={{ null }}"
           },
           "matchingColumns": [
             "id"
@@ -1297,7 +1297,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "839e6b7d-2c68-4f06-9c7a-7e4bfa631e9c",
+  "versionId": "4955a8b9-d676-4555-9243-fc9acc9f3949",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
