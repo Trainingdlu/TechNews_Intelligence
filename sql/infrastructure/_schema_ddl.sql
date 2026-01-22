@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS public.tech_news (
     
     -- Metadata
     source_id VARCHAR(50),
-    time_ago TEXT,
     
     -- Timestamps
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
