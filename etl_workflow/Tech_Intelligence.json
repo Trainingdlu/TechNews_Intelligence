@@ -731,9 +731,19 @@
                 "type": "string",
                 "operation": "equals"
               }
+            },
+            {
+              "id": "fed5511a-197e-476b-8905-cc38db96590e",
+              "leftValue": "={{ $json.summary }}",
+              "rightValue": "null",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
             }
           ],
-          "combinator": "and"
+          "combinator": "or"
         },
         "options": {}
       },
@@ -1297,7 +1307,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "3c627ded-52d1-4a44-8a9d-007a18e68660",
+  "versionId": "c4463ea0-9bae-4d77-be31-4e5ab20e46d1",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
