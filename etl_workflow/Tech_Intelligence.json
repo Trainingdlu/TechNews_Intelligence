@@ -411,7 +411,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT \n    (SELECT id FROM tech_news WHERE url = $${{ $json.url }}$$ LIMIT 1) as existing_id,\n    \n    $${{ $json.url }}$$ as url,\n    $${{ $json.title }}$$ as title,\n    {{ $json.points || 0 }} as points",
+        "query": "SELECT \n    COALESCE(\n        (SELECT id FROM tech_news WHERE url = $${{ $json.url }}$$ LIMIT 1),\n        (SELECT id FROM tech_news_failed WHERE url = $${{ $json.url }}$$ LIMIT 1)\n    ) as existing_id,\n    \n    $${{ $json.url }}$$ as url,\n    $${{ $json.title }}$$ as title,\n    {{ $json.points || 0 }} as points",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -796,7 +796,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={{\n  {\n    \"source\": \"Ar_Response\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error_message\": \"AI节点分析失败\"\n  }\n}}",
+        "jsonOutput": "={{\n  {\n    \"source\": \"AI_Response\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error_message\": \"AI节点分析失败\"\n  }\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.set",
@@ -1307,7 +1307,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "880960bb-904e-4ec8-82d1-43f4407b3b56",
+  "versionId": "30f95b64-db50-41fd-a497-6e36084c92f4",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
