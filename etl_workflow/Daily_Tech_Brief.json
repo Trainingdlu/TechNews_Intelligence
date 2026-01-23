@@ -23,7 +23,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "(\n    SELECT \n        title_cn,\n        summary,\n        points,\n        sentiment,\n        'HackerNews' as source_type,\n        discussion_link,\n        created_at\n    FROM view_dashboard_news\n    WHERE created_at > NOW() - INTERVAL '24 hours'\n      AND source_type = 'HackerNews'\n      AND title_cn IS NOT NULL \n      AND title_cn != ''\n      AND title_cn != 'null' \n      AND summary IS NOT NULL\n      AND summary != ''\n      AND summary != 'null'\n    ORDER BY points DESC\n    LIMIT 7\n)\nUNION ALL\n(\n    SELECT \n        title_cn,\n        summary,\n        points,\n        sentiment,\n        'TechCrunch' as source_type,\n        discussion_link,\n        created_at\n    FROM view_dashboard_news\n    WHERE created_at > NOW() - INTERVAL '24 hours'\n      AND source_type = 'TechCrunch'\n      AND title_cn IS NOT NULL \n      AND title_cn != ''\n      AND title_cn != 'null' \n      AND summary IS NOT NULL\n      AND summary != ''\n      AND summary != 'null'\n    ORDER BY created_at DESC\n    LIMIT 7\n)\nORDER BY created_at DESC;",
+        "query": "(\n    SELECT \n        title_cn,\n        summary,\n        points,\n        sentiment,\n        'HackerNews' as source_type,\n        discussion_link,\n        created_at\n    FROM view_dashboard_news\n    WHERE created_at > NOW() - INTERVAL '24 hours'\n      AND source_type = 'HackerNews'\n      AND title_cn IS NOT NULL \n      AND title_cn != ''\n      AND title_cn != 'null' \n      AND summary IS NOT NULL\n      AND summary != ''\n      AND summary != 'null'\n      AND summary NOT LIKE '%Analysis failed due to content access issues%'\n    ORDER BY points DESC\n    LIMIT 7\n)\nUNION ALL\n(\n    SELECT \n        title_cn,\n        summary,\n        points,\n        sentiment,\n        'TechCrunch' as source_type,\n        discussion_link,\n        created_at\n    FROM view_dashboard_news\n    WHERE created_at > NOW() - INTERVAL '24 hours'\n      AND source_type = 'TechCrunch'\n      AND title_cn IS NOT NULL \n      AND title_cn != ''\n      AND title_cn != 'null' \n      AND summary IS NOT NULL\n      AND summary != ''\n      AND summary != 'null'\n      AND summary NOT LIKE '%Analysis failed due to content access issues%'\n    ORDER BY created_at DESC\n    LIMIT 7\n)\nORDER BY created_at DESC;",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -157,7 +157,7 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "4a19f81f-8558-4018-bf0a-35111ed30bd2",
+  "versionId": "fb94bff6-ee04-4c67-8f94-dcedc019b75f",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
