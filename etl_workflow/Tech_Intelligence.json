@@ -796,14 +796,14 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={{\n  {\n    \"source\": \"AI_request\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error_message\": \"AI节点分析失败\"\n  }\n}}",
+        "jsonOutput": "={{\n  {\n    \"source\": \"Ar_Response\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error_message\": \"AI节点分析失败\"\n  }\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
         1056,
-        -1440
+        -1456
       ],
       "id": "b54fe085-4483-434d-ba8d-2394fd114e83",
       "name": "Prepare_AI_Error_Data"
@@ -1307,7 +1307,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "c4463ea0-9bae-4d77-be31-4e5ab20e46d1",
+  "versionId": "880960bb-904e-4ec8-82d1-43f4407b3b56",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
