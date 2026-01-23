@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS public.tech_news_failed (
     error_reason TEXT,
     
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+
+    CONSTRAINT unique_failed_url UNIQUE (url)
+
 );
 
 -- 3. System logs
