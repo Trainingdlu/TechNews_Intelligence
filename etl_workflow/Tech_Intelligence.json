@@ -759,7 +759,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "WITH run_stats AS (\n    SELECT \n        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '10 minutes') as new_count,\n        \n        COUNT(*) FILTER (WHERE updated_at > NOW() - INTERVAL '10 minutes' \n                           AND created_at < NOW() - INTERVAL '10 minutes') as update_count\n    FROM tech_news\n)\nINSERT INTO system_logs (event_type, source, message)\nSELECT \n    'BATCH_COMPLETE',\n    'Tech_Intelligence',\n    '执行成功。本次新增 ' || new_count || ' 条，刷新 ' || update_count || ' 条。'\nFROM run_stats;",
+        "query": "WITH run_stats AS (\n    SELECT \n        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '10 minutes') as new_count,\n        \n        COUNT(*) FILTER (WHERE updated_at > NOW() - INTERVAL '10 minutes' \n                           AND created_at < NOW() - INTERVAL '10 minutes') as update_count\n    FROM tech_news\n)\nINSERT INTO system_logs (event_type, source, message)\nSELECT \n    'COMPLETE',\n    'Tech_Intelligence',\n    '执行成功。本次新增 ' || new_count || ' 条，刷新 ' || update_count || ' 条。'\nFROM run_stats;",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -1307,7 +1307,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "30f95b64-db50-41fd-a497-6e36084c92f4",
+  "versionId": "ebe3ac39-4096-4242-b6de-6e944be0e8e9",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
