@@ -765,7 +765,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -512,
+        -288,
         -864
       ],
       "id": "fad3ccde-1875-404d-95a9-b1b1dcfb8ed0",
@@ -1032,6 +1032,19 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "keep": "lastItems"
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        -512,
+        -864
+      ],
+      "id": "596102f2-d3f2-484b-99ba-d1609eb06eb9",
+      "name": "Limit"
     }
   ],
   "pinData": {},
@@ -1133,7 +1146,7 @@
       "main": [
         [
           {
-            "node": "System_log",
+            "node": "Limit",
             "type": "main",
             "index": 0
           }
@@ -1297,6 +1310,17 @@
       "main": [
         []
       ]
+    },
+    "Limit": {
+      "main": [
+        [
+          {
+            "node": "System_log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -1307,7 +1331,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "5a3465ff-9301-4de7-8950-69b98a599b21",
+  "versionId": "43aad7be-5c84-4949-b15f-b014d19be5a2",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
