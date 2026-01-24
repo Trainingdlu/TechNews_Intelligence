@@ -781,7 +781,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={{\n  {\n    \"source\": \"Jina_Reader\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error_message\": \"抓取失败，内容为空或被拦截\"\n  }\n}}",
+        "jsonOutput": "={{\n  {\n    \"source\": \"Jina_Reader\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error\": \"抓取失败，内容为空或被拦截\"\n  }\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.set",
@@ -796,7 +796,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={{\n  {\n    \"source\": \"AI_Response\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error_message\": \"AI节点分析失败\"\n  }\n}}",
+        "jsonOutput": "={{\n  {\n    \"source\": \"AI_Response\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error\": \"AI节点分析失败\"\n  }\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.set",
@@ -1307,7 +1307,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "ebe3ac39-4096-4242-b6de-6e944be0e8e9",
+  "versionId": "5a3465ff-9301-4de7-8950-69b98a599b21",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
