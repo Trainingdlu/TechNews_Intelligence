@@ -758,8 +758,88 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "WITH run_stats AS (\n    SELECT \n        COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '10 minutes') as new_count,\n        \n        COUNT(*) FILTER (WHERE updated_at > NOW() - INTERVAL '10 minutes' \n                           AND created_at < NOW() - INTERVAL '10 minutes') as update_count\n    FROM tech_news\n)\nINSERT INTO system_logs (event_type, source, message)\nSELECT \n    'COMPLETE',\n    'Tech_Intelligence',\n    '执行成功。本次新增 ' || new_count || ' 条，刷新 ' || update_count || ' 条。'\nFROM run_stats;",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "system_logs",
+          "mode": "list",
+          "cachedResultName": "system_logs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "event_type": "COMPLETE",
+            "source": "Tech_Intelligence",
+            "message": "={{ $json.message }}",
+            "target_url": "={{ $json.target_url }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "event_type",
+              "displayName": "event_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "target_url",
+              "displayName": "target_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
@@ -1035,16 +1115,16 @@
     },
     {
       "parameters": {
-        "keep": "lastItems"
+        "jsCode": "let newCount = 0;\nlet updateCount = 0;\n\ntry {\n  newCount = $('Insert or update rows in a table').all().length;\n} catch (e) {}\n\ntry {\n  updateCount = $('Update_Points_Only').all().length;\n} catch (e) {}\n\nlet msgParts = [];\nif (newCount > 0) msgParts.push(`新增 ${newCount} 条`);\nif (updateCount > 0) msgParts.push(`刷新 ${updateCount} 条`);\n\nlet finalMsg = \"执行成功。\";\nif (msgParts.length > 0) {\n    finalMsg += \" \" + msgParts.join(\"，\") + \"。\";\n} else {\n    finalMsg += \" 本轮无有效数据变更。\";\n}\n\nreturn [{\n  json: {\n    message: finalMsg,\n    target_url: \"-\", \n    event_type: \"BATCH_COMPLETE\",\n    source: \"Tech_Intelligence\"\n  }\n}];"
       },
-      "type": "n8n-nodes-base.limit",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         -512,
         -864
       ],
-      "id": "596102f2-d3f2-484b-99ba-d1609eb06eb9",
-      "name": "Limit"
+      "id": "518002e2-9e7c-473f-8ca7-6e7750faaa2d",
+      "name": "Code in JavaScript"
     }
   ],
   "pinData": {},
@@ -1146,7 +1226,7 @@
       "main": [
         [
           {
-            "node": "Limit",
+            "node": "Code in JavaScript",
             "type": "main",
             "index": 0
           }
@@ -1311,7 +1391,7 @@
         []
       ]
     },
-    "Limit": {
+    "Code in JavaScript": {
       "main": [
         [
           {
@@ -1331,7 +1411,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "43aad7be-5c84-4949-b15f-b014d19be5a2",
+  "versionId": "ade9316f-2b61-4f28-9fb2-4bc23a98a1bc",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
