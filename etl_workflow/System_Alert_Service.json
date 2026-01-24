@@ -67,7 +67,7 @@
           "value": {
             "event_type": "ERROR",
             "source": "={{ $json.source || $execution?.lastNodeExecuted || 'Unknown Source' }}",
-            "target_url": "={{ $json.url || '#' }}",
+            "target_url": "={{ $json.url || null }}",
             "message": "={{ $json.error || $execution?.error?.message || 'No error details provided.' }}",
             "created_at": "={{ new Date().toISOString() }}"
           },
@@ -198,7 +198,7 @@
     "executionOrder": "v1",
     "availableInMCP": false
   },
-  "versionId": "263151f0-bb81-434b-bf3e-fcbbd6609f51",
+  "versionId": "b82562f3-a8aa-4c3d-a1cc-be7da358fdeb",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
