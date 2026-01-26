@@ -5,7 +5,7 @@
 
 > **项目概述**：一个端到端的数据工程与商业智能解决方案。该系统旨在通过自动化流水线减轻科技行业的信息过载，实时采集 Hacker News 与 TechCrunch 的低结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘与自动化日报为决策提供量化支持。
 
-**[在线演示](https://dashboard.trainingcqy.com)** [PDF演示](https://github.com/Trainingdlu/TechNews_Intelligence/raw/main/assets/docs/Metabase.pdf)
+**[在线演示](https://dashboard.trainingcqy.com)** [PDF演示](assets/docs/Metabase.pdf)
 ---
 
 ## 1. 系统架构设计
@@ -166,7 +166,7 @@ cd TechNews_Intelligence
 
 ```bash
 cp deployment/.env.example deployment/.env
-# 使用文本编辑器修改 .env 文件，填入你的数据库密码及 API Keys
+# 使用文本编辑器修改 .env 文件，填入数据库密码及 API Keys
 ```
 
 ### 启动服务
