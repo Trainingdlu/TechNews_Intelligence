@@ -140,8 +140,10 @@ TechNews_Intelligence/
 │       ├── _table_hackernews_top.sql         # Hacker News 热榜
 │       └── _table_techcrunch_latest.sql      # TechCrunch 快讯
 │
-├── deployment/                  # Docker 配置文件、环境模板、Metabase示例
-└── assets/                      # 项目文档截图
+├── deployment/                # Docker 配置文件、环境模板、Metabase示例
+└── assets/
+    ├──docs                    # Metabase dashboard
+    └──screenshots             # N8n 工作流截图
 ```
 
 ---
