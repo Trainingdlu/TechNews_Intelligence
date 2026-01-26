@@ -5,7 +5,7 @@
 
 > **项目概述**：一个端到端的数据工程与商业智能解决方案。该系统旨在通过自动化流水线减轻科技行业的信息过载，实时采集 Hacker News 与 TechCrunch 的低结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘与自动化日报为决策提供量化支持。
 
-**[在线演示](https://dashboard.trainingcqy.com)** **[PDF演示]**(assets/docs/Metabase - 科技前沿.pdf)
+**[在线演示](https://dashboard.trainingcqy.com)** ![PDF演示](assets/docs/Metabase.pdf)
 ---
 
 ## 1. 系统架构设计
@@ -54,15 +54,15 @@ flowchart LR
 
 #### 主采集流水线 (Main)
 > *集成了 RSS 轮询、Jina 全文解析与 DeepSeek 推理的完整链路。*
-![Main](assets/screenshots/Main workflow.png)
+![Main](assets/screenshots/Main_workflow.png)
 
 #### 异常捕获与告警 (Error)
 > *独立的全局错误处理模块，负责拦截失败任务并触发邮件报警，写入系统日志。*
-![Alert](assets/screenshots/Alert workflow.png)
+![Alert](assets/screenshots/Alert_workflow.png)
 
 #### 自动化日报推送 (Brief)
 > *每日基于 SQL 筛选出最新与最热新闻，渲染为 HTML 邮件推送.*
-![Brief](assets/screenshots/Brief workflow.png)
+![Brief](assets/screenshots/Brief_workflow.png)
 ---
 
 ## 2. 核心实施阶段
