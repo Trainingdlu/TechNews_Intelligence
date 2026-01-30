@@ -3,7 +3,10 @@
 Thumbs.db
 *.db
 *.mv.db
+*.trace.db
 metabase.db.mv.db
+news_data.sql
+news_data_readable.sql
 
 # Secrets
 .env
