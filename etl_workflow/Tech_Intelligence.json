@@ -775,7 +775,8 @@
             "event_type": "COMPLETE",
             "source": "Tech_Intelligence",
             "message": "={{ $json.message }}",
-            "target_url": "={{ $json.target_url }}"
+            "target_url": "={{ $json.target_url }}",
+            "created_at": "={{ $now }}"
           },
           "matchingColumns": [
             "id"
@@ -909,7 +910,7 @@
             "url": "={{ $('Edit Fields').item.json.url }}",
             "error_reason": "AI Analysis Failed",
             "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
-            "created_at": "={{ new Date().toISOString() }}"
+            "created_at": "={{ $now }}"
           },
           "matchingColumns": [
             "id"
@@ -1020,7 +1021,7 @@
             "url": "={{ $('Loop Over Items').item.json.url }}",
             "error_reason": "Content Fetch Failed",
             "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
-            "created_at": "={{ new Date().toISOString() }}",
+            "created_at": "={{ $now }}",
             "title_cn": "={{ null }}"
           },
           "matchingColumns": [
@@ -1411,7 +1412,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "ade9316f-2b61-4f28-9fb2-4bc23a98a1bc",
+  "versionId": "9480a254-17c1-4deb-a3b2-2f4864e366a5",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "254b471fa50f95c8bdeb3b168acb87704b701a4e796abd09a694ec3e0a128433"
