@@ -803,7 +803,7 @@
             "title_cn": "={{ null }}"
           },
           "matchingColumns": [
-            "id"
+            "url"
           ],
           "schema": [
             {
@@ -842,7 +842,8 @@
               "defaultMatch": false,
               "display": true,
               "type": "string",
-              "canBeUsedToMatch": true
+              "canBeUsedToMatch": true,
+              "removed": false
             },
             {
               "id": "source_type",
@@ -1281,7 +1282,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "21820fc4-667f-4d4d-8c64-0311facb38ed",
+  "versionId": "ee731611-ff28-4138-b8d4-b1e57e5df1eb",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "cc71cb19c52277ee6a828e6a21e2dba61964271db5e597d972c12c82fd716ddf"
