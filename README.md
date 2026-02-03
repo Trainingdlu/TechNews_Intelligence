@@ -10,7 +10,7 @@
 
 ## 1. 系统架构设计
 
-本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，已容器化，并部署到Azure虚拟机。
+本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，已容器化，并部署到腾讯云。
 
 ```mermaid
 flowchart LR
