@@ -312,33 +312,14 @@
               "removed": false
             },
             {
-              "id": "points",
-              "displayName": "points",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "number",
-              "canBeUsedToMatch": false
-            },
-            {
-              "id": "created_at",
-              "displayName": "created_at",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "dateTime",
-              "canBeUsedToMatch": false,
-              "removed": false
-            },
-            {
-              "id": "time_ago",
-              "displayName": "time_ago",
+              "id": "summary",
+              "displayName": "summary",
               "required": false,
               "defaultMatch": false,
               "display": true,
               "type": "string",
               "canBeUsedToMatch": false,
-              "removed": true
+              "removed": false
             },
             {
               "id": "title_cn",
@@ -359,6 +340,15 @@
               "canBeUsedToMatch": false
             },
             {
+              "id": "points",
+              "displayName": "points",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": false
+            },
+            {
               "id": "source_id",
               "displayName": "source_id",
               "required": false,
@@ -368,12 +358,12 @@
               "canBeUsedToMatch": false
             },
             {
-              "id": "summary",
-              "displayName": "summary",
+              "id": "created_at",
+              "displayName": "created_at",
               "required": false,
               "defaultMatch": false,
               "display": true,
-              "type": "string",
+              "type": "dateTime",
               "canBeUsedToMatch": false,
               "removed": false
             },
@@ -468,16 +458,6 @@
                 "type": "number",
                 "operation": "empty",
                 "singleValue": true
-              }
-            },
-            {
-              "id": "1ca3d81c-e91f-4311-b22b-37c46ab6211d",
-              "leftValue": "",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "equals",
-                "name": "filter.operator.equals"
               }
             }
           ],
@@ -1158,7 +1138,7 @@
       "main": [
         [
           {
-            "node": "Insert or update rows in a table",
+            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }
@@ -1282,7 +1262,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "ee731611-ff28-4138-b8d4-b1e57e5df1eb",
+  "versionId": "8b8aeb19-a9d3-4205-a0f2-66c2153eed42",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "cc71cb19c52277ee6a828e6a21e2dba61964271db5e597d972c12c82fd716ddf"
