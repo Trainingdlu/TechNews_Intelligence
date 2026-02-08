@@ -38,13 +38,20 @@ CREATE TABLE IF NOT EXISTS public.tech_news_failed (
     
     error_reason TEXT,
     
-    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT unique_failed_url UNIQUE (url)
-
 );
 
--- 3. System logs
+-- 3. Jina data
+CREATE TABLE IF NOT EXISTS public.jina_raw_logs (
+    id SERIAL PRIMARY KEY,
+    url TEXT NOT NULL,
+    raw_content TEXT, 
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 4. System logs
 CREATE TABLE IF NOT EXISTS public.system_logs (
     id SERIAL PRIMARY KEY,
     
@@ -61,13 +68,13 @@ CREATE TABLE IF NOT EXISTS public.system_logs (
 -- Index for logs (Logs accumulate fast, indexing time is crucial for cleanup/querying)
 CREATE INDEX IF NOT EXISTS idx_logs_created_at ON public.system_logs(created_at DESC);
 
--- 4. Performance Indexes
+-- 5. Performance Indexes
 CREATE INDEX idx_created_at ON public.tech_news(created_at);
 CREATE INDEX idx_updated_at ON public.tech_news(updated_at);
 CREATE INDEX idx_points ON public.tech_news(points DESC);
 CREATE INDEX idx_sentiment ON public.tech_news(sentiment);
 
--- 5. Update Trigger Function
+-- 6. Update Trigger Function
 CREATE OR REPLACE FUNCTION update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
