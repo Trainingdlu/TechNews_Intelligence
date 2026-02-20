@@ -35,7 +35,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n                  .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n                  .replace(/\\\\/g, '/').slice(0, 100000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech content:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- **ALLOWED TAGS**: [AI], [安全], [硬件], [开发], [商业], [生态].\n\n- **CONSTRAINT & MAPPING**: \n  1. You MUST strictly select ONE Tag from the list above. DO NOT invent tags.\n  2. **Edge Case Mapping (Ambiguity Resolver)**:\n     - **[AI]**: LLM Models / RAG / Agents / Papers / Datasets / Benchmarks.\n     - **[硬件]**: Phones / Chips / Robots / EV (Tesla) / Space / Energy.\n     - **[商业]**: Crypto Prices / Game Sales / IPO / Funding / Antitrust.\n     - **[开发]**: UI/UX / Design / Game Engines / Cloud Ops / Data Science Libs.\n     - **[安全]**: Fraud / Scams / Deepfake Defense / Privacy Tools / CVE.\n     - **[生态]**: Law / Science / History / Career / Remote Work.\n\n- **TAG SELECTION LOGIC (Semantic Value Priority)**:\n  *Analyze the \"Core Event\" (What actually happened?). Use the following hierarchy to resolve overlaps, prioritizing Innovation over Context.*\n  1. **First, identify the Core Event** (e.g., Launching a model vs. Being sued).\n  2. **Then, match the most fitting category** from the list below.\n  3. **If ambiguous**, prioritize categories higher in the list (Innovation > Business > Context).\n\n  1. **[AI] (Virtual Innovation)**:\n     - **Core Definition**: New Models (LLM/SLM), Algorithms, Agents, RAG, Datasets, or Research Papers.\n     - *Tie-Breaker*: If it is software/weight-based intelligence, select [AI].\n     - *Example*: \"OpenAI releases GPT-5\", \"Google DeepMind new paper\".\n\n  2. **[硬件] (Physical Innovation)**:\n     - **Core Definition**: Physical Chips (GPU/TPU/CPU), Consumer Devices (Phones/Headsets), Robotics, EV (Cars), Space, or Energy.\n     - *Tie-Breaker*: If it is a tangible object (even an AI chip like H100), select [硬件].\n     - *Example*: \"Nvidia H200 launched\", \"Apple Vision Pro update\".\n\n  3. **[商业] (Financial Impact)**:\n     - **Core Definition**: Corporate finance events: IPO, Earnings, Layoffs, Acquisition, Funding, Antitrust lawsuits.\n     - *Constraint*: Only use this if the news is NOT primarily about a product launch.\n     - *Example*: \"Microsoft revenue up 20%\", \"Tech startup lays off 50%\".\n\n  4. **[安全] (Critical Risk)**:\n     - **Core Definition**: Malicious attacks, Data Breaches, Ransomware, Critical CVEs, or Zero-day exploits.\n     - *Constraint*: Do NOT use for routine software updates or privacy policy changes.\n     - *Example*: \"LastPass database leaked\", \"Log4j vulnerability found\".\n\n  5. **[开发] (Engineering Tools)**:\n     - **Core Definition**: Updates to Programming Languages, Frameworks (React/Vue), Databases, Linux Kernel, Git, or UI/Design tools.\n     - *Scope*: Purely for developers and builders.\n\n  6. **[生态] (Macro Context)**:\n     - **Core Definition**: Policy, Legal regulations (GDPR/AI Act), Remote Work, Career advice, History, or Scientific discovery (Math/Physics/Bio).\n     - *Fallback*: If it doesn't fit 1-5, use this.\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Scenario-Based)\n**SCENARIO A: Standard News (TechCrunch/Blog)**\n- Action: Extract key facts (Who, What, Numbers, Impact).\n- Style: \"DeepSeek发布V3，参数量671B，成本降低90%。\"\n\n**SCENARIO B: Community Discussion (Hacker News Comments)**\n- Trigger: If content contains many usernames/timestamps or is a list of comments.\n- Action: **Synthesize the consensus.** DO NOT say \"User A said this\". Instead, list the **Top 3 mentioned tools/solutions** or the **Main Controversy**.\n- Style: \"社区热议个人网站托管，推荐最多的方案是: 1.GitHub Pages; 2.Cloudflare; 3.Hugo。\" (Keep it dense!)\n- Length: Max 400 Chinese characters.\n\n**SCENARIO C: Content Missing**\n- Action: Return \"Analysis failed due to content access issues.\".\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n**Example 1 (News):**\n{\n  \"translation\": \"[AI] DeepSeek发布V3开源模型\",\n  \"summary\": \"DeepSeek-V3参数量达671B，MMLU得分88.5，训练成本仅550万美元，已在HuggingFace开源。\",\n  \"sentiment\": \"Positive\"\n}\n**Example 2 (Discussion):**\n{\n  \"translation\": \"[开发] HN热议：最好的个人博客方案\",\n  \"summary\": \"讨论集中在静态网站生成器。主流推荐使用 Hugo 或 Jekyll 配合 GitHub Pages 免费托管，部分用户推荐 Notion 转网站方案。\",\n  \"sentiment\": \"Neutral\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"qwen-max-latest\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON.\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n                  .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n                  .replace(/\\\\/g, '/').slice(0, 100000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech content:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- **ALLOWED TAGS**: [AI], [安全], [硬件], [开发], [商业], [生态].\n\n- **CONSTRAINT & MAPPING**: \n  1. You MUST strictly select ONE Tag from the list above. DO NOT invent tags.\n  2. **Edge Case Mapping (Ambiguity Resolver)**:\n     - **[AI]**: LLM Models / RAG / Agents / Papers / Datasets / Benchmarks.\n     - **[硬件]**: Phones / Chips / Robots / EV (Tesla) / Space / Energy.\n     - **[商业]**: Crypto Prices / Game Sales / IPO / Funding / Antitrust.\n     - **[开发]**: UI/UX / Design / Game Engines / Cloud Ops / Data Science Libs.\n     - **[安全]**: Fraud / Scams / Deepfake Defense / Privacy Tools / CVE.\n     - **[生态]**: Law / Science / History / Career / Remote Work.\n\n- **TAG SELECTION LOGIC (Semantic Value Priority)**:\n  *Analyze the \"Core Event\" (What actually happened?). Use the following hierarchy to resolve overlaps, prioritizing Innovation over Context.*\n  1. **First, identify the Core Event** (e.g., Launching a model vs. Being sued).\n  2. **Then, match the most fitting category** from the list below.\n  3. **If ambiguous**, prioritize categories higher in the list (Innovation > Business > Context).\n\n  1. **[AI] (Virtual Innovation)**:\n     - **Core Definition**: New Models (LLM/SLM), Algorithms, Agents, RAG, Datasets, or Research Papers.\n     - *Tie-Breaker*: If it is software/weight-based intelligence, select [AI].\n     - *Example*: \"OpenAI releases GPT-5\", \"Google DeepMind new paper\".\n\n  2. **[硬件] (Physical Innovation)**:\n     - **Core Definition**: Physical Chips (GPU/TPU/CPU), Consumer Devices (Phones/Headsets), Robotics, EV (Cars), Space, or Energy.\n     - *Tie-Breaker*: If it is a tangible object (even an AI chip like H100), select [硬件].\n     - *Example*: \"Nvidia H200 launched\", \"Apple Vision Pro update\".\n\n  3. **[商业] (Financial Impact)**:\n     - **Core Definition**: Corporate finance events: IPO, Earnings, Layoffs, Acquisition, Funding, Antitrust lawsuits.\n     - *Constraint*: Only use this if the news is NOT primarily about a product launch.\n     - *Example*: \"Microsoft revenue up 20%\", \"Tech startup lays off 50%\".\n\n  4. **[安全] (Critical Risk)**:\n     - **Core Definition**: Malicious attacks, Data Breaches, Ransomware, Critical CVEs, or Zero-day exploits.\n     - *Constraint*: Do NOT use for routine software updates or privacy policy changes.\n     - *Example*: \"LastPass database leaked\", \"Log4j vulnerability found\".\n\n  5. **[开发] (Engineering Tools)**:\n     - **Core Definition**: Updates to Programming Languages, Frameworks (React/Vue), Databases, Linux Kernel, Git, or UI/Design tools.\n     - *Scope*: Purely for developers and builders.\n\n  6. **[生态] (Macro Context)**:\n     - **Core Definition**: Policy, Legal regulations (GDPR/AI Act), Remote Work, Career advice, History, or Scientific discovery (Math/Physics/Bio).\n     - *Fallback*: If it doesn't fit 1-5, use this.\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Scenario-Based)\n**SCENARIO A: Standard News (TechCrunch/Blog)**\n- Action: Extract key facts (Who, What, Numbers, Impact).\n- Style: \"DeepSeek发布V3，参数量671B，成本降低90%。\"\n\n**SCENARIO B: Community Discussion (Hacker News Comments)**\n- Trigger: If content contains many usernames/timestamps or is a list of comments.\n- Action: **Synthesize the consensus.** DO NOT say \"User A said this\". Instead, list the **Top 3 mentioned tools/solutions** or the **Main Controversy**.\n- Style: \"社区热议个人网站托管，推荐最多的方案是: 1.GitHub Pages; 2.Cloudflare; 3.Hugo。\" (Keep it dense!)\n- Length: Max 400 Chinese characters.\n\n**SCENARIO C: Content Missing**\n- Action: Return \"Analysis failed due to content access issues.\".\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n**Example 1 (News):**\n{\n  \"translation\": \"[AI] DeepSeek发布V3开源模型\",\n  \"summary\": \"DeepSeek-V3参数量达671B，MMLU得分88.5，训练成本仅550万美元，已在HuggingFace开源。\",\n  \"sentiment\": \"Positive\"\n}\n**Example 2 (Discussion):**\n{\n  \"translation\": \"[开发] HN热议：最好的个人博客方案\",\n  \"summary\": \"讨论集中在静态网站生成器。主流推荐使用 Hugo 或 Jekyll 配合 GitHub Pages 免费托管，部分用户推荐 Notion 转网站方案。\",\n  \"sentiment\": \"Neutral\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"qwen-plus-2025-12-01\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON.\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -287,7 +287,7 @@
             "source_id": "={{ $('Merge').item.json.id ? String($('Merge').item.json.id) : null }}",
             "created_at": "={{ $('Merge').item.json.created_at }}",
             "summary": "={{ $json.summary }}",
-            "updated_at": "={{ $now }}"
+            "updated_at": "={{ $now.toISO() }}"
           },
           "matchingColumns": [
             "url"
@@ -643,7 +643,7 @@
             "source": "Tech_Intelligence",
             "message": "={{ $json.message }}",
             "target_url": "={{ $json.target_url }}",
-            "created_at": "={{ $now }}"
+            "created_at": "={{ $now.toISO() }}"
           },
           "matchingColumns": [
             "id"
@@ -790,7 +790,7 @@
             "url": "={{ $('Loop Over Items').item.json.url }}",
             "error_reason": "Content Fetch Failed",
             "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
-            "created_at": "={{ $now }}",
+            "created_at": "={{ $now.toISO() }}",
             "title_cn": "={{ null }}"
           },
           "matchingColumns": [
@@ -906,7 +906,7 @@
             "url": "={{ $('Edit Fields').item.json.url }}",
             "error_reason": "AI Analysis Failed",
             "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
-            "created_at": "={{ $now }}"
+            "created_at": "={{ $now.toISO() }}"
           },
           "matchingColumns": [
             "url"
@@ -1000,6 +1000,7 @@
     },
     {
       "parameters": {
+        "operation": "upsert",
         "schema": {
           "__rl": true,
           "mode": "list",
@@ -1014,12 +1015,12 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "raw_content": "={{ $('Jina_Reader').item.json.data }}",
-            "created_at": "={{ $now }}",
+            "raw_content": "={{ $('Jina_Reader').item.json.data ? $('Jina_Reader').item.json.data.replace(/\\0/g, '') : '' }}",
+            "created_at": "={{ $now.toISO() }}",
             "url": "={{ $('Loop Over Items').item.json.url }}"
           },
           "matchingColumns": [
-            "id"
+            "url"
           ],
           "schema": [
             {
@@ -1039,7 +1040,8 @@
               "defaultMatch": false,
               "display": true,
               "type": "string",
-              "canBeUsedToMatch": true
+              "canBeUsedToMatch": true,
+              "removed": false
             },
             {
               "id": "raw_content",
@@ -1069,16 +1071,19 @@
       "typeVersion": 2.6,
       "position": [
         384,
-        -1280
+        -1264
       ],
-      "id": "dc794953-8999-4d54-9ae2-8d7e3e1b10ac",
+      "id": "9c43f803-98ea-44e0-a1ba-b24f1296f454",
       "name": "Insert rows in Jina",
+      "retryOnFail": true,
+      "maxTries": 5,
       "credentials": {
         "postgres": {
           "id": "16OTc6Oi6SG8mPOF",
           "name": "Postgres account"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "pinData": {},
@@ -1360,7 +1365,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "389bbd7c-b523-410d-ad71-a737f704be5d",
+  "versionId": "448253d7-dc39-4614-a68a-ca3c9af7a90b",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "cc71cb19c52277ee6a828e6a21e2dba61964271db5e597d972c12c82fd716ddf"
