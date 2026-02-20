@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS public.jina_raw_logs (
     id SERIAL PRIMARY KEY,
     url TEXT NOT NULL,
     raw_content TEXT, 
-    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT idx_unique_jina_url UNIQUE (url)
 );
 
 -- 4. System logs
