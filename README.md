@@ -1,6 +1,6 @@
 # AI 驱动的科技新闻系统
 
-![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase?style=flat-square)
+![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
 > **项目概述**：实时采集 Hacker News 与 TechCrunch 的低结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘与自动化日报提供整理好的信息。
