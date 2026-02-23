@@ -1,9 +1,9 @@
 # AI 驱动的科技新闻系统
 
-![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_DeepSeek-blue?style=flat-square)
+![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
-> **项目概述**：一个端到端的数据工程与商业智能解决方案。该系统旨在通过自动化流水线减轻科技行业的信息过载，实时采集 Hacker News 与 TechCrunch 的低结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘与自动化日报为决策提供量化支持。
+> **项目概述**：实时采集 Hacker News 与 TechCrunch 的低结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘与自动化日报提供整理好的信息。
 
 **[在线演示](https://dashboard.trainingcqy.com)** [PDF演示](assets/docs/Metabase.pdf)
 ---
@@ -53,7 +53,7 @@ flowchart LR
 系统的核心逻辑由 n8n 可视化编排实现，包含**多源采集、条件分流、AI 语义分析**及**异常熔断**机制。
 
 #### 主采集流水线 (Main)
-> *集成了 RSS 轮询、Jina 全文解析与 DeepSeek 推理的完整链路。*
+> *集成了 Jina 全文解析与 LLM 推理的完整链路。*
 ![Main](assets/screenshots/Main_workflow.png)
 
 #### 异常捕获与告警 (Error)
@@ -71,11 +71,11 @@ flowchart LR
 利用 **n8n** 作为工作流编排引擎，实现了数据获取的自动化与智能化。
 *   **多源异构数据获取**：“构建了基于 HTTP Polling 的混合采集层，兼容 REST API (Hacker News) 与 RSS 订阅源 (TechCrunch)，实现了多源异构数据的统一接入。
 *   **非结构化数据清洗**：集成 **Jina Reader** 将杂乱的 HTML 网页转换为干净的 Markdown 文本，提高 LLM 的准确率和效率。
-*   **AI 语义增强**：调用 **DeepSeek-V3** 模型，对长文本进行 NLP 处理，输出标准化的 JSON 数据：
+*   **AI 语义增强**：调用 **LLM** 模型，对长文本进行 NLP 处理，输出标准化的 JSON 数据：
     *   **智能摘要**：生成字数限制下的高密度关键事实摘要。
     *   **情感量化**：自动标记新闻情感倾向（Positive/Neutral/Negative）。
     *   **自动分类**：基于内容上下文自动提取赛道标签（如 AI、商业、安全）。
-    *   **成本控制**：采用 DeepSeek-V3 模型，在模型能力可接受的范围内，降低推理成本，实现了高性价比的文本清洗。
+    *   **成本控制**：采用国产模型，在模型能力可接受的范围内，降低推理成本，实现了高性价比的文本清洗。
 
 ### 2.2 数据仓库与建模层
 使用 **PostgreSQL 15** 作为核心数据仓库，通过分层设计保证数据的一致性与查询效率。
