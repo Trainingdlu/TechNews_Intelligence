@@ -1,4 +1,4 @@
-﻿version: '3.8'
+version: '3.8'
 
 services:
   postgres:
@@ -16,7 +16,7 @@ services:
     networks:
       - app_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -36,14 +36,14 @@ services:
       - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=${N8N_USER}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}      
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - JINA_API_KEY=${JINA_API_KEY}
-      
+
       - GENERIC_TIMEZONE=${TIMEZONE}
       - TZ=${TIMEZONE}
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
-      
+
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}
       - NO_PROXY=localhost,127.0.0.1,postgres,metabase
@@ -68,7 +68,9 @@ services:
     environment:
       - MB_DB_FILE=/metabase-data/metabase.db
     volumes:
-      - /metabase_data:/metabase-data
+      - metabase_data:/metabase-data
+      # 迁移/恢复：挂载宿主机上已有的 Metabase DB 文件
+      # - /metabase_data:/metabase-data
     networks:
       - app_network
 
@@ -76,6 +78,7 @@ volumes:
   pg_data:
   n8n_data:
   metabase_data:
+
 
 networks:
   app_network:

@@ -1,4 +1,4 @@
-﻿-- [DDL] PostgreSQL Table: tech_news
+-- [DDL] PostgreSQL Table: tech_news
 
 -- DROP TABLE IF EXISTS public.tech_news CASCADE;
 
@@ -71,7 +71,6 @@ CREATE INDEX IF NOT EXISTS idx_logs_created_at ON public.system_logs(created_at 
 
 -- 5. Performance Indexes
 CREATE INDEX idx_created_at ON public.tech_news(created_at);
-CREATE INDEX idx_updated_at ON public.tech_news(updated_at);
 CREATE INDEX idx_points ON public.tech_news(points DESC);
 CREATE INDEX idx_sentiment ON public.tech_news(sentiment);
 
@@ -88,3 +87,13 @@ CREATE TRIGGER update_tech_news_modtime
     BEFORE UPDATE ON public.tech_news
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_column();
+
+-- 7. Subscribers (Daily Brief)
+CREATE TABLE IF NOT EXISTS public.subscribers (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    name VARCHAR(50),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_subscriber_email UNIQUE (email)
+);

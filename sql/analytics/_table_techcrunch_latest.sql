@@ -15,4 +15,4 @@ SELECT
     url AS "原文链接"
 FROM view_dashboard_news
 WHERE source_type = 'TechCrunch'
-ORDER BY created_at DESC LIMIT 15;
+ORDER BY created_at_cn DESC LIMIT 15;

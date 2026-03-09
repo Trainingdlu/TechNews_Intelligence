@@ -3,15 +3,15 @@
 
 WITH weekly_stats AS (
     SELECT 
-        substring(title_cn from '\[(.*?)\]') AS category,
+        substring(title_cn from '[【\[](.*?)[】\]]') AS category,
         
-        DATE_TRUNC('week', created_at) as week_start,
+        DATE_TRUNC('week', created_at_cn) as week_start,
         
         SUM(points) as total_heat
     FROM 
         view_dashboard_news
     WHERE 
-        created_at > NOW() - INTERVAL '21 days'
+        created_at_cn > NOW() - INTERVAL '21 days'
         AND source_type = 'HackerNews'
     GROUP BY 
         1, 2
