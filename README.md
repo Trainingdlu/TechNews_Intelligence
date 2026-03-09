@@ -1,16 +1,17 @@
-# AI 驱动的科技新闻系统
+# TechNews Intelligence
 
 ![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
-> **项目概述**：实时采集 Hacker News 与 TechCrunch 的低结构化数据，利用大语言模型（LLM）进行结构化清洗与情感分析，最终通过交互式仪表盘与自动化日报提供整理好的信息。
+> 定时采集 Hacker News 与 TechCrunch 的数据，通过 LLM 进行结构化处理（翻译、摘要、情感分析、分类），存入 PostgreSQL，最终通过 Metabase 仪表盘和邮件日报进行展示。
 
-**[在线演示](https://dashboard.trainingcqy.com)** [PDF演示](assets/docs/Metabase.pdf)
+**[在线演示](https://dashboard.trainingcqy.com)**　|　[PDF 示例](assets/docs/Metabase.pdf)
+
 ---
 
-## 1. 系统架构设计
+## 1. 系统架构
 
-本项目遵循 **ELT (Extract, Load, Transform)** 架构设计，已容器化，并部署到腾讯云。
+项目基于 **ELT** 架构，使用 Docker Compose 编排，包含三个核心服务：n8n（工作流）、PostgreSQL（存储）、Metabase（可视化）。
 
 ```mermaid
 flowchart LR
@@ -23,7 +24,7 @@ flowchart LR
     B[n8n Automation]
     C{Is New Data?}
     D[Jina Reader API]
-    E[DeepSeek-V3 LLM]
+    E[LLM]
     F[Update Points]
     G[(PostgreSQL)]
     H[Metabase BI]
@@ -48,148 +49,163 @@ flowchart LR
     class G db;
     class I notify;
 ```
-### 自动化编排逻辑
 
-系统的核心逻辑由 n8n 可视化编排实现，包含**多源采集、条件分流、AI 语义分析**及**异常熔断**机制。
+### 工作流概览
+
+系统包含三条 n8n 工作流：
 
 #### 主采集流水线 (Main)
-> *集成了 Jina 全文解析与 LLM 推理的完整链路。*
+> 每小时触发，采集数据后通过 Jina Reader 提取全文，再调用 LLM 输出结构化 JSON（翻译、摘要、情感、分类）。已有数据仅更新热度值。
 ![Main](assets/screenshots/Main_workflow.png)
 
 #### 异常捕获与告警 (Error)
-> *独立的全局错误处理模块，负责拦截失败任务并触发邮件报警，写入系统日志。*
+> 全局错误处理模块。当任务失败时，将错误信息写入 `system_logs` 表并发送告警邮件。
 ![Alert](assets/screenshots/Alert_workflow.png)
 
-#### 自动化日报推送 (Brief)
-> *每日基于 SQL 筛选出最新与最热新闻，渲染为 HTML 邮件推送.*
+#### 日报推送 (Brief)
+> 每日 08:00 触发，从数据库筛选近 24 小时的热门新闻，渲染为 HTML 邮件发送。
 ![Brief](assets/screenshots/Brief_workflow.png)
+
 ---
 
-## 2. 核心实施阶段
+## 2. 功能说明
 
-### 2.1 数据采集与处理层
-利用 **n8n** 作为工作流编排引擎，实现了数据获取的自动化与智能化。
-*   **多源异构数据获取**：“构建了基于 HTTP Polling 的混合采集层，兼容 REST API (Hacker News) 与 RSS 订阅源 (TechCrunch)，实现了多源异构数据的统一接入。
-*   **非结构化数据清洗**：集成 **Jina Reader** 将杂乱的 HTML 网页转换为干净的 Markdown 文本，提高 LLM 的准确率和效率。
-*   **AI 语义增强**：调用 **LLM** 模型，对长文本进行 NLP 处理，输出标准化的 JSON 数据：
-    *   **智能摘要**：生成字数限制下的高密度关键事实摘要。
-    *   **情感量化**：自动标记新闻情感倾向（Positive/Neutral/Negative）。
-    *   **自动分类**：基于内容上下文自动提取赛道标签（如 AI、商业、安全）。
-    *   **成本控制**：采用国产模型，在模型能力可接受的范围内，降低推理成本，实现了高性价比的文本清洗。
+### 2.1 数据采集与处理
 
-### 2.2 数据仓库与建模层
-使用 **PostgreSQL 15** 作为核心数据仓库，通过分层设计保证数据的一致性与查询效率。
-*   **Schema 设计**：设计了包含 `url` 唯一约束的表结构，有效防止数据冗余和重复抓取。
-*   **视图抽象**：构建 `view_dashboard_news` 视图层，封装了底层逻辑：
-    *   **时区标准化**：将 UTC 时间转换为 UTC+8（北京时间）。
-    *   **数据去重**：基于 URL 自动归类去重。
-    *   **CDC 支持**：配置了 `updated_at` 触发器，自动记录数据变更时间。
+使用 n8n 编排数据获取流程：
+*   **数据源接入**：通过 REST API 获取 Hacker News 数据，通过 RSS 订阅获取 TechCrunch 数据，合并后统一处理。
+*   **全文提取**：使用 Jina Reader 将原始 HTML 页面转换为 Markdown 文本，作为 LLM 的输入。
+*   **LLM 结构化处理**：对提取的文本调用 LLM，输出包含以下字段的 JSON：
+    *   **中文标题**：附带分类标签（AI / 安全 / 硬件 / 开发 / 商业 / 生态）。
+    *   **摘要**：提取关键事实，社区讨论类内容则归纳共识观点。
+    *   **情感标注**：Positive / Neutral / Negative。
+*   **数据校验**：对 LLM 输出进行多条件校验（空值、解析失败等），不合格数据写入死信队列。
 
-### 2.3 业务分析与算法层
-本项目不仅仅是数据的展示，也包含了业务逻辑分析。核心算法包括：
-*   **Hacker News 重力算法复刻**：
-    *   逻辑：`Score = Points / (Time + 2)^1.8`
-    *   价值：引入时间衰减因子，识别“当前上升速度最快”的热点，而非单纯的历史高分内容。
-*   **赛道周环比增长**：
-    *   逻辑：使用 CTE 与 Self-Join 技术。
-    *   价值：量化不同技术赛道（如 AI ）的热度变化趋势，捕捉潜在的市场风口。
-*   **巨头声量份额分析**：
-    *   逻辑：使用 `UNION ALL` 解决多标签重叠统计问题。
-    *   价值：计算 OpenAI、Google 等科技巨头的讨论热度与占比。
+### 2.2 数据库设计
 
-### 2.4 可视化与交互层
-基于 **Metabase** 构建 BI 仪表盘，强调交互体验与信息分层。
-*   **主从联动交互**：利用 SQL 变量注入技术 (`[[AND id = {{selected_id}}]]`)，实现了点击左侧列表标题，右侧详情卡片刷新摘要的功能。
+使用 PostgreSQL 存储，主要包含以下表：
 
-### 2.5 自动化分发与可观测性
-为了提升系统的稳定性和信息触达效率，构建了完整的主动推送机制。
-*   **全链路异常捕获**：设计了全局错误捕获工作流。当 API 超时、解析失败或数据库写入错误时，自动捕获错误与节点信息。
-*   **智能日报推送**：每天08:00基于 SQL 筛选出最新与最热新闻，渲染为 HTML 邮件自动发送。
+| 表名 | 用途 |
+|------|------|
+| `tech_news` | 主数据表，`url` 唯一约束防止重复 |
+| `tech_news_failed` | 死信队列，记录处理失败的条目 |
+| `jina_raw_logs` | Jina Reader 返回的原始内容 |
+| `system_logs` | 系统运行日志 |
+
+视图 `view_dashboard_news` 封装了以下逻辑：
+*   UTC → UTC+8 时区转换
+*   基于 URL 和 `source_id` 的来源分类（HackerNews / TechCrunch）
+*   `hours_ago` 时间差计算
+*   HackerNews 讨论页链接生成
+
+`updated_at` 字段通过触发器自动更新。
+
+### 2.3 分析查询
+
+`sql/analytics/` 下包含 14 条供 Metabase 使用的 SQL 查询：
+
+| 查询 | 说明 |
+|------|------|
+| 重力排名 | 复刻 HN 排名公式 `Points / (Hours + 2)^1.8`，筛选 48 小时内上升最快的内容 |
+| 赛道周环比 | 使用 CTE + Self-Join 计算各分类标签本周与上周的热度变化率 |
+| 巨头声量 | 通过正则匹配统计 10 家科技公司的提及次数与热度 |
+| 发布热力图 | 按小时 × 星期聚合 HackerNews 平均热度，使用 `FILTER` 子句手动透视 |
+| 负面率指数 | 各赛道负面新闻占比 |
+| 来源情绪差异 | 对比 HackerNews 与 TechCrunch 的情绪分布 |
+| 情绪效能 | 不同情感类别下的平均热度与数量 |
+| 话题分布 | 按分类标签统计新闻数量与热度 |
+| 舆情趋势 | 48 小时内按小时聚合的情绪分布 |
+| 媒体日更 | TechCrunch 近 30 天每日发布量 |
+| 动态摘要卡片 | 通过 Metabase 变量注入实现 Master-Detail 交互 |
+| HN 热榜 / TC 快讯 / 社区热议 | 列表与气泡图数据源 |
+
+### 2.4 可视化与推送
+
+*   **Metabase 仪表盘**：展示上述分析结果，支持点击标题查看摘要的主从联动交互。
+*   **邮件日报**：每日早 8 点发送，包含 HackerNews Top 7 和 TechCrunch Top 7，支持订阅者管理。
+*   **异常告警**：流程出错时自动发送告警邮件并记录日志。
 
 ---
 
 ## 3. 目录结构
 
-项目采用标准的工程化目录结构，实现基础设施代码与业务逻辑分离。
-
 ```text
 TechNews_Intelligence/
-├── etl_workflow/                   # n8n 自动化工作流配置
-│   ├── Tech_Intelligence.json      # 核心采集流程
+├── etl_workflow/                   # n8n 工作流配置
+│   ├── Tech_Intelligence.json      # 主采集流程
 │   ├── System_Alert_Service.json   # 异常捕获流程
 │   └── Daily_Tech_Brief.json       # 日报推送流程
 │
 ├── sql/
-│   ├── infrastructure/        # DDL: 基础设施层 (建表与视图)
-│   │   ├── _schema_ddl.sql    # 数据库表结构定义 (含 Trigger/Index)
-│   │   └── _view_logic.sql    # 视图层逻辑 (时区转换、清洗、指标预计算)
+│   ├── infrastructure/             # DDL：建表与视图
+│   │   ├── _schema_ddl.sql         # 表结构定义（含 Trigger / Index）
+│   │   └── _view_logic.sql         # 视图逻辑（时区转换、来源分类、指标计算）
 │   │
-│   └── analytics/                            # DML: 业务分析层 (Metabase 核心逻辑)
-│       ├── _algo_gravity_ranking.sql         # HN 重力排名算法
-│       ├── _analysis_category_growth.sql     # 赛道周环比增长率
-│       ├── _analysis_heatmap.sql             # 黄金发布时间热力图
-│       ├── _analysis_negativity_index.sql    # 赛道负面率/风险指数
-│       ├── _analysis_source_bias.sql         # 媒体 vs 社区舆论温差
-│       ├── _analysis_tech_giants_battle.sql  # 科技巨头声量份额
-│       ├── _card_dynamic_summary.sql         # 动态摘要卡片
-│       ├── _chart_engagement.sql             # 情绪与热度效能分析
-│       ├── _chart_market_attention.sql       # 市场注意力分布
-│       ├── _chart_sentiment_trend.sql        # 舆情分时趋势
-│       ├── _chart_techcrunch_daily.sql       # 媒体日更趋势
-│       ├── _table_community_hits.sql         # 社区热议
-│       ├── _table_hackernews_top.sql         # Hacker News 热榜
-│       └── _table_techcrunch_latest.sql      # TechCrunch 快讯
+│   └── analytics/                  # DML：Metabase 分析查询
+│       ├── _algo_gravity_ranking.sql
+│       ├── _analysis_category_growth.sql
+│       ├── _analysis_heatmap.sql
+│       ├── _analysis_negativity_index.sql
+│       ├── _analysis_source_bias.sql
+│       ├── _analysis_tech_giants_battle.sql
+│       ├── _card_dynamic_summary.sql
+│       ├── _chart_engagement.sql
+│       ├── _chart_market_attention.sql
+│       ├── _chart_sentiment_trend.sql
+│       ├── _chart_techcrunch_daily.sql
+│       ├── _table_community_hits.sql
+│       ├── _table_hackernews_top.sql
+│       └── _table_techcrunch_latest.sql
 │
-├── deployment/                # Docker 配置文件、环境模板、Metabase示例
+├── deployment/                     # Docker 部署配置
+│   ├── docker-compose.yml
+│   └── .env.example
+│
 └── assets/
-    ├──docs                    # Metabase dashboard
-    └──screenshots             # N8n 工作流截图
+    ├── docs/                       # Metabase 仪表盘 PDF
+    └── screenshots/                # 工作流截图
 ```
 
 ---
 
-## 4. 本地部署
+## 4. 部署
 
-本项目完全容器化，支持一键部署。
+项目已容器化，通过 Docker Compose 部署。
 
 ### 前置条件
-*   已安装 Docker
-*   获取 DeepSeek API Key 及 Jina Reader API Key
+*   已安装 Docker 与 Docker Compose
+*   已获取 LLM API Key 及 Jina Reader API Key
 
-### 克隆仓库
+### 步骤
+
 ```bash
+# 1. 克隆仓库
 git clone https://github.com/Trainingdlu/TechNews_Intelligence.git
 cd TechNews_Intelligence
-```
 
-### 环境配置
-复制配置文件模板并根据运行环境更改。
-*注意：`docker-compose.yml` 已配置为生产环境模式。*
-
-```bash
+# 2. 配置环境变量
 cp deployment/.env.example deployment/.env
-# 使用文本编辑器修改 .env 文件，填入数据库密码及 API Keys
-```
+# 编辑 deployment/.env，填入数据库密码及 API Key
 
-### 启动服务
-```bash
+# 3. 启动服务
 cd deployment
 docker-compose up -d
 ```
 
 ### 导入工作流
 1.  访问 `http://localhost:5678` 进入 n8n 管理界面。
-2.  导入 `etl_workflow/` 中的文件。**重要**：在 n8n 界面中配置 PostgreSQL 凭证并添加 Gmail App Password 以启用日报和报警功能。
-3.  激活工作流。
+2.  导入 `etl_workflow/` 目录下的三个 JSON 文件。
+3.  在 n8n 中配置 PostgreSQL 连接凭证和 SMTP 凭证（用于邮件功能）。
+4.  激活工作流。
 
 ---
 
 ## 5. 开源协议
 
-本项目采用 **GNU AGPLv3** 开源协议。
+本项目采用 [GNU AGPLv3](LICENSE) 协议。
 
 ---
 
 ## 6. 作者
 
-**Trainingcqy** <br> [trainingcqy@gmail.com](mailto:trainingcqy@gmail.com)
+**Trainingcqy** · [trainingcqy@gmail.com](mailto:trainingcqy@gmail.com)
