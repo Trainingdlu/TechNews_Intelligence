@@ -3,7 +3,7 @@
 ![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
-> 定时采集 Hacker News 与 TechCrunch 的数据，通过 LLM 进行结构化处理（翻译、摘要、情感分析、分类），存入 PostgreSQL，最终通过 Metabase 仪表盘和邮件日报进行展示。
+> 定时采集 Hacker News 与 TechCrunch 的数据，通过 LLM 进行结构化处理（摘要、情感分析、分类），存入 PostgreSQL，最终通过 Metabase 仪表盘和邮件日报进行展示。
 
 **[在线演示](https://dashboard.trainingcqy.com)**　|　[PDF 示例](assets/docs/Metabase.pdf)
 
@@ -102,22 +102,22 @@ flowchart LR
 
 ### 2.3 分析查询
 
-`sql/analytics/` 下包含 14 条供 Metabase 使用的 SQL 查询：
+`sql/analytics/` 下包含 14 条 Metabase SQL 查询:
 
-| 查询 | 说明 |
-|------|------|
-| 重力排名 | 复刻 HN 排名公式 `Points / (Hours + 2)^1.8`，筛选 48 小时内上升最快的内容 |
-| 赛道周环比 | 使用 CTE + Self-Join 计算各分类标签本周与上周的热度变化率 |
-| 巨头声量 | 通过正则匹配统计 10 家科技公司的提及次数与热度 |
-| 发布热力图 | 按小时 × 星期聚合 HackerNews 平均热度，使用 `FILTER` 子句手动透视 |
-| 负面率指数 | 各赛道负面新闻占比 |
-| 来源情绪差异 | 对比 HackerNews 与 TechCrunch 的情绪分布 |
-| 情绪效能 | 不同情感类别下的平均热度与数量 |
-| 话题分布 | 按分类标签统计新闻数量与热度 |
-| 舆情趋势 | 48 小时内按小时聚合的情绪分布 |
-| 媒体日更 | TechCrunch 近 30 天每日发布量 |
-| 动态摘要卡片 | 通过 Metabase 变量注入实现 Master-Detail 交互 |
-| HN 热榜 / TC 快讯 / 社区热议 | 列表与气泡图数据源 |
+*   `_table_hackernews_top.sql`：**社区热议** - 按热度分布抓取 HackerNews Top15 热门话题。
+*   `_table_techcrunch_latest.sql`：**实时快讯** - 按发布时间抓取 TechCrunch 的最新动态。
+*   `_algo_gravity_ranking.sql`：**重力排名** - 复刻 HN 排名公式，展示上升最快的新闻。
+*   `_card_dynamic_summary.sql`：**动态摘要卡片** - 配合 Metabase 参数传递，实现点击标题查看 AI 摘要。
+*   `_chart_market_attention.sql`：**热门话题分类统计** - 各分类标签（如 AI、硬件）的发布数量与热度总量。
+*   `_table_community_hits.sql`：**话题热度分布** - 结合时长、热度和情绪，散点化展示近期高热度讨论。
+*   `_chart_sentiment_trend.sql`：**舆情分时趋势** - 展示最近三天情绪的变化。
+*   `_chart_engagement.sql`：**情绪效能分析** - 统计不同情感对新闻传播热度的影响。
+*   `_analysis_negativity_index.sql`：**负面率指数** - 各垂直赛道的负面新闻浓度。
+*   `_analysis_heatmap.sql`：**发布热力图** - 展示热度最高的发帖时间。
+*   `_analysis_category_growth.sql`：**赛道周环比** - CTE 与自连接计算各分类本周与上周的热度增量差。
+*   `_analysis_tech_giants_battle.sql`：**巨头声量战** - 统计 Microsoft、OpenAI 等 10 家头部公司的热度。
+*   `_analysis_source_bias.sql`：**来源情绪差异** - 体现技术社区 (HN) 与媒体机构 (TC) 的情绪倾向差异。
+*   `_chart_techcrunch_daily.sql`：**媒体日更** - 统计 TechCrunch 每日发文量。
 
 ### 2.4 可视化与推送
 
@@ -138,24 +138,24 @@ TechNews_Intelligence/
 │
 ├── sql/
 │   ├── infrastructure/             # DDL：建表与视图
-│   │   ├── _schema_ddl.sql         # 表结构定义（含 Trigger / Index）
-│   │   └── _view_logic.sql         # 视图逻辑（时区转换、来源分类、指标计算）
+│   │   ├── schema_ddl.sql         # 表结构定义（含 Trigger / Index）
+│   │   └── view_logic.sql         # 视图逻辑（时区转换、来源分类、指标计算）
 │   │
 │   └── analytics/                  # DML：Metabase 分析查询
-│       ├── _algo_gravity_ranking.sql
-│       ├── _analysis_category_growth.sql
-│       ├── _analysis_heatmap.sql
-│       ├── _analysis_negativity_index.sql
-│       ├── _analysis_source_bias.sql
-│       ├── _analysis_tech_giants_battle.sql
-│       ├── _card_dynamic_summary.sql
-│       ├── _chart_engagement.sql
-│       ├── _chart_market_attention.sql
-│       ├── _chart_sentiment_trend.sql
-│       ├── _chart_techcrunch_daily.sql
-│       ├── _table_community_hits.sql
-│       ├── _table_hackernews_top.sql
-│       └── _table_techcrunch_latest.sql
+│       ├── algo_gravity_ranking.sql
+│       ├── analysis_category_growth.sql
+│       ├── analysis_heatmap.sql
+│       ├── analysis_negativity_index.sql
+│       ├── analysis_source_bias.sql
+│       ├── analysis_tech_giants_battle.sql
+│       ├── card_dynamic_summary.sql
+│       ├── chart_engagement.sql
+│       ├── chart_market_attention.sql
+│       ├── chart_sentiment_trend.sql
+│       ├── chart_techcrunch_daily.sql
+│       ├── table_community_hits.sql
+│       ├── table_hackernews_top.sql
+│       └── table_techcrunch_latest.sql
 │
 ├── deployment/                     # Docker 部署配置
 │   ├── docker-compose.yml

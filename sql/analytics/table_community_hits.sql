@@ -20,7 +20,7 @@ FROM
 WHERE
   points IS NOT NULL
   AND points >= 30  -- 过滤低热度噪音
-  AND hours_ago <= 168 -- 只看最近7天
+  AND created_at_cn >= NOW() - INTERVAL '7 days' -- 只看最近7天
 ORDER BY
   points DESC
 LIMIT 500;

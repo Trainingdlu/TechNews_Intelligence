@@ -9,6 +9,6 @@ SELECT
     ROUND((points::numeric) / POWER((hours_ago + 2), 1.8), 2) AS "重力得分"
 
 FROM view_dashboard_news
-WHERE hours_ago < 48
+WHERE created_at_cn >= NOW() - INTERVAL '48 hours'
 ORDER BY 5 DESC
 LIMIT 5;
