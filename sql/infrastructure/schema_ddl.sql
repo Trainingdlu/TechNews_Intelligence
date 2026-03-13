@@ -71,6 +71,7 @@ CREATE INDEX IF NOT EXISTS idx_logs_created_at ON public.system_logs(created_at 
 
 -- 5. Performance Indexes
 CREATE INDEX idx_created_at ON public.tech_news(created_at);
+CREATE INDEX idx_created_at_cn ON public.tech_news ((created_at + '08:00:00'::interval));
 CREATE INDEX idx_points ON public.tech_news(points DESC);
 CREATE INDEX idx_sentiment ON public.tech_news(sentiment);
 
