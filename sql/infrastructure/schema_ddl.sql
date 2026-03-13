@@ -70,10 +70,10 @@ CREATE TABLE IF NOT EXISTS public.system_logs (
 CREATE INDEX IF NOT EXISTS idx_logs_created_at ON public.system_logs(created_at DESC);
 
 -- 5. Performance Indexes
-CREATE INDEX idx_created_at ON public.tech_news(created_at);
-CREATE INDEX idx_created_at_cn ON public.tech_news ((created_at + '08:00:00'::interval));
-CREATE INDEX idx_points ON public.tech_news(points DESC);
-CREATE INDEX idx_sentiment ON public.tech_news(sentiment);
+CREATE INDEX IF NOT EXISTS idx_created_at ON public.tech_news(created_at);
+CREATE INDEX IF NOT EXISTS idx_created_at_cn ON public.tech_news ((created_at + '08:00:00'::interval));
+CREATE INDEX IF NOT EXISTS idx_points ON public.tech_news(points DESC);
+CREATE INDEX IF NOT EXISTS idx_sentiment ON public.tech_news(sentiment);
 
 -- 6. Update Trigger Function
 CREATE OR REPLACE FUNCTION update_modified_column()
@@ -84,6 +84,7 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+DROP TRIGGER IF EXISTS update_tech_news_modtime ON public.tech_news;
 CREATE TRIGGER update_tech_news_modtime
     BEFORE UPDATE ON public.tech_news
     FOR EACH ROW
