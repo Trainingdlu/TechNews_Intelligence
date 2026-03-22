@@ -15,49 +15,36 @@
 
 ```mermaid
 flowchart LR
-    %% Data Sources
     subgraph Sources [数据接入层]
-        HN[Hacker News API]
-        TC[TechCrunch RSS]
+        HN[Hacker News<br/>REST API]
+        TC[TechCrunch<br/>RSS 订阅]
     end
 
-    %% ELT Pipeline
-    subgraph Pipeline [处理编排层 - n8n]
-        N8N[基于 n8n 的 ELT 引擎]
-        JINA[Jina Reader <br/> HTML 提取 API]
-        LLM[LLM <br/> 摘要与情感分类]
-        
-        N8N -.- JINA
-        N8N -.- LLM
+    subgraph Pipeline [处理编排层 — n8n]
+        direction TB
+        ELT[ELT 编排引擎]
+        JINA[Jina Reader<br/>HTML 全文提取]
+        LLM[LLM 处理<br/>摘要 · 分类 · 情感]
+        ELT --> JINA --> LLM
     end
 
-    %% Storage
     subgraph Storage [数据存储层]
-        PG[(PostgreSQL <br/> 关系型数据库)]
+        PG[(PostgreSQL<br/>关系型数据库)]
     end
 
-    %% Presentation Layer
-    subgraph Presentation [应用呈现层]
-        MB[Metabase <br/> 可视化 BI 分析]
-        Email[SMTP <br/> 每日邮件简报]
+    subgraph Apps [应用呈现层]
+        MB[Metabase<br/>BI 可视化]
+        SMTP[SMTP<br/>邮件推送]
     end
 
-    %% Data Flow Connections
-    Sources -->|原始 RSS/JSON| N8N
-    N8N -->|结构化后落库| PG
-    PG ==>|SQL 查询| MB
-    PG -->|渲染模板| Email
-    
-    %% Styling
-    classDef source fill:#f5f5f5,stroke:#999,stroke-width:1px,stroke-dasharray: 5 5;
-    classDef engine fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
-    classDef db fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
-    classDef app fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    HN --> ELT
+    TC --> ELT
+    ELT --> PG
+    PG --> MB
+    PG --> SMTP
 
-    class HN,TC source;
-    class N8N,JINA,LLM engine;
-    class PG db;
-    class MB,Email app;
+    classDef default fill:#f5f5f5,stroke:#aaa,stroke-width:1px,color:#333
+    classDef container fill:#fafafa,stroke:#bbb
 ```
 
 ### 工作流概览
