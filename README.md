@@ -13,43 +13,7 @@
 
 项目基于 **ELT** 架构，使用 Docker Compose 编排，包含三个核心服务：n8n（工作流）、PostgreSQL（存储）、Metabase（可视化）。
 
-```mermaid
-flowchart LR
-    HN["Hacker News<br/>REST API"]
-    TC["TechCrunch<br/>RSS 订阅"]
-    ELT["ELT 编排引擎"]
-    JINA["Jina Reader<br/>HTML 全文提取"]
-    LLM["LLM 处理<br/>摘要 · 分类 · 情感"]
-    PG[("PostgreSQL<br/>关系型数据库")]
-    MB["Metabase<br/>BI 可视化"]
-    SMTP["SMTP<br/>邮件推送"]
-
-    subgraph Sources [数据接入层]
-        HN
-        TC
-    end
-
-    subgraph Pipeline [处理编排层 — n8n]
-        ELT --> JINA --> LLM
-    end
-
-    subgraph Storage [数据存储层]
-        PG
-    end
-
-    subgraph Apps [应用呈现层]
-        MB
-        SMTP
-    end
-
-    HN --> ELT
-    TC --> ELT
-    ELT --> PG
-    PG --> MB
-    PG --> SMTP
-
-    classDef default fill:#f0f0f0,stroke:#999,stroke-width:1px,color:#333
-```
+![系统架构](assets/architecture.svg)
 
 ### 工作流概览
 
