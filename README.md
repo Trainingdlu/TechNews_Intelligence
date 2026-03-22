@@ -13,7 +13,7 @@
 
 项目基于 **ELT** 架构，使用 Docker Compose 编排，包含三个核心服务：n8n（工作流）、PostgreSQL（存储）、Metabase（可视化）。
 
-![系统架构](assets/architecture.svg)
+![系统架构](assets/svg/architecture.svg)
 
 ### 工作流概览
 
