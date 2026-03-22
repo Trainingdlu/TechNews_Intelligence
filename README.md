@@ -15,39 +15,49 @@
 
 ```mermaid
 flowchart LR
-    classDef node fill:#ffffff,stroke:#000000,stroke-width:1px,color:#000000,rx:0,ry:0;
-    classDef logic fill:#ffffff,stroke:#000000,stroke-width:1px,stroke-dasharray: 5 5,color:#000000;
-    classDef db fill:#ffffff,stroke:#000000,stroke-width:1px,shape:cylinder,color:#000000;
-    classDef notify fill:#f0f0f0,stroke:#000000,stroke-width:2px,color:#000000;
-    
-    A([RSS / Hacker News])
-    B[n8n Automation]
-    C{Is New Data?}
-    D[Jina Reader API]
-    E[LLM]
-    F[Update Points]
-    G[(PostgreSQL)]
-    H[Metabase BI]
-    I(Email Notification)
+    %% Data Sources
+    subgraph Sources [数据接入层]
+        HN[Hacker News API]
+        TC[TechCrunch RSS]
+    end
 
-    A -->|Trigger| B
-    B --> C
-    
-    C -- Yes --> D
-    D -->|Full Text| E
-    E -->|JSON Output| G
-    
-    C -- No --> F
-    F -->|Update| G
-    
-    G -->|SQL Query| H
-    G -->|Daily Brief| I  
-    B -->|Error Alert| I
+    %% ELT Pipeline
+    subgraph Pipeline [处理编排层 - n8n]
+        N8N[基于 n8n 的 ELT 引擎]
+        JINA[Jina Reader <br/> HTML 提取 API]
+        LLM[LLM <br/> 摘要与情感分类]
+        
+        N8N -.- JINA
+        N8N -.- LLM
+    end
 
-    class A,B,D,E,F,H node;
-    class C logic;
-    class G db;
-    class I notify;
+    %% Storage
+    subgraph Storage [数据存储层]
+        PG[(PostgreSQL <br/> 关系型数据库)]
+    end
+
+    %% Presentation Layer
+    subgraph Presentation [应用呈现层]
+        MB[Metabase <br/> 可视化 BI 分析]
+        Email[SMTP <br/> 每日邮件简报]
+    end
+
+    %% Data Flow Connections
+    Sources -->|原始 RSS/JSON| N8N
+    N8N -->|结构化后落库| PG
+    PG ==>|SQL 查询| MB
+    PG -->|渲染模板| Email
+    
+    %% Styling
+    classDef source fill:#f5f5f5,stroke:#999,stroke-width:1px,stroke-dasharray: 5 5;
+    classDef engine fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    classDef db fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef app fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+
+    class HN,TC source;
+    class N8N,JINA,LLM engine;
+    class PG db;
+    class MB,Email app;
 ```
 
 ### 工作流概览
