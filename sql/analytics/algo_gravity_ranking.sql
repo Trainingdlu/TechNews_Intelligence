@@ -5,10 +5,11 @@ SELECT
     points AS "热度",
     hours_ago AS "发布时长",
     url AS "链接", 
+	source_type AS "来源",
     
     ROUND((points::numeric) / POWER((hours_ago + 2), 1.8), 2) AS "重力得分"
 
 FROM view_dashboard_news
-WHERE created_at_cn >= NOW() - INTERVAL '48 hours'
-ORDER BY 5 DESC
+WHERE created_at_cn >= NOW() - INTERVAL '48 hours' AND source_type = 'HackerNews'
+ORDER BY 6 DESC
 LIMIT 5;
