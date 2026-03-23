@@ -1,6 +1,7 @@
--- [DDL] PostgreSQL Table: tech_news
+-- [DDL] PostgreSQL Table
 
--- DROP TABLE IF EXISTS public.tech_news CASCADE;
+-- 0. Extensions
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- 1. Create Table
 CREATE TABLE IF NOT EXISTS public.tech_news (
@@ -52,7 +53,16 @@ CREATE TABLE IF NOT EXISTS public.jina_raw_logs (
     CONSTRAINT idx_unique_jina_url UNIQUE (url)
 );
 
--- 4. System logs
+-- 4. News Embeddings
+CREATE TABLE IF NOT EXISTS public.news_embeddings (
+    id SERIAL PRIMARY KEY,
+    url TEXT NOT NULL,
+    embedding vector(1024),
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT idx_unique_embedding_url UNIQUE (url)
+);
+
+-- 5. System logs
 CREATE TABLE IF NOT EXISTS public.system_logs (
     id SERIAL PRIMARY KEY,
     
@@ -69,13 +79,20 @@ CREATE TABLE IF NOT EXISTS public.system_logs (
 -- Index for logs (Logs accumulate fast, indexing time is crucial for cleanup/querying)
 CREATE INDEX IF NOT EXISTS idx_logs_created_at ON public.system_logs(created_at DESC);
 
--- 5. Performance Indexes
+-- 6. Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_created_at ON public.tech_news(created_at);
 CREATE INDEX IF NOT EXISTS idx_created_at_cn ON public.tech_news ((created_at + '08:00:00'::interval));
 CREATE INDEX IF NOT EXISTS idx_points ON public.tech_news(points DESC);
 CREATE INDEX IF NOT EXISTS idx_sentiment ON public.tech_news(sentiment);
 
--- 6. Update Trigger Function
+-- NOTE: This index is safe to create on an empty table, but should be rebuilt
+-- after the initial data backfill to ensure optimal clustering quality.
+-- Run: REINDEX INDEX idx_embedding_vector;
+CREATE INDEX IF NOT EXISTS idx_embedding_vector ON public.news_embeddings
+USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
+
+-- 7. Update Trigger Function
 CREATE OR REPLACE FUNCTION update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -90,7 +107,7 @@ CREATE TRIGGER update_tech_news_modtime
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_column();
 
--- 7. Subscribers (Daily Brief)
+-- 8. Subscribers (Daily Brief)
 CREATE TABLE IF NOT EXISTS public.subscribers (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL,
