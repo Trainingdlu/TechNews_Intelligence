@@ -387,6 +387,9 @@ def generate_response(history: list[dict], user_message: str) -> str:
     无状态调用：接收完整对话历史 + 新消息，返回 Agent 回复文本。
     适用于 Web API / Bot 等无状态部署场景。
 
+    使用 Chat 接口而非 generate_content，因为只有 Chat 接口
+    才支持 automatic_function_calling 的完整循环（自动执行工具并回传结果）。
+
     Args:
         history: 历史对话列表，格式 [{"role": "user", "parts": [...]}, ...]
         user_message: 本轮用户输入
@@ -400,13 +403,9 @@ def generate_response(history: list[dict], user_message: str) -> str:
 
     client = genai.Client(api_key=api_key)
 
-    # 构造完整的 contents 列表
-    contents = list(history)
-    contents.append({"role": "user", "parts": [{"text": user_message}]})
-
-    response = client.models.generate_content(
+    # 使用 Chat 接口：传入历史记录，支持自动函数调用循环
+    chat = client.chats.create(
         model="gemini-2.5-pro",
-        contents=contents,
         config=types.GenerateContentConfig(
             tools=AGENT_TOOLS,
             system_instruction=SYSTEM_INSTRUCTION,
@@ -414,7 +413,10 @@ def generate_response(history: list[dict], user_message: str) -> str:
                 disable=False
             ),
         ),
+        history=history,
     )
+
+    response = chat.send_message(user_message)
 
     if getattr(response, "candidates", None) is None or not response.candidates:
         return "[错误] 模型未能生成任何候选内容，可能触发了平台安全性拦截机制。"

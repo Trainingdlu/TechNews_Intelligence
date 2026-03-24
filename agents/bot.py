@@ -45,47 +45,47 @@ def _trim_history(history: list[dict]) -> list[dict]:
     return history
 
 
-# ---------------------------------------------------------------------------
-# Telegram MarkdownV2 转义
-# ---------------------------------------------------------------------------
-_MARKDOWNV2_ESCAPE_RE = re.compile(r"([_\[\]()~`>#+\-=|{}.!\\])")
+import html as html_mod
 
 
-def _escape_markdownv2(text: str) -> str:
-    """转义 MarkdownV2 中的特殊字符，但保留常用格式标记。
+def _format_for_telegram(text: str) -> str:
+    """将 Gemini 输出的 Markdown 转换为 Telegram HTML 格式。
 
-    保留的格式：**bold**  → *bold*（Telegram 风格）
-    其余所有 MarkdownV2 特殊字符均转义，避免发送失败。
+    策略：
+    - # / ## / ### 标题 → <b>粗体</b>
+    - **正文加粗** → 去除星号，保留纯文本
+    - 其余内容 HTML 转义，防止解析错误
     """
-    # 1. 将 Gemini 风格的 **bold** 转为占位符
-    parts = re.split(r"\*\*(.+?)\*\*", text, flags=re.DOTALL)
-
+    lines = text.split("\n")
     result = []
-    for i, part in enumerate(parts):
-        if i % 2 == 1:
-            # 奇数段 = bold 内容：转义内部特殊字符后用 * 包裹
-            result.append("*" + _MARKDOWNV2_ESCAPE_RE.sub(r"\\\1", part) + "*")
-        else:
-            # 偶数段 = 普通文本：转义所有特殊字符（含 *）
-            escaped = _MARKDOWNV2_ESCAPE_RE.sub(r"\\\1", part)
-            # 额外转义独立的 * 号（不在 bold 标记中的）
-            escaped = escaped.replace("*", "\\*")
-            result.append(escaped)
-    return "".join(result)
+    for line in lines:
+        stripped = line.strip()
+        # 处理 Markdown 标题行
+        if stripped.startswith("#"):
+            title = stripped.lstrip("#").strip()
+            title = title.replace("**", "")
+            title = html_mod.escape(title)
+            if title:
+                result.append(f"<b>{title}</b>")
+            continue
+        # 正文：提取 **bold** 内容后去除星号
+        line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
+        line = html_mod.escape(line)
+        result.append(line)
+    return "\n".join(result)
 
 
 async def _send_reply(message, text: str):
-    """尝试以 MarkdownV2 发送，失败则回退到纯文本。"""
-    chunks = [text[i:i + 4096] for i in range(0, len(text), 4096)]
+    """尝试以 HTML 模式发送，失败则回退到纯文本。"""
+    formatted = _format_for_telegram(text)
+    chunks = [formatted[i:i + 4096] for i in range(0, len(formatted), 4096)]
     for chunk in chunks:
         try:
-            await message.reply_text(
-                _escape_markdownv2(chunk),
-                parse_mode="MarkdownV2",
-            )
+            await message.reply_text(chunk, parse_mode="HTML")
         except Exception:
-            # MarkdownV2 解析失败时回退纯文本
-            await message.reply_text(chunk)
+            # HTML 解析失败时回退纯文本（去除标签）
+            plain = re.sub(r"<[^>]+>", "", chunk)
+            await message.reply_text(plain)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -115,7 +115,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conversation_histories[chat_id] = []
 
     # 发送"正在思考"提示
-    thinking_msg = await update.message.reply_text("正在分析，请稍候……")
+    thinking_msg = await update.message.reply_text("正在分析，请稍候")
 
     try:
         history = conversation_histories[chat_id]
