@@ -76,6 +76,25 @@ services:
     networks:
       - app_network
 
+  bot:
+    build: .
+    container_name: tech_news_bot
+    restart: always
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASS=${POSTGRES_PASSWORD}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JINA_API_KEY=${JINA_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pg_data:
   n8n_data:
