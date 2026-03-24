@@ -455,7 +455,8 @@
           "id": "16OTc6Oi6SG8mPOF",
           "name": "Postgres account"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1476,7 +1477,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "1460285c-39e5-496b-81b8-3f54d0d28a91",
+  "versionId": "93bf64bc-b08d-4979-8af7-91ec170af080",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "cc71cb19c52277ee6a828e6a21e2dba61964271db5e597d972c12c82fd716ddf"
