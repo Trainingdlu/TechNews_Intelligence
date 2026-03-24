@@ -72,7 +72,7 @@ services:
     volumes:
       # 此处为挂载宿主机上已有的 Metabase DB 文件
       - ./:/metabase-data
-      # 若无 Metabase DB 文件采用下面的形式
+      # 注意：若无 Metabase DB 文件应采用下面的形式
       # - metabase_data:/metabase-data 
     networks:
       - app_network
