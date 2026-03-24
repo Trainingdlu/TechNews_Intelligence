@@ -1,0 +1,4 @@
+google-genai
+requests
+psycopg2-binary
+python-dotenv

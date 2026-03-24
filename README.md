@@ -3,7 +3,7 @@
 ![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
-> 定时采集 Hacker News 与 TechCrunch 的数据，通过 LLM 进行结构化处理（摘要、情感分析、分类），存入 PostgreSQL，最终通过 Metabase 仪表盘和邮件日报进行展示。
+> 定时采集 Hacker News 与 TechCrunch 的数据，通过 LLM 进行结构化处理（摘要、情感分析、分类），存入 PostgreSQL，并自动生成语义向量支持相似度搜索。最终通过 Metabase 仪表盘、邮件日报和 AI 深度分析 Agent 进行展示与交互。
 
 **[在线演示](https://dashboard.trainingcqy.com)**　|　[PDF 示例](assets/docs/Metabase.pdf)
 
@@ -11,7 +11,7 @@
 
 ## 1. 系统架构
 
-项目基于 **ELT** 架构，使用 Docker Compose 编排，包含三个核心服务：n8n（工作流）、PostgreSQL（存储）、Metabase（可视化）。
+项目基于 **ELT** 架构，使用 Docker Compose 编排，包含三个核心服务：n8n（工作流与向量化）、PostgreSQL（存储与向量检索）、Metabase（可视化），以及独立运行的 AI 分析 Agent。
 
 ![系统架构](assets/svg/architecture.svg)
 
@@ -20,7 +20,7 @@
 系统包含三条 n8n 工作流：
 
 #### 主采集流水线 (Main)
-> 每小时触发，采集数据后通过 Jina Reader 提取全文，再调用 LLM 输出结构化 JSON（翻译、摘要、情感、分类）。已有数据仅更新热度值。
+> 每小时触发，采集数据后通过 Jina Reader 提取全文，再调用 LLM 输出结构化 JSON（翻译、摘要、情感、分类）。写入成功后自动调用 Jina Embeddings API 生成 1024 维语义向量并存入 `news_embeddings` 表，确保语义搜索始终覆盖最新数据。已有数据仅更新热度值。
 ![Main](assets/screenshots/Main_workflow.png)
 
 #### 异常捕获与告警 (Error)
@@ -53,6 +53,7 @@
 | 表名 | 用途 |
 |------|------|
 | `tech_news` | 主数据表，`url` 唯一约束防止重复 |
+| `news_embeddings` | 语义向量表，存储 1024 维 Jina Embeddings，供 Agent 混合搜索 |
 | `tech_news_failed` | 死信队列，记录处理失败的条目 |
 | `jina_raw_logs` | Jina Reader 返回的原始内容 |
 | `system_logs` | 系统运行日志 |
@@ -90,6 +91,16 @@
 *   **邮件日报**：每日早 8 点发送，包含 HackerNews Top 7 和 TechCrunch Top 7，支持订阅者管理。
 *   **异常告警**：流程出错时自动发送告警邮件并记录日志。
 
+### 2.5 AI 深度分析 Agent
+
+基于 Gemini 2.5 Pro 的交互式分析 Agent，支持对库内新闻进行多轮对话式深度解读。
+
+*   **混合搜索**：结合 Jina Embeddings 语义相似度与关键词精确匹配，自动合并去重，返回最相关的文章。
+*   **全文深挖**：自动从 `jina_raw_logs` 提取新闻全文，基于全文而非摘要进行分析。
+*   **时效感知**：Agent 在首次交互时主动获取数据库最新文章时间与近 21 天数据分布，标注数据截止时间。
+*   **多轮上下文**：支持追问（如"再深入说说第二点"、"那它的竞争对手呢"），对话上下文自动保持。
+*   **结构化输出**：输出格式包含核心事件、深度解读（技术趋势 / 竞争格局 / 商业影响等维度）和关键洞察。
+
 ---
 
 ## 3. 目录结构
@@ -97,9 +108,15 @@
 ```text
 TechNews_Intelligence/
 ├── etl_workflow/                   # n8n 工作流配置
-│   ├── Tech_Intelligence.json      # 主采集流程
+│   ├── Tech_Intelligence.json      # 主采集流程（含向量化节点）
 │   ├── System_Alert_Service.json   # 异常捕获流程
 │   └── Daily_Tech_Brief.json       # 日报推送流程
+│
+├── agents/                         # AI 深度分析 Agent
+│   ├── core.py                     # 核心引擎：工具函数、连接池、Agent 工厂
+│   ├── cli.py                      # 本地终端交互入口
+│   ├── requirements.txt            # Python 依赖
+│   └── .env.example                # 环境变量模板
 │
 ├── sql/
 │   ├── infrastructure/             # DDL：建表与视图
@@ -108,18 +125,7 @@ TechNews_Intelligence/
 │   │
 │   └── analytics/                  # DML：Metabase 分析查询
 │       ├── algo_gravity_ranking.sql
-│       ├── analysis_category_growth.sql
-│       ├── analysis_heatmap.sql
-│       ├── analysis_negativity_index.sql
-│       ├── analysis_source_bias.sql
-│       ├── analysis_tech_giants_battle.sql
-│       ├── card_dynamic_summary.sql
-│       ├── chart_engagement.sql
-│       ├── chart_market_attention.sql
-│       ├── chart_sentiment_trend.sql
-│       ├── chart_techcrunch_daily.sql
-│       ├── table_community_hits.sql
-│       ├── table_hackernews_top.sql
+│       ├── ...
 │       └── table_techcrunch_latest.sql
 │
 ├── deployment/                     # Docker 部署配置
@@ -128,7 +134,8 @@ TechNews_Intelligence/
 │
 └── assets/
     ├── docs/                       # Metabase 仪表盘 PDF
-    └── screenshots/                # 工作流截图
+    ├── screenshots/                # 工作流截图
+    └── svg/                        # 架构图
 ```
 
 ---
@@ -139,7 +146,7 @@ TechNews_Intelligence/
 
 ### 前置条件
 *   已安装 Docker 与 Docker Compose
-*   已获取 LLM API Key 及 Jina Reader API Key
+*   已获取 LLM API Key（阿里通义 / Gemini）及 Jina API Key
 
 ### 步骤
 
@@ -162,6 +169,15 @@ docker-compose up -d
 2.  导入 `etl_workflow/` 目录下的三个 JSON 文件。
 3.  在 n8n 中配置 PostgreSQL 连接凭证和 SMTP 凭证（用于邮件功能）。
 4.  激活工作流。
+
+### 启动 AI Agent
+```bash
+cd agents
+cp .env.example .env
+# 编辑 .env，填入 Gemini API Key、Jina API Key、数据库连接信息
+pip install -r requirements.txt
+python cli.py
+```
 
 ---
 

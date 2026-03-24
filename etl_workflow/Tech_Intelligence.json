@@ -1113,6 +1113,54 @@
       ],
       "id": "6043d304-5ad0-435c-b07a-3a010546d1c7",
       "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.jina.ai/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.JINA_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"jina-embeddings-v3\",\n  \"task\": \"retrieval.passage\",\n  \"dimensions\": 1024,\n  \"embedding_type\": \"float\",\n  \"input\": [\n    {{ JSON.stringify($json.summary) }}\n  ]\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1488,
+        -832
+      ],
+      "id": "a758eb0e-430c-4563-8b15-619f535c723a",
+      "name": "Jina_Embeddings"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO news_embeddings (url, embedding)\nVALUES (\n    $${{ $('Insert or update rows in a table').item.json.url }}$$,\n    $${{ JSON.stringify($json.data[0].embedding) }}$$::vector\n)\nON CONFLICT (url) DO UPDATE SET embedding = EXCLUDED.embedding;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1712,
+        -832
+      ],
+      "id": "6c8efce8-3b5e-4318-a2dc-219237159225",
+      "name": "Upsert_Embeddings",
+      "credentials": {
+        "postgres": {
+          "id": "16OTc6Oi6SG8mPOF",
+          "name": "Postgres account"
+        }
+      }
     }
   ],
   "pinData": {},
@@ -1243,7 +1291,7 @@
       "main": [
         [
           {
-            "node": "Loop Over Items",
+            "node": "Jina_Embeddings",
             "type": "main",
             "index": 0
           }
@@ -1395,6 +1443,28 @@
           }
         ]
       ]
+    },
+    "Jina_Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Upsert_Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert_Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -1406,7 +1476,7 @@
     "callerPolicy": "workflowsFromSameOwner",
     "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
   },
-  "versionId": "ac5bf845-51f2-4e8f-9a7e-b967e59623f8",
+  "versionId": "1460285c-39e5-496b-81b8-3f54d0d28a91",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "cc71cb19c52277ee6a828e6a21e2dba61964271db5e597d972c12c82fd716ddf"
