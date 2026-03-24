@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # 格式: { chat_id: [{"role": "user"/"model", "parts": [{"text": "..."}]}, ...] }
 conversation_histories: dict[int, list[dict]] = {}
 
-MAX_HISTORY_TURNS = 10  # 保留最近10轮，防止 context 太长
+MAX_HISTORY_TURNS = 20  # 保留最近20轮，防止 context 太长
 
 
 def _trim_history(history: list[dict]) -> list[dict]:
@@ -71,7 +71,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conversation_histories[chat_id] = []
 
     # 发送"正在思考"提示
-    thinking_msg = await update.message.reply_text("⏳ 正在分析，请稍候……")
+    thinking_msg = await update.message.reply_text("正在分析，请稍候")
 
     try:
         history = conversation_histories[chat_id]
@@ -90,7 +90,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"[chat_id={chat_id}] 处理消息出错: {e}")
-        await thinking_msg.edit_text(f"❌ 出错了：{str(e)}")
+        await thinking_msg.edit_text(f"出错：{str(e)}")
 
 
 def main():
@@ -106,7 +106,7 @@ def main():
     app.add_handler(CommandHandler("clear", clear))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Bot 启动中……")
+    logger.info("B启动中")
     app.run_polling()
 
 
