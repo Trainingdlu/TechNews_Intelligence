@@ -70,9 +70,10 @@ services:
       - MB_DB_FILE=/metabase-data/metabase.db
       - JAVA_OPTS=-Xmx2048m -Xms1024m
     volumes:
-      - metabase_data:/metabase-data
-      # 迁移/恢复：挂载宿主机上已有的 Metabase DB 文件
-      # - ./:/metabase-data
+      # 此处为挂载宿主机上已有的 Metabase DB 文件
+      - ./:/metabase-data
+      # 若无 Metabase DB 文件采用下面的形式
+      # - metabase_data:/metabase-data 
     networks:
       - app_network
 
