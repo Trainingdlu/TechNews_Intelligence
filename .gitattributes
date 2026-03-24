@@ -3,3 +3,5 @@
 *.gz binary
 *.tar binary
 *.7z binary
+
+* text=aut
