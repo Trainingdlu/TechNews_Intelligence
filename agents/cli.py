@@ -1,12 +1,4 @@
-"""
-TechNews Intelligence - Agent CLI
-==================================
-本地终端交互入口，用于测试和使用 Agent。
-使用方法：
-    1. 将/agents目录下 .env.example 复制为 .env 并填入真实配置
-    2. pip install -r requirements.txt
-    3. python cli.py
-"""
+"""本地终端交互入口，使用方法见 README"""
 
 import os
 import sys
@@ -15,7 +7,6 @@ from dotenv import load_dotenv
 
 
 def main():
-    # 加载 .env（优先查找同目录下的 .env）
     env_path = Path(__file__).resolve().parent / ".env"
     if not env_path.exists():
         print(f"[错误] 找不到 .env 文件: {env_path}")
@@ -30,8 +21,9 @@ def main():
     if https_proxy:
         os.environ["HTTPS_PROXY"] = https_proxy
 
-    # 延迟导入，确保环境变量已经加载
-    from core import create_agent_chat, close_db_pool
+    # 延迟导入，确保环境变量已加载
+    from agent import create_agent_chat
+    from db import close_db_pool
 
     print("正在初始化 Agent")
 

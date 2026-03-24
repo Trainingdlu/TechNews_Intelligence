@@ -1,8 +1,4 @@
-"""
-TechNews Intelligence - Telegram Bot
-=====================================
-使用 generate_response() 无状态调用，按 chat_id 隔离对话历史
-"""
+"""Telegram Bot 入口：按 chat_id 隔离对话历史，调用 Agent 无状态接口"""
 
 import os
 import re
@@ -19,7 +15,8 @@ from telegram.ext import (
     filters,
 )
 
-from core import generate_response, init_db_pool, close_db_pool
+from agent import generate_response
+from db import init_db_pool, close_db_pool
 
 load_dotenv()
 

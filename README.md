@@ -1,6 +1,6 @@
 # TechNews Intelligence
 
-![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase-blue?style=flat-square)
+![Tech Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_Agent-blue?style=flat-square)
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
 > 定时采集 Hacker News 与 TechCrunch 的数据，通过 LLM 进行结构化处理（摘要、情感分析、分类），存入 PostgreSQL，并自动生成语义向量支持相似度搜索。最终通过 Metabase 仪表盘、邮件日报和 AI 深度分析 Agent 进行展示与交互。
@@ -118,7 +118,10 @@ TechNews_Intelligence/
 │   └── Daily_Tech_Brief.json       # 日报推送流程
 │
 ├── agents/                         # AI 深度分析 Agent
-│   ├── core.py                     # 核心引擎：工具函数、连接池、Agent 工厂
+│   ├── db.py                       # 数据库连接池
+│   ├── tools.py                    # Agent 工具函数（搜索、全文读取等）
+│   ├── prompts.py                  # System Prompt 模板
+│   ├── agent.py                    # LLM 客户端、Chat 工厂
 │   ├── bot.py                      # Telegram Bot 入口（Docker 部署）
 │   ├── cli.py                      # 本地终端交互入口
 │   ├── requirements.txt            # Python 依赖
