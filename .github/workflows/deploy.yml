@@ -19,9 +19,25 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          port: 63210
           script: |
             cd ${{ secrets.DEPLOY_PATH }}
             git pull origin main
+
+            OLD_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' pgvector/pgvector:pg15 2>/dev/null || echo "none")
+
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f
+
+            NEW_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' pgvector/pgvector:pg15 2>/dev/null || echo "none")
+
+            if [ "$OLD_DIGEST" != "$NEW_DIGEST" ]; then
+              echo "PostgreSQL image updated, running REINDEX..."
+              docker compose exec -T db psql -U trainingcqy -d DB -c "REINDEX INDEX unique_url;"
+            else
+              echo "PostgreSQL image unchanged, skipping REINDEX."
+            fi
+
+            echo "Checking container health..."
+            docker compose ps | grep -E "(db|n8n)" | grep -v "Up" && echo "WARNING: some containers not running" || echo "All containers up."
