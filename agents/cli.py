@@ -3,7 +3,7 @@ TechNews Intelligence - Agent CLI
 ==================================
 本地终端交互入口，用于测试和使用 Agent。
 使用方法：
-    1. 将 .env.example 复制为 .env 并填入真实配置
+    1. 将/agents目录下 .env.example 复制为 .env 并填入真实配置
     2. pip install -r requirements.txt
     3. python cli.py
 """

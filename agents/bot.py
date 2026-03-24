@@ -5,7 +5,8 @@ TechNews Intelligence - Telegram Bot
 """
 
 import os
-import sys
+import re
+import asyncio
 import logging
 
 from dotenv import load_dotenv
@@ -44,6 +45,49 @@ def _trim_history(history: list[dict]) -> list[dict]:
     return history
 
 
+# ---------------------------------------------------------------------------
+# Telegram MarkdownV2 转义
+# ---------------------------------------------------------------------------
+_MARKDOWNV2_ESCAPE_RE = re.compile(r"([_\[\]()~`>#+\-=|{}.!\\])")
+
+
+def _escape_markdownv2(text: str) -> str:
+    """转义 MarkdownV2 中的特殊字符，但保留常用格式标记。
+
+    保留的格式：**bold**  → *bold*（Telegram 风格）
+    其余所有 MarkdownV2 特殊字符均转义，避免发送失败。
+    """
+    # 1. 将 Gemini 风格的 **bold** 转为占位符
+    parts = re.split(r"\*\*(.+?)\*\*", text, flags=re.DOTALL)
+
+    result = []
+    for i, part in enumerate(parts):
+        if i % 2 == 1:
+            # 奇数段 = bold 内容：转义内部特殊字符后用 * 包裹
+            result.append("*" + _MARKDOWNV2_ESCAPE_RE.sub(r"\\\1", part) + "*")
+        else:
+            # 偶数段 = 普通文本：转义所有特殊字符（含 *）
+            escaped = _MARKDOWNV2_ESCAPE_RE.sub(r"\\\1", part)
+            # 额外转义独立的 * 号（不在 bold 标记中的）
+            escaped = escaped.replace("*", "\\*")
+            result.append(escaped)
+    return "".join(result)
+
+
+async def _send_reply(message, text: str):
+    """尝试以 MarkdownV2 发送，失败则回退到纯文本。"""
+    chunks = [text[i:i + 4096] for i in range(0, len(text), 4096)]
+    for chunk in chunks:
+        try:
+            await message.reply_text(
+                _escape_markdownv2(chunk),
+                parse_mode="MarkdownV2",
+            )
+        except Exception:
+            # MarkdownV2 解析失败时回退纯文本
+            await message.reply_text(chunk)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     conversation_histories[chat_id] = []  # 清空历史
@@ -71,11 +115,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conversation_histories[chat_id] = []
 
     # 发送"正在思考"提示
-    thinking_msg = await update.message.reply_text("正在分析，请稍候")
+    thinking_msg = await update.message.reply_text("正在分析，请稍候……")
 
     try:
         history = conversation_histories[chat_id]
-        reply = generate_response(history, user_text)
+        # 使用 asyncio.to_thread 避免阻塞事件循环
+        reply = await asyncio.to_thread(generate_response, history, user_text)
 
         # 更新历史
         history.append({"role": "user", "parts": [{"text": user_text}]})
@@ -84,13 +129,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # 删除"正在思考"，发送回复
         await thinking_msg.delete()
-        # Telegram 单条消息上限 4096 字符，超出则分段发送
-        for i in range(0, len(reply), 4096):
-            await update.message.reply_text(reply[i:i+4096])
+        await _send_reply(update.message, reply)
 
     except Exception as e:
         logger.error(f"[chat_id={chat_id}] 处理消息出错: {e}")
         await thinking_msg.edit_text(f"出错：{str(e)}")
+
+
+async def _post_shutdown(app) -> None:
+    """ApplicationBuilder post_shutdown 回调，优雅关闭数据库连接池。"""
+    close_db_pool()
+    logger.info("数据库连接池已关闭")
 
 
 def main():
@@ -101,17 +150,19 @@ def main():
     init_db_pool()
     logger.info("数据库连接池已初始化")
 
-    app = ApplicationBuilder().token(token).build()
+    app = (
+        ApplicationBuilder()
+        .token(token)
+        .post_shutdown(_post_shutdown)
+        .build()
+    )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("clear", clear))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("B启动中")
+    logger.info("启动中")
     app.run_polling()
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    finally:
-        close_db_pool()
+    main()

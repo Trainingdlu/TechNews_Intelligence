@@ -11,7 +11,7 @@
 
 ## 1. 系统架构
 
-项目基于 **ELT** 架构，使用 Docker Compose 编排，包含三个核心服务：n8n（工作流与向量化）、PostgreSQL（存储与向量检索）、Metabase（可视化），以及独立运行的 AI 分析 Agent。
+项目基于 **ELT** 架构，使用 Docker Compose 编排，包含四个核心服务：n8n（工作流与向量化）、PostgreSQL（存储与向量检索）、Metabase（可视化）、Telegram Bot（AI 分析 Agent 交互入口），同时提供本地 CLI 入口。
 
 ![系统架构](assets/svg/architecture.svg)
 
@@ -93,7 +93,12 @@
 
 ### 2.5 AI 深度分析 Agent
 
-基于 Gemini 2.5 Pro 的交互式分析 Agent，支持对库内新闻进行多轮对话式深度解读。
+基于 Gemini 2.5 Pro 的交互式分析 Agent，支持对库内新闻进行多轮对话式深度解读。提供两种接入方式：
+
+*   **Telegram Bot**：通过 `bot.py` 部署为 Telegram 机器人，随 Docker Compose 自动启动，支持 MarkdownV2 富文本回复。按 `chat_id` 隔离对话历史，支持 `/start`、`/clear` 命令。
+*   **本地 CLI**：通过 `cli.py` 在终端交互，适用于本地开发调试。
+
+核心能力：
 
 *   **混合搜索**：结合 Jina Embeddings 语义相似度与关键词精确匹配，自动合并去重，返回最相关的文章。
 *   **全文深挖**：自动从 `jina_raw_logs` 提取新闻全文，基于全文而非摘要进行分析。
@@ -114,6 +119,7 @@ TechNews_Intelligence/
 │
 ├── agents/                         # AI 深度分析 Agent
 │   ├── core.py                     # 核心引擎：工具函数、连接池、Agent 工厂
+│   ├── bot.py                      # Telegram Bot 入口（Docker 部署）
 │   ├── cli.py                      # 本地终端交互入口
 │   ├── requirements.txt            # Python 依赖
 │   └── .env.example                # 环境变量模板
@@ -147,6 +153,7 @@ TechNews_Intelligence/
 ### 前置条件
 *   已安装 Docker 与 Docker Compose
 *   已获取 LLM API Key（阿里通义 / Gemini）及 Jina API Key
+*   已创建 Telegram Bot 并获取 Bot Token（通过 [@BotFather](https://t.me/BotFather)）
 
 ### 步骤
 
@@ -157,7 +164,7 @@ cd TechNews_Intelligence
 
 # 2. 配置环境变量
 cp deployment/.env.example deployment/.env
-# 编辑 deployment/.env，填入数据库密码及 API Key
+# 编辑 deployment/.env，填入数据库密码、API Key 和 TELEGRAM_BOT_TOKEN
 
 # 3. 启动服务
 cd deployment
@@ -170,7 +177,11 @@ docker-compose up -d
 3.  在 n8n 中配置 PostgreSQL 连接凭证和 SMTP 凭证（用于邮件功能）。
 4.  激活工作流。
 
-### 启动 AI Agent
+### Telegram Bot
+
+Bot 服务已包含在 `docker-compose.yml` 中，执行 `docker-compose up -d` 后会随其他服务一同启动，无需额外操作。
+
+### 本地 CLI（可选）
 ```bash
 cd agents
 cp .env.example .env
