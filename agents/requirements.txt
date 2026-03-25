@@ -3,3 +3,6 @@ requests
 psycopg2-binary
 python-dotenv
 python-telegram-bot
+fastapi
+uvicorn[standard]
+email-validator

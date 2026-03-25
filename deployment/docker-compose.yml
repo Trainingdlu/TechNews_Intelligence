@@ -98,6 +98,36 @@ services:
       postgres:
         condition: service_healthy
 
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: tech_news_api
+    restart: always
+    command: ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${POSTGRES_DB}
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASS=${POSTGRES_PASSWORD}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JINA_API_KEY=${JINA_API_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - API_BASE_URL=${API_BASE_URL:-http://localhost:8000}
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pg_data:
   n8n_data:
