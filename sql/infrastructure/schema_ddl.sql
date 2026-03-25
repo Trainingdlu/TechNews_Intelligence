@@ -76,14 +76,27 @@ CREATE TABLE IF NOT EXISTS public.system_logs (
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Index for logs (Logs accumulate fast, indexing time is crucial for cleanup/querying)
-CREATE INDEX IF NOT EXISTS idx_logs_created_at ON public.system_logs(created_at DESC);
+-- 6. Access_Tokens
+CREATE TABLE IF NOT EXISTS access_tokens (
+    id          SERIAL       PRIMARY KEY,
+    email       VARCHAR(255) NOT NULL,
+    token       VARCHAR(64)  NOT NULL UNIQUE,
+    quota       INT          NOT NULL DEFAULT 15,
+    used        INT          NOT NULL DEFAULT 0,
+    status      VARCHAR(20)  NOT NULL DEFAULT 'active',   -- active / exhausted / upgraded
+    notified    BOOLEAN      NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    upgraded_at TIMESTAMPTZ
+);
 
--- 6. Performance Indexes
+-- 7. Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_created_at ON public.tech_news(created_at);
 CREATE INDEX IF NOT EXISTS idx_created_at_cn ON public.tech_news ((created_at + '08:00:00'::interval));
 CREATE INDEX IF NOT EXISTS idx_points ON public.tech_news(points DESC);
 CREATE INDEX IF NOT EXISTS idx_sentiment ON public.tech_news(sentiment);
+CREATE INDEX IF NOT EXISTS idx_logs_created_at ON public.system_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_access_tokens_token ON access_tokens (token);
+CREATE INDEX IF NOT EXISTS idx_access_tokens_email ON access_tokens (email);
 
 -- NOTE: This index is safe to create on an empty table, but should be rebuilt
 -- after the initial data backfill to ensure optimal clustering quality.
@@ -92,7 +105,7 @@ CREATE INDEX IF NOT EXISTS idx_embedding_vector ON public.news_embeddings
 USING ivfflat (embedding vector_cosine_ops)
 WITH (lists = 100);
 
--- 7. Update Trigger Function
+-- 8. Update Trigger Function
 CREATE OR REPLACE FUNCTION update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -107,7 +120,7 @@ CREATE TRIGGER update_tech_news_modtime
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_column();
 
--- 8. Subscribers (Daily Brief)
+-- 9. Subscribers (Daily Brief)
 CREATE TABLE IF NOT EXISTS public.subscribers (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) NOT NULL,

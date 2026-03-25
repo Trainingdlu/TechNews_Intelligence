@@ -138,7 +138,7 @@ TechNews_Intelligence/
 │
 ├── sql/
 │   ├── infrastructure/             # DDL：建表与视图
-│   │   ├── schema_ddl.sql          # 表结构定义（含 Trigger / Index）
+│   │   ├── schema_ddl.sql    # 表结构定义
 │   │   └── view_logic.sql          # 视图逻辑（时区转换、来源分类、指标计算）
 │   │
 │   └── analytics/                  # DML：Metabase 分析查询

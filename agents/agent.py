@@ -66,7 +66,10 @@ def generate_response(history: list[dict], user_message: str) -> str:
         for part in response.candidates[0].content.parts
         if hasattr(part, "text") and part.text
     ]
-    return "".join(parts_texts) if parts_texts else (
-        "[错误] 模型未能返回有效文本，可能触发了安全拦截或解析异常。"
-    )
+    if not parts_texts:
+        return "[错误] 模型未能返回有效文本，可能触发了安全拦截或解析异常。"
+
+    # automatic_function_calling 会在 parts 中累积每轮的中间文本，
+    # 最后一段才是工具调用全部完成后的最终结构化分析
+    return parts_texts[-1]
 
