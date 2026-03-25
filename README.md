@@ -11,7 +11,7 @@
 
 ## 1. 系统架构
 
-项目基于 **ELT** 架构，使用 Docker Compose 编排，包含四个核心服务：n8n（工作流与向量化）、PostgreSQL（存储与向量检索）、Metabase（可视化）、Telegram Bot（AI 分析 Agent 交互入口），同时提供本地 CLI 入口。
+项目基于 **ELT** 架构，使用 Docker Compose 编排，包含五个核心服务：n8n（工作流与向量化）、PostgreSQL（存储与向量检索）、Metabase（可视化）、Web API（前端交互入口）、Telegram Bot（AI 分析 Agent 交互入口），同时提供本地 CLI 入口。
 
 ![系统架构](assets/svg/architecture.svg)
 
@@ -56,6 +56,7 @@
 | `news_embeddings` | 语义向量表，存储 1024 维 Jina Embeddings，供 Agent 混合搜索 |
 | `tech_news_failed` | 死信队列，记录处理失败的条目 |
 | `jina_raw_logs` | Jina Reader 返回的原始内容 |
+| `access_tokens` | Web 前端 Token 管理表，存储用户邮箱、Token、配额与使用量 |
 | `system_logs` | 系统运行日志 |
 
 视图 `view_dashboard_news` 封装了以下逻辑：
@@ -93,8 +94,9 @@
 
 ### 2.5 AI 深度分析 Agent
 
-基于 Gemini 2.5 Pro 的交互式分析 Agent，支持对库内新闻进行多轮对话式深度解读。提供两种接入方式：
+基于 Gemini 2.5 Pro 的交互式分析 Agent，支持对库内新闻进行多轮对话式深度解读。提供三种接入方式：
 
+*   **Web 前端**：通过 `api.py` 提供 FastAPI 后端，配合静态前端页面，支持邮箱获取 Token、配额管理、管理员审批提额。前端使用 Markdown 渲染 Agent 回复，支持行内来源链接跳转。
 *   **Telegram Bot**：通过 `bot.py` 部署为 Telegram 机器人，随 Docker Compose 自动启动，支持 MarkdownV2 富文本回复。按 `chat_id` 隔离对话历史，支持 `/start`、`/clear` 命令。
 *   **本地 CLI**：通过 `cli.py` 在终端交互，适用于本地开发调试。
 
@@ -105,6 +107,7 @@
 *   **时效感知**：Agent 在首次交互时主动获取数据库最新文章时间与近 21 天数据分布，标注数据截止时间。
 *   **多轮上下文**：支持追问（如"再深入说说第二点"、"那它的竞争对手呢"），对话上下文自动保持。
 *   **结构化输出**：输出格式包含核心事件、深度解读（技术趋势 / 竞争格局 / 商业影响等维度）和关键洞察。
+*   **行内来源引用**：分析输出中自动标注原文链接，点击可直接跳转至引用的新闻原文。
 
 ---
 
@@ -122,10 +125,16 @@ TechNews_Intelligence/
 │   ├── tools.py                    # Agent 工具函数（搜索、全文读取等）
 │   ├── prompts.py                  # System Prompt 模板
 │   ├── agent.py                    # LLM 客户端、Chat 工厂
+│   ├── api.py                      # Web API 入口（FastAPI + Token 管理）
+│   ├── mail.py                     # 邮件发送（Token 发放、审批通知）
 │   ├── bot.py                      # Telegram Bot 入口（Docker 部署）
 │   ├── cli.py                      # 本地终端交互入口
-│   ├── requirements.txt            # Python 依赖
-│   └── .env.example                # 环境变量模板
+│   └── requirements.txt            # Python 依赖
+│
+├── frontend/                       # Web 前端（静态页面）
+│   ├── index.html                  # 页面结构
+│   ├── style.css                   # 样式
+│   └── app.js                      # 交互逻辑
 │
 ├── sql/
 │   ├── infrastructure/             # DDL：建表与视图

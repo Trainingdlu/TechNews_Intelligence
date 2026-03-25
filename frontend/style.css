@@ -503,6 +503,28 @@ body {
     gap: 16px;
     scroll-behavior: smooth;
     position: relative;
+
+    /* 自定义滚动条 - Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+/* 自定义滚动条 - Webkit (Chrome, Safari, Edge) */
+.messages::-webkit-scrollbar {
+    width: 6px;
+}
+
+.messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.messages::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+
+.messages::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.25);
 }
 
 .welcome-msg {
@@ -697,6 +719,16 @@ body {
     border: none;
     border-top: 1px solid var(--border-color);
     margin: 12px 0;
+}
+
+.msg-content a {
+    color: var(--text-tertiary);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+.msg-content a:hover {
+    color: var(--text-secondary);
 }
 
 /* Typing Indicator */

@@ -28,6 +28,14 @@
     const quotaDisplay = document.getElementById('quota-display');
     const quotaOverlay = document.getElementById('quota-overlay');
 
+    // ── Marked.js: 链接在新标签页打开 ──
+    const renderer = new marked.Renderer();
+    renderer.link = function ({ href, title, text }) {
+        const titleAttr = title ? ` title="${title}"` : '';
+        return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;
+    };
+    marked.setOptions({ renderer });
+
     // ── Init ──
     if (token) {
         showChat();

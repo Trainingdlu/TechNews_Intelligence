@@ -65,6 +65,8 @@ def generate_response(history: list[dict], user_message: str) -> str:
         for part in response.candidates[0].content.parts
         if hasattr(part, "text") and part.text
     ]
-    return "".join(parts_texts) if parts_texts else (
+    # 只取最后一段文本，即工具调用完成后的最终回答，
+    # 避免将中间思考过程（不完整的前缀文本）一并返回
+    return parts_texts[-1] if parts_texts else (
         "[错误] 模型未能返回有效文本，可能触发了安全拦截或解析异常。"
     )
