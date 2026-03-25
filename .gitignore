@@ -18,3 +18,9 @@ news_data_readable.sql
 
 # Docker
 docker-data/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
