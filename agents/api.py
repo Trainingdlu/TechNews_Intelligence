@@ -32,7 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api-agent.trainingcqy.com")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://agentapi.trainingcqy.com")
 DEFAULT_QUOTA = 15
 UPGRADED_QUOTA = 50
 

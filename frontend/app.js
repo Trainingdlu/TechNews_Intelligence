@@ -3,7 +3,7 @@
     'use strict';
 
     // API 后端地址（通过 Cloudflare Tunnel 暴露）
-    const API_BASE = 'https://api-agent.trainingcqy.com';
+    const API_BASE = 'https://agentapi.trainingcqy.com';
 
     // ── State ──
     let token = localStorage.getItem('agent_token') || '';
@@ -12,19 +12,19 @@
     let remaining = null;
 
     // ── DOM refs ──
-    const authView     = document.getElementById('auth-view');
-    const chatView     = document.getElementById('chat-view');
-    const emailForm    = document.getElementById('email-form');
-    const emailInput   = document.getElementById('email-input');
-    const emailBtn     = document.getElementById('email-btn');
-    const emailStatus  = document.getElementById('email-status');
-    const tokenForm    = document.getElementById('token-form');
-    const tokenInput   = document.getElementById('token-input');
-    const messagesEl   = document.getElementById('messages');
-    const chatInput    = document.getElementById('chat-input');
-    const sendBtn      = document.getElementById('send-btn');
-    const clearBtn     = document.getElementById('clear-btn');
-    const logoutBtn    = document.getElementById('logout-btn');
+    const authView = document.getElementById('auth-view');
+    const chatView = document.getElementById('chat-view');
+    const emailForm = document.getElementById('email-form');
+    const emailInput = document.getElementById('email-input');
+    const emailBtn = document.getElementById('email-btn');
+    const emailStatus = document.getElementById('email-status');
+    const tokenForm = document.getElementById('token-form');
+    const tokenInput = document.getElementById('token-input');
+    const messagesEl = document.getElementById('messages');
+    const chatInput = document.getElementById('chat-input');
+    const sendBtn = document.getElementById('send-btn');
+    const clearBtn = document.getElementById('clear-btn');
+    const logoutBtn = document.getElementById('logout-btn');
     const quotaDisplay = document.getElementById('quota-display');
     const quotaOverlay = document.getElementById('quota-overlay');
 

@@ -75,7 +75,7 @@ def send_quota_exhausted_to_admin(admin_email: str, user_email: str,
             <a href="{approve_url}"
                style="display:inline-block; padding:10px 24px; background:#2563eb;
                       color:#fff; text-decoration:none; border-radius:6px; margin-top:12px;">
-                批准（提升至 100 次）
+                批准
             </a>
             <p style="color:#999; margin-top:16px; font-size:12px;">
                 请求 ID: {request_id}
