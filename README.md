@@ -61,7 +61,7 @@
 
 ![Error](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Alert_workflow.png)
 
-**日报推送**：每日 08:00 筛选近 24 小时高热度新闻，并渲染为 HTML 邮件推送。
+**日报推送**：每日 08:00 筛选近 24 小时价值新闻，并渲染为 HTML 邮件推送。
 
 ![Brief](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Brief_workflow.png)
 
@@ -138,7 +138,7 @@
 ### 核心能力
 
 **混合搜索**：同时查询 pgvector 语义相似度与关键词精确匹配，合并去重后返回结果。纯向量检索在公司名、产品名等专有名词上容易召回偏移，关键词匹配作为兜底保证精确查询的稳定性。
-**全文深挖**：从 `jina_raw_logs` 提取新闻原文，基于全文而非摘要进行分析。
+**全文阅读**：从 `jina_raw_logs` 提取新闻原文，基于全文而非摘要进行分析。
 **时效感知**：首次交互时主动获取数据库最新文章时间与近 21 天数据分布，在回复中标注数据截止时间。
 **多轮上下文**：支持追问，对话上下文自动保持。
 **Token 配额**：Agent 调用 Gemini API 有实际成本，配额机制防止意外账单，额度耗尽后自动触发管理员审批邮件。
