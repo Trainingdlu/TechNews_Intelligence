@@ -87,7 +87,7 @@
 
 #### 日报推送核心流程
 - **任务触发**：每日 08:00 定时启动，通过 PostgreSQL 视图 `view_dashboard_news` 筛选近 24 小时内的增量数据。
-- **新闻选择**：在数据库层面执行聚合查询，选取 Hacker News 社区热度前 7（Points 倒序）以及 TechCrunch 媒体更新前 7 的文章。
+- **新闻选择**：在数据库层面执行聚合查询，选取 Hacker News 社区热度前 7（Points 倒序）以及 TechCrunch 媒体最近前 7 的文章。
 - **动态渲染**：利用 n8n Code 节点执行 JavaScript 逻辑。根据新闻的情感标签匹配特定的视觉样式，生成定制化的 HTML 邮件内容。
 - **分发日报**：从 `subscribers` 表获取订阅者列表，通过 SMTP 协议实现批量推送。
 
