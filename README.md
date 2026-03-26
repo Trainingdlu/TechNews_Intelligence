@@ -3,6 +3,7 @@
 ![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
 
 利用工作流定时采集 Hacker News 与 TechCrunch 的科技新闻，由 Jina Reader 获取新闻原文，以辅助 LLM 进行摘要生成、情感分析以及分类的结构化处理。并使用 Jina Embeddings 生成语义向量以支持相似度搜索，统一存入数据库。最终通过 Metabase 仪表盘、邮件日报、Web 端和 Telegram Bot 进行展示与交互。
+
 **[Metabase 演示](https://dashboard.trainingcqy.com)** | **[Agent 交互](https://agent.trainingcqy.com)**
 
 <table align="center">
@@ -22,18 +23,16 @@
       <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_4.png" width="100%" alt="Dashboard Part 4">
     </td>
   </tr>
+<table align="center">
   <tr>
-    <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Web.png" width="100%" alt="Web Interface">
+    <td align="center" width="60%">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/scree nshots/Web.png" width="100%" alt="Web Interface">
     </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/TG.jpg" width="100%" alt="Telegram Bot">
+    <td align="center" width="40%">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/TG.jpg" height="400" alt="Telegram Bot">
     </td>
   </tr>
 </table>
- 
 ---
 
 ### 1. 系统架构
