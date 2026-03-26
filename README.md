@@ -1,16 +1,15 @@
 <div align="center">
-  <h1>TechNews Intelligence</h1>
+  <h1 align="center"><font face="serif" size="7">TechNews Intelligence</font></h1>
+  <p align="center">
+    <a href="https://dashboard.trainingcqy.com" style="text-decoration:none"><strong>Metabase 演示</strong></a>
+    &nbsp;&nbsp; | &nbsp;&nbsp;
+    <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>Agent 交互</strong></a>
+  </p>
   <img src="https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_Agent-blue?style=flat-square" alt="Stack">
   <img src="https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square" alt="License">
 </div>
 
 利用工作流定时采集 Hacker News 与 TechCrunch 的科技新闻，由 Jina Reader 获取新闻原文，以辅助 LLM 进行摘要生成、情感分析以及分类的结构化处理。并使用 Jina Embeddings 生成语义向量以支持相似度搜索，统一存入数据库。最终通过 Metabase 仪表盘、邮件日报、Web 端和 Telegram Bot 进行展示与交互。
-
-<p align="center">
-  <a href="https://dashboard.trainingcqy.com" style="text-decoration:none"><strong>Metabase 演示</strong></a>
-  &nbsp;&nbsp; | &nbsp;&nbsp;
-  <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>Agent 交互</strong></a>
-</p>
 
 <table align="center">
   <tr>
