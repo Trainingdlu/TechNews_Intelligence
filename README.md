@@ -46,6 +46,7 @@
 
 ![系统架构](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/architecture.svg)
 
+---
 
 ### 2. 功能说明
 
@@ -141,6 +142,8 @@
   `0.1 * EXP(-EXTRACT(EPOCH FROM (NOW() - t.created_at)) / 86400.0 / 21)`
 - **配额成本控制**：系统内置配额机制，额度耗尽后自动触发管理员审批邮件。
 
+---
+
 ### 3. 目录结构
 ```text
 TechNews_Intelligence/
@@ -181,6 +184,8 @@ TechNews_Intelligence/
     ├── screenshots/                # 工作流截图
     └── svg/                        # 架构图
 ```
+
+---
 
 ### 4. 部署
 项目已容器化，可通过 Docker Compose 部署。
@@ -223,8 +228,12 @@ pip install -r requirements.txt
 python cli.py
 ```
 
+---
+
 ### 5. 开源协议
 本项目采用 GNU AGPLv3 协议。
+
+---
 
 ### 6. 作者
 Trainingcqy · trainingcqy@gmail.com
