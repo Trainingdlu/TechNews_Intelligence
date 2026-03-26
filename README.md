@@ -1,6 +1,5 @@
 <div align="center">
-  <h1 align="center"><font face="serif" size="7">TechNews Intelligence</font></h1>
-  <p align="center">
+  <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/title.svg" alt="TechNews Intelligence" width="700">  <p align="center">
     <a href="https://dashboard.trainingcqy.com" style="text-decoration:none"><strong>Metabase 演示</strong></a>
     &nbsp;&nbsp; | &nbsp;&nbsp;
     <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>Agent 交互</strong></a>

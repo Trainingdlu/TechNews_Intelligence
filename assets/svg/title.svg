@@ -1,0 +1,20 @@
+<svg width="800" height="120" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .title {
+      /* 强制使用衬线字体，并设置超大字号 */
+      font-family: "Georgia", "Times New Roman", serif;
+      font-size: 64px;
+      font-weight: bold;
+      fill: #24292f; /* GitHub 浅色模式的标准文本色 */
+    }
+    /* 自动适配深色模式 */
+    @media (prefers-color-scheme: dark) {
+      .title {
+        fill: #c9d1d9; /* GitHub 深色模式的亮灰色 */
+      }
+    }
+  </style>
+  <text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" class="title">
+    TechNews Intelligence
+  </text>
+</svg>
