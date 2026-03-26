@@ -1,35 +1,42 @@
-# TechNews Intelligence
-![Stack](https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_Agent-blue?style=flat-square)
-![License](https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square)
+<p align="center">
+  <h1 align="center">TechNews Intelligence</h1>
+  <img src="https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_Agent-blue?style=flat-square" alt="Stack">
+  <img src="https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square" alt="License">
+</p>
 
 利用工作流定时采集 Hacker News 与 TechCrunch 的科技新闻，由 Jina Reader 获取新闻原文，以辅助 LLM 进行摘要生成、情感分析以及分类的结构化处理。并使用 Jina Embeddings 生成语义向量以支持相似度搜索，统一存入数据库。最终通过 Metabase 仪表盘、邮件日报、Web 端和 Telegram Bot 进行展示与交互。
 
-**[Metabase 演示](https://dashboard.trainingcqy.com)** | **[Agent 交互](https://agent.trainingcqy.com)**
+<p align="center">
+  <a href="https://dashboard.trainingcqy.com" style="text-decoration:none"><strong>Metabase 演示</strong></a>
+  &nbsp;&nbsp; | &nbsp;&nbsp;
+  <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>Agent 交互</strong></a>
+</p>
+
+<h3 align="center">📊 数据产品矩阵 (Data Product Matrix)</h3>
 
 <table align="center">
   <tr>
-    <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_1.png" width="100%" alt="Dashboard Part 1">
-    </td>
-    <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_2.png" width="100%" alt="Dashboard Part 2">
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_3.png" width="100%" alt="Dashboard Part 3">
-    </td>
-    <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_4.png" width="100%" alt="Dashboard Part 4">
-    </td>
-  </tr>
-<table align="center">
-  <tr>
-    <td align="center" width="60%">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/scree nshots/Web.png" width="100%" alt="Web Interface">
+    <td align="center" width="40%">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_1.png" width="100%" alt="Metabase Part 1">
     </td>
     <td align="center" width="40%">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/TG.jpg" height="400" alt="Telegram Bot">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_2.png" width="100%" alt="Metabase Part 2">
+    </td>
+    <td align="center" width="20%" rowspan="2">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/TG.jpg" height="450" alt="Telegram Bot">
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_3.png" width="100%" alt="Metabase Part 3">
+    </td>
+    <td align="center">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_4.png" width="100%" alt="Metabase Part 4">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="3">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Web.png" width="100%" alt="Web Interface">
     </td>
   </tr>
 </table>
@@ -49,12 +56,12 @@
 - **主工作流**：每小时自动触发，获取新闻数据后通过 Jina Reader 提取全文，再调用 LLM 输出结构化 JSON (标题翻译、摘要、情感、分类)。写入成功后自动调用 Jina Embeddings 生成 1024 维语义向量并存入 `news_embeddings` ，确保语义搜索始终覆盖最新数据。已有数据仅更新热度值。处理失败的新闻数据存入`tech_news_failed` 表防止重复尝试。
 ![Main](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Main_workflow.png)
 - **异常捕获与告警**：全局错误处理，自动捕获异常并发送告警邮件。  
-![Error](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Error_workflow.png)
+![Error](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Alert_workflow.png)
 - **日报推送**：每日 08:00 筛选近 24 小时高热度新闻，并渲染为 HTML 邮件推送。
 ![Brief](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Brief_workflow.png)
 
 **主工作流核心处理流程**
-- **输入内容**：n8n 先调用 Jina Reader API 将原始 HTML 页面去噪（剔除导航、广告、脚注等无关元素），转为较为干净的 Markdown 格式全文（包含标题 + 正文），作为 LLM 的 Prompt 输入。显著提升了摘要质量。
+- **输入内容**：n8n 先调用 Jina Reader API 将原始 HTML 页面去噪（剔除导航、广告、脚注等无关元素），转为较为干净的 Markdown 格式全文（包含标题 + 正文），作为 LLM 的 Prompt 输入，能够显著提升摘要质量。
 - **输出 JSON 的完整字段**：
   - `title_cn`：中文标题
   - `summary`：摘要
