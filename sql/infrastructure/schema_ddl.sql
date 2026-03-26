@@ -76,7 +76,17 @@ CREATE TABLE IF NOT EXISTS public.system_logs (
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. Access_Tokens
+-- 6. Subscribers (Daily Brief)
+CREATE TABLE IF NOT EXISTS public.subscribers (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    name VARCHAR(50),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_subscriber_email UNIQUE (email)
+);
+
+-- 7. Access_Tokens
 CREATE TABLE IF NOT EXISTS access_tokens (
     id          SERIAL       PRIMARY KEY,
     email       VARCHAR(255) NOT NULL,
@@ -89,7 +99,7 @@ CREATE TABLE IF NOT EXISTS access_tokens (
     upgraded_at TIMESTAMPTZ
 );
 
--- 7. Performance Indexes
+-- 8. Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_created_at ON public.tech_news(created_at);
 CREATE INDEX IF NOT EXISTS idx_created_at_cn ON public.tech_news ((created_at + '08:00:00'::interval));
 CREATE INDEX IF NOT EXISTS idx_points ON public.tech_news(points DESC);
@@ -105,7 +115,7 @@ CREATE INDEX IF NOT EXISTS idx_embedding_vector ON public.news_embeddings
 USING ivfflat (embedding vector_cosine_ops)
 WITH (lists = 100);
 
--- 8. Update Trigger Function
+-- 9. Update Trigger Function
 CREATE OR REPLACE FUNCTION update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -119,13 +129,3 @@ CREATE TRIGGER update_tech_news_modtime
     BEFORE UPDATE ON public.tech_news
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_column();
-
--- 9. Subscribers (Daily Brief)
-CREATE TABLE IF NOT EXISTS public.subscribers (
-    id SERIAL PRIMARY KEY,
-    email VARCHAR(255) NOT NULL,
-    name VARCHAR(50),
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_subscriber_email UNIQUE (email)
-);
