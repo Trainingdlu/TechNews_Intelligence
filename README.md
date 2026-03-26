@@ -1,8 +1,8 @@
-<p align="center">
-  <h1 align="center">TechNews Intelligence</h1>
+<div align="center">
+  <h1>TechNews Intelligence</h1>
   <img src="https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_Agent-blue?style=flat-square" alt="Stack">
   <img src="https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square" alt="License">
-</p>
+</div>
 
 利用工作流定时采集 Hacker News 与 TechCrunch 的科技新闻，由 Jina Reader 获取新闻原文，以辅助 LLM 进行摘要生成、情感分析以及分类的结构化处理。并使用 Jina Embeddings 生成语义向量以支持相似度搜索，统一存入数据库。最终通过 Metabase 仪表盘、邮件日报、Web 端和 Telegram Bot 进行展示与交互。
 
@@ -11,8 +11,6 @@
   &nbsp;&nbsp; | &nbsp;&nbsp;
   <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>Agent 交互</strong></a>
 </p>
-
-<h3 align="center">📊 数据产品矩阵 (Data Product Matrix)</h3>
 
 <table align="center">
   <tr>
@@ -40,6 +38,7 @@
     </td>
   </tr>
 </table>
+
 ---
 
 ### 1. 系统架构
