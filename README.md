@@ -26,6 +26,8 @@
     <td align="center">
       <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Web.png" width="100%" alt="Web Interface">
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/TG.jpg" width="100%" alt="Telegram Bot">
     </td>
