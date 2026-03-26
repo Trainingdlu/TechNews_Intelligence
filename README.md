@@ -8,18 +8,18 @@
 <table align="center">
   <tr>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/images/Metabase_1.png" width="100%" alt="Dashboard Part 1">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_1.png" width="100%" alt="Dashboard Part 1">
     </td>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/images/Metabase_2.png" width="100%" alt="Dashboard Part 2">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_2.png" width="100%" alt="Dashboard Part 2">
     </td>
   </tr>
   <tr>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/images/Metabase_3.png" width="100%" alt="Dashboard Part 3">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_3.png" width="100%" alt="Dashboard Part 3">
     </td>
     <td align="center">
-      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/images/Metabase_4.png" width="100%" alt="Dashboard Part 4">
+      <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_4.png" width="100%" alt="Dashboard Part 4">
     </td>
   </tr>
   <tr>
