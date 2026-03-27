@@ -18,7 +18,7 @@
 # 1. 系统架构
 项目基于 ELT 架构，使用 Docker Compose 编排，包含五个核心服务：n8n（工作流与向量化）、PostgreSQL（存储与向量检索）、Metabase（可视化）、Web 网页（前端交互入口）、Telegram Bot（应用交互入口），同时提供本地 CLI 入口。
 
-![Architecture](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/architecture.svg?ct=150)
+![Architecture](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/architecture.svg?fn=1)
 
 ---
 
@@ -50,8 +50,8 @@
   `category`：分类标签<br>
 **情感分类**：三个情绪分类 —— Positive（正面）、Neutral（中性）、Negative（负面）。<br>
 **新闻分类**：六个分类标签 —— AI、安全、硬件、开发、商业、生态。<br>
-**向量写入机制**：主工作流采用同步执行。当新闻成功写入 `tech_news` 表后，立即调用 Jina Embeddings API 生成 1024 维语义向量，随后存入 `news_embeddings` 表，确保 Agent 检索始终覆盖最新数据。<br>
-**失败记录存储**：失败记录进入 `tech_news_failed` 死信队列，避免重复处理。
+**失败记录存储**：失败记录进入 `tech_news_failed` 死信队列，避免重复处理。<br>
+**向量写入机制**：主工作流采用同步执行。当新闻成功写入 `tech_news` 表后，立即调用 Jina Embeddings API 生成 1024 维语义向量，随后存入 `news_embeddings` 表，确保 Agent 检索始终覆盖最新数据。
 
 #### 异常捕获与告警核心流程
 **触发机制**：采用双重触发模式。一是通过 n8n 全局 `Error Trigger` 监听工作流运行时的突发异常；二是在主工作流中通过 `Data_check` 等节点对输出质量进行实时校验，若发现空数据或解析异常，则主动调用告警流。<br>
