@@ -9,7 +9,7 @@
   </p>
 </div>
 
-利用工作流定时采集 Hacker News 与 TechCrunch 的科技新闻，由 Jina Reader 获取新闻原文，以辅助 LLM 进行摘要生成、情感分析以及分类的结构化处理。并使用 Jina Embeddings 生成语义向量以支持相似度搜索，统一存入数据库。最终通过 Metabase 仪表盘、邮件日报、Web 端和 Telegram Bot 进行展示与交互。
+利用工作流定时采集 Hacker News 与 TechCrunch 的科技新闻，由 Jina Reader 获取新闻原文，以辅助 LLM 进行摘要生成、情感分析以及分类的结构化处理。并使用 Jina Embeddings 生成语义向量以支持相似度搜索，统一存入数据库。最终通过 Metabase 仪表盘、邮件日报、Web 端和 Telegram Bot 进行展示与交互。<br>
 
 ![Showcase](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/previews/showcase.png)
 
@@ -100,11 +100,11 @@
 | **情绪分时趋势** | 展示最近三天情绪的变化。 |
 | **情绪传播广度** | 展示不同情绪对新闻传播热度的影响。 |
 
->截至2026年3月，系统已稳定运行约 3 个月，累计收录约 6000 条新闻数据，基于该数据的分析如下：
+>截至2026年3月，系统已稳定运行约 3 个月，累计收录约 6000 条新闻数据，基于该数据的分析如下：<br>
 >**情绪与热度**：负面新闻平均热度最高（208.5），显著高于正面（161.1）和中性（128.2）。尽管负面新闻数量最少（1,112 条），但负面新闻传播影响力最强。<br>
 >**平台情绪差异**：TC 正面主导，HN 中性主导。HackerNews 负面率（17.3%）低于 TechCrunch（23.2%），差异不在负面，而在中性。HN 以中性为主（45.3%），TC 以正面为主（54.7%）。说明媒体倾向用正面框架报道，社区讨论更趋中立。<br>
 >**分类负面率**：安全类负面率高达 63%（分类中最高）；AI 和开发类负面率最低（3.8% / 5%），但平均热度反而最高（100 / 123），呈现“高热度 ≠ 高风险”的明显特征。<br>
->**发布热力图**：单个最高热度时段为周一 14:00（316），次高峰出现在周四 13:00（295）；此外，周六 08:00（258）与周日 09:00（269）等周末早间时段，以及大部分的深夜（22:00-23:00）均出现了显著的活跃高峰，体现了HN社区的热度分布呈现高度碎片化。<br>
+>**发布热力图**：单个最高热度时段为周一 14:00（316），次高峰出现在周四 13:00（295）；此外，周六 08:00（258）与周日 09:00（269）等周末早间时段，以及大部分的深夜（22:00-23:00）均出现了显著的活跃高峰，体现了HN社区的热度分布呈现高度碎片化。
 
 ## 2.4 深度分析 Agent
 基于 Gemini 2.5 Pro 构建的交互式 Agent，支持 Web 前端、Telegram Bot、本地 CLI 三种接入方式。
@@ -115,12 +115,12 @@
 **全文阅读**：从 `jina_raw_logs` 提取新闻原文，基于全文而非摘要进行分析。<br>
 **时效感知**：首次交互时主动获取数据库最新文章时间与近 21 天数据分布，在回复中标注数据截止时间。<br>
 **多轮上下文**：支持追问，对话上下文自动保持。<br>
-**Token 配额**：Agent 调用 Gemini API 有实际成本，配额机制防止意外账单，额度耗尽后自动触发管理员审批邮件。
-**对话历史存储**：
+**Token 配额**：Agent 调用 Gemini API 有实际成本，配额机制防止意外账单，额度耗尽后自动触发管理员审批邮件。<br>
+**对话历史存储**：<br>
   Telegram Bot：进程内 `conversation_histories` 字典（按 `chat_id` 隔离）<br>
-  Web 前端：无状态 API，历史由客户端携带在 `/chat` 请求的 `history` 参数中传入
-**时间衰减因子**：**非 pgvector 内置**，而是在 `tools.py` 的查询 SQL 中手动实现：  
-  `0.1 * EXP(-EXTRACT(EPOCH FROM (NOW() - t.created_at)) / 86400.0 / 21)`
+  Web 前端：无状态 API，历史由客户端携带在 `/chat` 请求的 `history` 参数中传入<br>
+**时间衰减因子**：**非 pgvector 内置**，而是在 `tools.py` 的查询 SQL 中手动实现：<br>
+  `0.1 * EXP(-EXTRACT(EPOCH FROM (NOW() - t.created_at)) / 86400.0 / 21)`<br>
 **配额成本控制**：系统内置配额机制，额度耗尽后自动触发管理员审批邮件。
 
 ---
@@ -172,9 +172,9 @@ TechNews_Intelligence/
 项目已容器化，可通过 Docker Compose 部署。
 
 ### 前置条件
-已安装 Docker
-已获取 LLM API Key（阿里通义 / Gemini）及 Jina API Key
-已创建 Telegram Bot 并获取 Bot Token（通过 @BotFather）
+已安装 Docker<br>
+已获取 LLM API Key（阿里通义 / Gemini）及 Jina API Key<br>
+已创建 Telegram Bot 并获取 Bot Token（通过 @BotFather）<br>
 ### 步骤
 ```bash
 # 1. 克隆仓库
