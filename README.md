@@ -12,14 +12,14 @@
 利用工作流定时采集 Hacker News 与 TechCrunch 的科技新闻，由 Jina Reader 获取新闻原文，以辅助 LLM 进行摘要生成、情感分析以及分类的结构化处理。并使用 Jina Embeddings 生成语义向量以支持相似度搜索，统一存入数据库。最终通过 Metabase 仪表盘、邮件日报、Web 端和 Telegram Bot 进行展示与交互。
 
 <p align="center">
-<svg viewBox="0 0 1000 1100" width="100%" xmlns="http://www.w3.org/2000/svg">
-<image href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_1.png" x="0" y="0" width="390" height="240" preserveAspectRatio="xMidYMid slice" />
-<image href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_2.png" x="400" y="0" width="390" height="240" preserveAspectRatio="xMidYMid slice" />
-<image href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/TG.jpg" x="800" y="0" width="200" height="490" preserveAspectRatio="xMidYMid slice" />
-<image href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_3.png" x="0" y="250" width="390" height="240" preserveAspectRatio="xMidYMid slice" />
-<image href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_4.png" x="400" y="250" width="390" height="240" preserveAspectRatio="xMidYMid slice" />
-<image href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Email.jpg" x="0" y="500" width="300" height="600" preserveAspectRatio="xMidYMid slice" />
-<image href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Web.png" x="300" y="500" width="700" height="600" preserveAspectRatio="xMidYMid slice" />
+<svg viewBox="0 0 1000 1100" width="100%" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <image xlink:href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_1.png" x="0" y="0" width="390" height="240" preserveAspectRatio="xMidYMid slice" />
+  <image xlink:href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_2.png" x="400" y="0" width="390" height="240" preserveAspectRatio="xMidYMid slice" />
+  <image xlink:href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/TG.jpg" x="800" y="0" width="200" height="490" preserveAspectRatio="xMidYMid slice" />
+  <image xlink:href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_3.png" x="0" y="250" width="390" height="240" preserveAspectRatio="xMidYMid slice" />
+  <image xlink:href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Metabase_4.png" x="400" y="250" width="390" height="240" preserveAspectRatio="xMidYMid slice" />
+  <image xlink:href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Email.jpg" x="0" y="500" width="300" height="600" preserveAspectRatio="xMidYMid slice" />
+  <image xlink:href="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Web.png" x="300" y="500" width="700" height="600" preserveAspectRatio="xMidYMid slice" />
 </svg>
 </p>
 
