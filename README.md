@@ -18,7 +18,7 @@
 # 1. 系统架构
 项目基于 ELT 架构，使用 Docker Compose 编排，包含五个核心服务：n8n（工作流与向量化）、PostgreSQL（存储与向量检索）、Metabase（可视化）、Web 网页（前端交互入口）、Telegram Bot（应用交互入口），同时提供本地 CLI 入口。
 
-![Architecture](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/architecture.svg?fn=1)
+![Architecture](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/architecture.svg?fn=2)
 
 ---
 
