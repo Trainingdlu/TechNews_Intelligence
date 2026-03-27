@@ -29,15 +29,15 @@
 
 **主工作流**：每小时自动触发，获取新闻数据后通过 Jina Reader 提取全文，再调用 LLM 输出结构化 JSON (标题翻译、摘要、情感、分类)。写入成功后自动调用 Jina Embeddings 生成 1024 维语义向量并存入 `news_embeddings` ，确保语义搜索始终覆盖最新数据分析。已有数据仅更新热度值。处理失败的新闻数据存入`tech_news_failed` 表防止重复尝试。<br>
 
-![Main](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Main_workflow.png)<br>
+![Main](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Main_workflow.png)\n\n
 
-**异常捕获与告警**：全局错误处理，自动捕获异常并发送告警邮件。  <br>
+**异常捕获与告警**：全局错误处理，自动捕获异常并发送告警邮件。
 
-![Error](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Alert_workflow.png)<br>
+![Error](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Alert_workflow.png)\n\n
 
-**日报推送**：每日 08:00 筛选近 24 小时价值新闻，并渲染为 HTML 邮件推送。<br>
+**日报推送**：每日 08:00 筛选近 24 小时价值新闻，并渲染为 HTML 邮件推送。
 
-![Brief](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Brief_workflow.png)
+![Brief](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Brief_workflow.png)\n\n
 
 ### 工作流处理流程
 
