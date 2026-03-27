@@ -27,15 +27,15 @@
 ## 2.1 数据采集与处理
 系统通过 n8n 编排三条工作流实现全自动化采集与结构化处理
 
-**主工作流**：每小时自动触发，获取新闻数据后通过 Jina Reader 提取全文，再调用 LLM 输出结构化 JSON (标题翻译、摘要、情感、分类)。写入成功后自动调用 Jina Embeddings 生成 1024 维语义向量并存入 `news_embeddings` ，确保语义搜索始终覆盖最新数据分析。已有数据仅更新热度值。处理失败的新闻数据存入`tech_news_failed` 表防止重复尝试。
+**主工作流**：每小时自动触发，获取新闻数据后通过 Jina Reader 提取全文，再调用 LLM 输出结构化 JSON (标题翻译、摘要、情感、分类)。写入成功后自动调用 Jina Embeddings 生成 1024 维语义向量并存入 `news_embeddings` ，确保语义搜索始终覆盖最新数据分析。已有数据仅更新热度值。处理失败的新闻数据存入`tech_news_failed` 表防止重复尝试。<br>
 
-![Main](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Main_workflow.png)
+![Main](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Main_workflow.png)<br>
 
-**异常捕获与告警**：全局错误处理，自动捕获异常并发送告警邮件。  
+**异常捕获与告警**：全局错误处理，自动捕获异常并发送告警邮件。  <br>
 
-![Error](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Alert_workflow.png)
+![Error](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Alert_workflow.png)<br>
 
-**日报推送**：每日 08:00 筛选近 24 小时价值新闻，并渲染为 HTML 邮件推送。
+**日报推送**：每日 08:00 筛选近 24 小时价值新闻，并渲染为 HTML 邮件推送。<br>
 
 ![Brief](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Brief_workflow.png)
 
@@ -43,10 +43,10 @@
 
 #### 主工作流核心处理流程
 **输入内容**：n8n 先调用 Jina Reader API 将原始 HTML 页面去噪（剔除导航、广告、脚注等无关元素），转为较为干净的 Markdown 格式全文（包含标题 + 正文），作为 LLM 的 Prompt 输入，能够显著提升摘要质量。<br>
-**输出 JSON 的完整字段**：<br>
-  `title_cn`：中文标题<br>
-  `summary`：摘要<br>
-  `sentiment`：情绪标签<br>
+**输出 JSON 的完整字段**：
+  `title_cn`：中文标题
+  `summary`：摘要
+  `sentiment`：情绪标签
   `category`：分类标签<br>
 **情感分类**：三个情绪分类 —— Positive（正面）、Neutral（中性）、Negative（负面）。<br>
 **新闻分类**：六个分类标签 —— AI、安全、硬件、开发、商业、生态。<br>
