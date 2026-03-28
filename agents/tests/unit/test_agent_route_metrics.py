@@ -66,6 +66,14 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertEqual(days, 30)
         self.assertEqual(entities, [])
 
+    def test_extract_landscape_request_ai_situation_keyword(self) -> None:
+        req = agent_mod._extract_landscape_request("\u5f53\u4eca\u4e16\u754cai\u9886\u57df\u5c40\u52bf\u662f\u4ec0\u4e48")
+        self.assertIsNotNone(req)
+        topic, days, entities = req
+        self.assertEqual(topic, "AI")
+        self.assertEqual(days, 30)
+        self.assertEqual(entities, [])
+
     def test_extract_compare_request_requires_compare_intent(self) -> None:
         req = agent_mod._extract_compare_request("OpenAI and Anthropic latest updates")
         self.assertIsNone(req)
@@ -97,6 +105,37 @@ class AgentRouteMetricsTests(unittest.TestCase):
     def test_extract_landscape_request_weak_ecosystem_without_role_intent(self) -> None:
         req = agent_mod._extract_landscape_request("Please discuss Apple ecosystem accessories compatibility.")
         self.assertIsNone(req)
+
+    def test_extract_source_compare_request_detects_hn_tc(self) -> None:
+        req = agent_mod._extract_source_compare_request("对比 AI 在 HackerNews 和 TechCrunch 过去14天的差异")
+        self.assertIsNotNone(req)
+        topic, days = req
+        self.assertEqual(topic, "AI")
+        self.assertEqual(days, 14)
+
+    def test_extract_trend_request_detects_basic_intent(self) -> None:
+        req = agent_mod._extract_trend_request("OpenAI 最近7天是在升温还是降温？")
+        self.assertIsNotNone(req)
+        topic, days = req
+        self.assertEqual(topic, "OpenAI")
+        self.assertEqual(days, 7)
+
+    def test_extract_query_request_detects_filters(self) -> None:
+        req = agent_mod._extract_query_request("检索 AI，来源 TechCrunch，最近7天，按热度排序")
+        self.assertIsNotNone(req)
+        query, source, days, sort, limit = req
+        self.assertEqual(query, "AI")
+        self.assertEqual(source, "TechCrunch")
+        self.assertEqual(days, 7)
+        self.assertEqual(sort, "heat_desc")
+        self.assertEqual(limit, 8)
+
+    def test_extract_fulltext_request_detects_keyword(self) -> None:
+        req = agent_mod._extract_fulltext_request("批量读取 OpenAI Voice Engine 相关全文并总结争议点")
+        self.assertIsNotNone(req)
+        query, max_chars = req
+        self.assertEqual(query, "OpenAI Voice Engine")
+        self.assertEqual(max_chars, 4000)
 
     def test_generate_response_fallback_path_increments_metrics(self) -> None:
         old_runtime = os.environ.get("AGENT_RUNTIME")
@@ -351,6 +390,233 @@ class AgentRouteMetricsTests(unittest.TestCase):
             os.environ.pop("LANDSCAPE_MIN_ACTIVE_ENTITIES", None)
         else:
             os.environ["LANDSCAPE_MIN_ACTIVE_ENTITIES"] = old_min_active
+
+    def test_generate_response_landscape_unstable_synthesis_fallbacks_to_raw(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+
+        fake_landscape = (
+            "Landscape snapshot: topic=AI (last 30 days)\n"
+            "Coverage: topic_articles=40, matched_entity_articles=10, active_entities=2/2\n"
+            "Evidence URLs:\n"
+            "  [OpenAI] #1 [TechCrunch] A | points=10 | 2026-03-20 10:00 | https://a.com\n"
+            "  [Google] #1 [HackerNews] B | points=8 | 2026-03-21 11:00 | https://b.com\n"
+            "  [OpenAI] #2 [TechCrunch] C | points=7 | 2026-03-22 11:00 | https://c.com\n"
+            "  [Google] #2 [HackerNews] D | points=6 | 2026-03-23 11:00 | https://d.com\n"
+            "Confidence: Medium"
+        )
+
+        unstable_summary = (
+            "\u5f88\u62b1\u6b49\uff0cAI\u683c\u5c40\u5206\u6790\u5de5\u5177\u5f53\u524d\u9047\u5230\u6280\u672f\u95ee\u9898\uff0c"
+            "\u65e0\u6cd5\u751f\u6210\u5b8c\u6574\u62a5\u544a\u3002"
+        )
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: ("AI", 30, [])))
+            stack.enter_context(patch.object(agent_mod, "analyze_landscape", lambda **_kwargs: fake_landscape))
+            stack.enter_context(patch.object(agent_mod, "_analyze_landscape_output", lambda **_kwargs: unstable_summary))
+
+            out = agent_mod.generate_response([], "当今世界AI领域局势是什么")
+            self.assertIn("Landscape snapshot", out)
+            self.assertIn("来源", out)
+            self.assertNotIn("很抱歉", out)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+    def test_generate_response_landscape_no_data_returns_guidance(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: ("AI", 30, [])))
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "analyze_landscape",
+                    lambda **_kwargs: "No landscape data in the last 30 days for entities: OpenAI, Google.",
+                )
+            )
+
+            out = agent_mod.generate_response([], "当今世界AI领域局势是什么")
+            self.assertIn("最近 30 天", out)
+            self.assertIn("置信度：低", out)
+            self.assertIn("No landscape data", out)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+    def test_generate_response_source_compare_forced_adds_evidence(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+
+        raw_source = (
+            "Source comparison: AI (last 14 days)\n"
+            "Stats:\n"
+            "  HackerNews: count=5, avg_points=33.1, sentiment(P/N/Ng)=2/2/1\n"
+            "  TechCrunch: count=6, avg_points=28.8, sentiment(P/N/Ng)=3/2/1\n"
+            "Top evidence:\n"
+            "  [HackerNews] #1 A | points=10 | 2026-03-20 10:00 | https://a.com\n"
+            "  [TechCrunch] #1 B | points=9 | 2026-03-20 11:00 | https://b.com\n"
+        )
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: ("AI", 14)))
+            stack.enter_context(patch.object(agent_mod, "compare_sources", lambda **_kwargs: raw_source))
+            stack.enter_context(
+                patch.object(agent_mod, "_analyze_source_compare_output", lambda **_kwargs: "## 对比结论\n- 样本显示来源分化")
+            )
+            out = agent_mod.generate_response([], "对比 AI 在 HackerNews 和 TechCrunch 过去14天的差异")
+            self.assertIn("来源", out)
+            self.assertIn("https://a.com", out)
+            self.assertIn("https://b.com", out)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+    def test_generate_response_query_forced_adds_evidence(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+
+        raw_query = (
+            "1. [TechCrunch] A\n"
+            "   time=2026-03-20 10:00, sentiment=Neutral, points=10\n"
+            "   url=https://a.com\n"
+            "2. [TechCrunch] B\n"
+            "   time=2026-03-20 11:00, sentiment=Positive, points=9\n"
+            "   url=https://b.com\n"
+        )
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_trend_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_fulltext_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_query_request", lambda _m: ("AI", "TechCrunch", 7, "heat_desc", 8)))
+            stack.enter_context(patch.object(agent_mod, "query_news", lambda **_kwargs: raw_query))
+            stack.enter_context(patch.object(agent_mod, "_analyze_query_output", lambda **_kwargs: "## 检索结果摘要\n- 已返回高热样本"))
+            out = agent_mod.generate_response([], "检索 AI，来源 TechCrunch，最近7天，按热度排序")
+            self.assertIn("来源", out)
+            self.assertIn("https://a.com", out)
+            self.assertIn("https://b.com", out)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+    def test_generate_response_fulltext_forced_adds_evidence(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+
+        raw_fulltext = (
+            "No URLs provided. Auto-selected Top 2 articles for query 'OpenAI Voice Engine':\n"
+            "1. [TechCrunch] A | points=10 | 2026-03-20 10:00 | https://a.com\n"
+            "2. [HackerNews] B | points=9 | 2026-03-20 11:00 | https://b.com\n"
+        )
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_trend_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_fulltext_request", lambda _m: ("OpenAI Voice Engine", 4000)))
+            stack.enter_context(patch.object(agent_mod, "fulltext_batch", lambda **_kwargs: raw_fulltext))
+            stack.enter_context(patch.object(agent_mod, "_analyze_fulltext_output", lambda **_kwargs: "## 核心结论\n- 争议点集中在应用边界"))
+            out = agent_mod.generate_response([], "批量读取 OpenAI Voice Engine 相关全文并总结争议点")
+            self.assertIn("来源", out)
+            self.assertIn("https://a.com", out)
+            self.assertIn("https://b.com", out)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+    def test_generate_response_trend_forced_uses_trend_tool(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+
+        raw_trend = (
+            "Trend for topic: OpenAI\n"
+            "Window: recent 7 days vs previous 7 days\n"
+            "Article count: 12 vs 8 -> +4 (+50.0%)\n"
+            "Avg points: 33.0 vs 29.0\n"
+            "Daily breakdown:\n"
+            "  2026-03-20: count=2, avg_points=30.0\n"
+        )
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_trend_request", lambda _m: ("OpenAI", 7)))
+            stack.enter_context(patch.object(agent_mod, "trend_analysis", lambda **_kwargs: raw_trend))
+            stack.enter_context(patch.object(agent_mod, "_analyze_trend_output", lambda **_kwargs: "## 趋势结论\n- 热度抬升"))
+            out = agent_mod.generate_response([], "OpenAI 最近7天是在升温还是降温？")
+            self.assertIn("趋势结论", out)
+            self.assertIn("热度抬升", out)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
 
     def test_generate_response_payload_has_text_and_title_map(self) -> None:
         with ExitStack() as stack:

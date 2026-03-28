@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from threading import Lock
 from typing import Any
 
 from google import genai
@@ -21,6 +20,28 @@ from langgraph.prebuilt import create_react_agent
 
 try:
     from prompts import SYSTEM_INSTRUCTION
+    from core.evidence import (
+        contains_cjk as _contains_cjk,
+        decorate_response_with_sources as _decorate_response_with_sources_core,
+        ensure_evidence_section as _ensure_evidence_section,
+        extract_urls as _extract_urls,
+    )
+    from core.metrics import (
+        emit_route_metrics as _emit_route_metrics,
+        get_route_metrics_snapshot,
+        metrics_inc as _metrics_inc,
+        reset_route_metrics,
+    )
+    from core.router import (
+        count_timeline_items as _count_timeline_items,
+        extract_compare_request as _extract_compare_request,
+        extract_fulltext_request as _extract_fulltext_request,
+        extract_landscape_request as _extract_landscape_request,
+        extract_query_request as _extract_query_request,
+        extract_timeline_request as _extract_timeline_request,
+        extract_trend_request as _extract_trend_request,
+        extract_source_compare_request as _extract_source_compare_request,
+    )
     from tools import (
         analyze_landscape,
         analyze_ai_landscape,
@@ -38,6 +59,28 @@ try:
     )
 except ImportError:  # package-style import fallback
     from .prompts import SYSTEM_INSTRUCTION
+    from .core.evidence import (
+        contains_cjk as _contains_cjk,
+        decorate_response_with_sources as _decorate_response_with_sources_core,
+        ensure_evidence_section as _ensure_evidence_section,
+        extract_urls as _extract_urls,
+    )
+    from .core.metrics import (
+        emit_route_metrics as _emit_route_metrics,
+        get_route_metrics_snapshot,
+        metrics_inc as _metrics_inc,
+        reset_route_metrics,
+    )
+    from .core.router import (
+        count_timeline_items as _count_timeline_items,
+        extract_compare_request as _extract_compare_request,
+        extract_fulltext_request as _extract_fulltext_request,
+        extract_landscape_request as _extract_landscape_request,
+        extract_query_request as _extract_query_request,
+        extract_timeline_request as _extract_timeline_request,
+        extract_trend_request as _extract_trend_request,
+        extract_source_compare_request as _extract_source_compare_request,
+    )
     from .tools import (
         analyze_landscape,
         analyze_ai_landscape,
@@ -227,222 +270,10 @@ def _generate_legacy(history: list[dict], user_message: str) -> str:
 # ---------------------------------------------------------------------------
 _langgraph_agent: Any | None = None
 _analysis_model: Any | None = None
-_route_metrics_lock = Lock()
-_route_metrics: dict[str, int] = {
-    "requests_total": 0,
-    "compare_forced": 0,
-    "timeline_forced": 0,
-    "landscape_forced": 0,
-    "landscape_low_evidence": 0,
-    "legacy_direct": 0,
-    "langchain_attempts": 0,
-    "langchain_success": 0,
-    "langchain_fallback": 0,
-}
-
-
-def _metrics_enabled() -> bool:
-    return os.getenv("AGENT_ROUTE_METRICS", "true").strip().lower() not in {"0", "false", "no", "off"}
-
-
-def _metrics_log_every() -> int:
-    try:
-        return max(1, int(os.getenv("AGENT_ROUTE_LOG_EVERY", "20")))
-    except Exception:
-        return 20
-
-
-def _metrics_inc(key: str, amount: int = 1) -> None:
-    if not _metrics_enabled():
-        return
-    with _route_metrics_lock:
-        _route_metrics[key] = _route_metrics.get(key, 0) + amount
-
-
-def _emit_route_metrics(route_event: str, force: bool = False) -> None:
-    if not _metrics_enabled():
-        return
-
-    with _route_metrics_lock:
-        snapshot = dict(_route_metrics)
-
-    total = max(1, snapshot.get("requests_total", 0))
-    attempts = snapshot.get("langchain_attempts", 0)
-    fallback = snapshot.get("langchain_fallback", 0)
-    success = snapshot.get("langchain_success", 0)
-    compare_forced = snapshot.get("compare_forced", 0)
-    timeline_forced = snapshot.get("timeline_forced", 0)
-    landscape_forced = snapshot.get("landscape_forced", 0)
-    landscape_low_evidence = snapshot.get("landscape_low_evidence", 0)
-    legacy_direct = snapshot.get("legacy_direct", 0)
-
-    should_log = force or (snapshot.get("requests_total", 0) % _metrics_log_every() == 0)
-    if not should_log:
-        return
-
-    fallback_rate_total = fallback / total
-    fallback_rate_attempt = (fallback / attempts) if attempts else 0.0
-    langchain_success_rate = (success / attempts) if attempts else 0.0
-    forced_route_rate = (compare_forced + timeline_forced + landscape_forced) / total
-    landscape_low_evidence_rate = (landscape_low_evidence / landscape_forced) if landscape_forced else 0.0
-
-    print(
-        "[Metrics] "
-        f"event={route_event} "
-        f"total={snapshot.get('requests_total', 0)} "
-        f"compare_forced={compare_forced} "
-        f"timeline_forced={timeline_forced} "
-        f"landscape_forced={landscape_forced} "
-        f"landscape_low_evidence={landscape_low_evidence} "
-        f"legacy_direct={legacy_direct} "
-        f"langchain_attempts={attempts} "
-        f"langchain_success={success} "
-        f"langchain_fallback={fallback} "
-        f"fallback_rate_total={fallback_rate_total:.1%} "
-        f"fallback_rate_langchain={fallback_rate_attempt:.1%} "
-        f"langchain_success_rate={langchain_success_rate:.1%} "
-        f"forced_route_rate={forced_route_rate:.1%} "
-        f"landscape_low_evidence_rate={landscape_low_evidence_rate:.1%}"
-    )
-
-
-def reset_route_metrics() -> None:
-    """Reset in-memory route metrics counters."""
-    with _route_metrics_lock:
-        for k in list(_route_metrics.keys()):
-            _route_metrics[k] = 0
-
-
-def get_route_metrics_snapshot() -> dict[str, float]:
-    """Return a snapshot of route metrics plus derived rates."""
-    with _route_metrics_lock:
-        snapshot: dict[str, float] = dict(_route_metrics)
-
-    total = max(1, int(snapshot.get("requests_total", 0)))
-    attempts = int(snapshot.get("langchain_attempts", 0))
-    fallback = int(snapshot.get("langchain_fallback", 0))
-    success = int(snapshot.get("langchain_success", 0))
-    compare_forced = int(snapshot.get("compare_forced", 0))
-    timeline_forced = int(snapshot.get("timeline_forced", 0))
-    landscape_forced = int(snapshot.get("landscape_forced", 0))
-    landscape_low_evidence = int(snapshot.get("landscape_low_evidence", 0))
-
-    snapshot["fallback_rate_total"] = fallback / total
-    snapshot["fallback_rate_langchain"] = (fallback / attempts) if attempts else 0.0
-    snapshot["langchain_success_rate"] = (success / attempts) if attempts else 0.0
-    snapshot["forced_route_rate"] = (compare_forced + timeline_forced + landscape_forced) / total
-    snapshot["landscape_low_evidence_rate"] = (
-        (landscape_low_evidence / landscape_forced) if landscape_forced else 0.0
-    )
-    return snapshot
-
-
-def _contains_cjk(text: str) -> bool:
-    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
-
-
-def _extract_urls(text: str) -> list[str]:
-    if not text:
-        return []
-    urls = re.findall(r"https?://[^\s)\]]+", text)
-    dedup: list[str] = []
-    seen: set[str] = set()
-    for u in urls:
-        if u not in seen:
-            dedup.append(u)
-            seen.add(u)
-    return dedup
-
-
-_SOURCE_HEADER_RE = re.compile(
-    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
-    re.IGNORECASE,
-)
-
-
-def _strip_existing_source_section(text: str) -> str:
-    lines = (text or "").splitlines()
-    start = None
-    for i, line in enumerate(lines):
-        if _SOURCE_HEADER_RE.match(line.strip()):
-            start = i
-            break
-    if start is None:
-        return (text or "").rstrip()
-    return "\n".join(lines[:start]).rstrip()
-
-
-def _apply_inline_citations(text: str, ordered_urls: list[str]) -> str:
-    out = text or ""
-    for idx, url in enumerate(ordered_urls, 1):
-        cite = f"[{idx}]"
-        out = out.replace(f"`{url}`", cite)
-        out = out.replace(url, cite)
-    return out
-
-
-def _max_source_urls() -> int:
-    try:
-        # Backward-compatible fallback to BOT_MAX_CITATION_URLS.
-        raw = os.getenv("AGENT_MAX_SOURCE_URLS", os.getenv("BOT_MAX_CITATION_URLS", "12"))
-        return max(1, min(30, int(raw)))
-    except Exception:
-        return 12
-
-
-def _build_source_section(ordered_urls: list[str], user_message: str) -> str:
-    header = "## 来源" if _contains_cjk(user_message) else "## Sources"
-    lines = [header]
-    for idx, url in enumerate(ordered_urls, 1):
-        lines.append(f"- [{idx}] {url}")
-    return "\n".join(lines)
-
-
-def _decorate_response_with_sources(text: str, user_message: str) -> tuple[str, dict[str, str]]:
-    """Normalize output into citation style + source section in agent layer."""
-    raw = (text or "").strip()
-    if not raw:
-        return raw, {}
-
-    body = _strip_existing_source_section(raw)
-    urls = _extract_urls(body) if body else []
-    if not urls:
-        # Preserve evidence URLs when response originally contains only a source section.
-        urls = _extract_urls(raw)
-    if not urls:
-        return raw, {}
-
-    ordered_urls = urls[:_max_source_urls()]
-    title_map: dict[str, str] = {}
-    try:
-        title_map = lookup_url_titles(ordered_urls)
-    except Exception as exc:
-        print(f"[Warn] lookup_url_titles in agent failed: {exc}")
-        title_map = {}
-
-    render_body = body if body else raw
-    cited_body = _apply_inline_citations(render_body, ordered_urls)
-    source_section = _build_source_section(ordered_urls, user_message)
-    merged = f"{cited_body.rstrip()}\n\n{source_section}".strip()
-    return merged, title_map
-
-
-def _count_timeline_items(text: str) -> int:
-    if not text:
-        return 0
-    return len(re.findall(r"^\s*\d+\.\s", text, flags=re.MULTILINE))
-
-
-def _extract_days(text: str, default: int, maximum: int) -> int:
-    m = re.search(r"(?:最近|过去|last)?\s*(\d{1,3})\s*(?:天|day|days)", text, flags=re.IGNORECASE)
-    val = int(m.group(1)) if m else default
-    return max(1, min(maximum, val))
-
-
-def _extract_limit(text: str, default: int, maximum: int) -> int:
-    m = re.search(r"(?:最多|max|limit)\s*[:=]?\s*(\d{1,2})\s*(?:条|items?)?", text, flags=re.IGNORECASE)
-    val = int(m.group(1)) if m else default
-    return max(1, min(maximum, val))
+## NOTE:
+## Route metrics, evidence formatting, and deterministic request extractors
+## have been moved to agents/core/metrics.py, agents/core/evidence.py,
+## and agents/core/router.py.
 
 
 def _history_to_messages(history: list[dict]) -> list[Any]:
@@ -619,7 +450,7 @@ def _extract_compare_pair(text: str) -> tuple[str, str] | None:
 
 
 def _extract_landscape_topic(text: str, lower: str) -> str:
-    if bool(re.search(r"\bai\b", lower)) or ("人工智能" in text) or ("大模型" in text) or ("llm" in lower):
+    if bool(re.search(r"(?<![a-z])ai(?![a-z])", lower)) or ("人工智能" in text) or ("大模型" in text) or ("llm" in lower):
         return "AI"
 
     if any(k in lower for k in ["business", "market", "finance", "commercial"]) or any(
@@ -656,7 +487,12 @@ def _extract_landscape_request(user_message: str) -> tuple[str, int, list[str]] 
     lower = text.lower()
     strong_landscape_keywords = [
         "格局",
+        "局势",
+        "态势",
         "版图",
+        "全局",
+        "全貌",
+        "宏观",
         "生态位",
         "阵营",
         "角色",
@@ -696,6 +532,57 @@ def _extract_landscape_request(user_message: str) -> tuple[str, int, list[str]] 
             entities.append(canonical)
 
     return topic, days, entities
+
+
+def _is_unstable_landscape_synthesis(text: str) -> bool:
+    """Detect unstable synthesis patterns and fallback to DB raw snapshot."""
+    content = (text or "").strip()
+    if not content:
+        return True
+    lower = content.lower()
+    suspicious_markers = [
+        "工具当前遇到技术问题",
+        "无法生成全球ai态势",
+        "无法生成完整报告",
+        "请问您最关心哪两个公司",
+        "which two companies",
+        "cannot generate a complete",
+    ]
+    return any(marker in content or marker in lower for marker in suspicious_markers)
+
+
+def _format_landscape_no_data_response(
+    user_message: str,
+    topic: str,
+    days: int,
+    entities: list[str],
+    raw_landscape: str,
+) -> str:
+    topic_text = topic or "全局"
+    entity_text = ", ".join(entities) if entities else "默认实体集合"
+    raw_text = (raw_landscape or "").strip()
+    if _contains_cjk(user_message):
+        return (
+            f"当前无法在最近 {days} 天内为“{topic_text}”生成稳定的格局分析（实体范围：{entity_text}）。\n"
+            "这通常意味着样本不足或主题与已入库新闻匹配度较低。\n\n"
+            f"数据库返回：{raw_text}\n\n"
+            "建议：\n"
+            "- 扩大时间窗口（例如最近 60 天）\n"
+            "- 明确实体（例如 OpenAI, Google, Microsoft）\n"
+            "- 使用更宽主题（例如“科技格局”而非过窄关键词）\n"
+            "置信度：低"
+        )
+    return (
+        f"Unable to produce a stable landscape answer for topic='{topic or 'all'}' "
+        f"in the last {days} days (entities: {entity_text}).\n"
+        "This usually means sparse coverage or weak topic-entity matching.\n\n"
+        f"DB output: {raw_text}\n\n"
+        "Try:\n"
+        "- a wider time window (e.g., 60 days)\n"
+        "- explicit entities (e.g., OpenAI, Google, Microsoft)\n"
+        "- a broader topic query.\n"
+        "Confidence: Low"
+    )
 
 
 def _extract_compare_request(user_message: str) -> tuple[str, str, int] | None:
@@ -968,6 +855,158 @@ def _ensure_timeline_evidence(answer: str, timeline_output: str, user_message: s
     return _ensure_evidence_section(answer=answer, source_output=timeline_output, user_message=user_message, max_urls=8)
 
 
+def _ensure_trend_evidence(answer: str, trend_output: str, user_message: str) -> str:
+    """Ensure trend answer includes evidence URL section when URLs are available."""
+    return _ensure_evidence_section(answer=answer, source_output=trend_output, user_message=user_message, max_urls=6)
+
+
+def _ensure_source_compare_evidence(answer: str, source_output: str, user_message: str) -> str:
+    """Ensure source-compare answer includes evidence URL section."""
+    return _ensure_evidence_section(answer=answer, source_output=source_output, user_message=user_message, max_urls=8)
+
+
+def _ensure_query_evidence(answer: str, query_output: str, user_message: str) -> str:
+    """Ensure query answer always includes evidence URL section."""
+    return _ensure_evidence_section(answer=answer, source_output=query_output, user_message=user_message, max_urls=10)
+
+
+def _ensure_fulltext_evidence(answer: str, fulltext_output: str, user_message: str) -> str:
+    """Ensure fulltext answer always includes evidence URL section."""
+    return _ensure_evidence_section(answer=answer, source_output=fulltext_output, user_message=user_message, max_urls=10)
+
+
+def _analyze_trend_output(
+    user_message: str,
+    topic: str,
+    window: int,
+    trend_output: str,
+) -> str:
+    """Turn trend tool output into analyst-friendly answer without adding new facts."""
+    model = _get_analysis_model()
+    system_prompt = (
+        "You are a strict tech-intelligence analyst.\n"
+        "You will receive trend tool output.\n"
+        "Rules:\n"
+        "1) Use ONLY facts/URLs/numbers from tool output.\n"
+        "2) Do NOT invent events/URLs.\n"
+        "3) Explicitly separate observed trend vs hypothesis.\n"
+        "4) Reply in user's language.\n"
+        "5) Keep concise and data-grounded."
+    )
+    human_prompt = (
+        f"User question:\n{user_message}\n\n"
+        f"Trend target: {topic}, window={window} days\n\n"
+        "Trend tool output (ground truth):\n"
+        f"{trend_output}\n\n"
+        "Now produce concise analysis with sections:\n"
+        "- 趋势结论\n"
+        "- 关键数据\n"
+        "- 驱动因素（证据不足则写证据不足）\n"
+        "- 后续关注"
+    )
+    result = model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
+    return _coerce_to_text(getattr(result, "content", result)).strip()
+
+
+def _analyze_source_compare_output(
+    user_message: str,
+    topic: str,
+    days: int,
+    source_compare_output: str,
+) -> str:
+    """Turn source-compare output into analyst-friendly answer without adding new facts."""
+    model = _get_analysis_model()
+    system_prompt = (
+        "You are a strict tech-intelligence analyst.\n"
+        "You will receive source comparison output.\n"
+        "Rules:\n"
+        "1) Use ONLY tool facts/URLs/numbers.\n"
+        "2) Do NOT invent facts/URLs.\n"
+        "3) Explain differences by evidence-backed dimensions.\n"
+        "4) Reply in user's language.\n"
+        "5) Keep concise and data-grounded."
+    )
+    human_prompt = (
+        f"User question:\n{user_message}\n\n"
+        f"Source compare target: topic={topic}, window={days} days\n\n"
+        "Source compare tool output (ground truth):\n"
+        f"{source_compare_output}\n\n"
+        "Now produce concise analysis with sections:\n"
+        "- 对比结论\n"
+        "- 维度差异（热度/情绪/覆盖）\n"
+        "- 证据\n"
+        "- 对决策的影响"
+    )
+    result = model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
+    return _coerce_to_text(getattr(result, "content", result)).strip()
+
+
+def _analyze_query_output(
+    user_message: str,
+    query: str,
+    source: str,
+    days: int,
+    sort: str,
+    query_output: str,
+) -> str:
+    """Turn query tool output into concise analyst summary without adding new facts."""
+    model = _get_analysis_model()
+    system_prompt = (
+        "You are a strict tech-intelligence analyst.\n"
+        "You will receive filtered retrieval output.\n"
+        "Rules:\n"
+        "1) Use ONLY facts/URLs/numbers from tool output.\n"
+        "2) Do NOT invent facts or URLs.\n"
+        "3) If data is sparse, state it explicitly.\n"
+        "4) Reply in user's language.\n"
+        "5) Keep concise and data-grounded."
+    )
+    human_prompt = (
+        f"User question:\n{user_message}\n\n"
+        f"Query target: query={query}, source={source}, window={days}d, sort={sort}\n\n"
+        "Query tool output (ground truth):\n"
+        f"{query_output}\n\n"
+        "Now produce concise analysis with sections:\n"
+        "- 检索结果摘要\n"
+        "- 关键信号\n"
+        "- 后续跟进建议"
+    )
+    result = model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
+    return _coerce_to_text(getattr(result, "content", result)).strip()
+
+
+def _analyze_fulltext_output(
+    user_message: str,
+    request_query: str,
+    fulltext_output: str,
+) -> str:
+    """Turn batch fulltext output into evidence-grounded synthesis."""
+    model = _get_analysis_model()
+    system_prompt = (
+        "You are a strict tech-intelligence analyst.\n"
+        "You will receive batch fulltext output.\n"
+        "Rules:\n"
+        "1) Use ONLY facts/quotes/URLs from tool output.\n"
+        "2) Do NOT invent claims or URLs.\n"
+        "3) Separate consensus vs disagreement.\n"
+        "4) Reply in user's language.\n"
+        "5) Keep concise and data-grounded."
+    )
+    human_prompt = (
+        f"User question:\n{user_message}\n\n"
+        f"Fulltext batch target: {request_query}\n\n"
+        "Fulltext tool output (ground truth):\n"
+        f"{fulltext_output}\n\n"
+        "Now produce concise analysis with sections:\n"
+        "- 核心结论\n"
+        "- 争议焦点\n"
+        "- 证据摘录（仅基于原文）\n"
+        "- 不确定性与后续验证"
+    )
+    result = model.invoke([SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)])
+    return _coerce_to_text(getattr(result, "content", result)).strip()
+
+
 def _analyze_landscape_output(
     user_message: str,
     topic: str,
@@ -1205,6 +1244,40 @@ def generate_response(history: list[dict], user_message: str) -> str:
     strict_mode = os.getenv("AGENT_RUNTIME_STRICT", "false").strip().lower() == "true"
     _metrics_inc("requests_total")
 
+    # Deterministic guardrail: source-comparison intent must use compare_sources tool first.
+    source_compare_req = _extract_source_compare_request(user_message)
+    if source_compare_req:
+        topic, days = source_compare_req
+        try:
+            raw_source_compare = compare_sources(topic=topic, days=days)
+            if raw_source_compare.startswith("compare_sources failed:") or raw_source_compare.startswith("No comparison data"):
+                _emit_route_metrics("source_compare_forced")
+                return raw_source_compare
+            try:
+                analyzed = _analyze_source_compare_output(
+                    user_message=user_message,
+                    topic=topic,
+                    days=days,
+                    source_compare_output=raw_source_compare,
+                )
+                if analyzed:
+                    result = _ensure_source_compare_evidence(analyzed, raw_source_compare, user_message)
+                    _emit_route_metrics("source_compare_forced")
+                    return result
+            except Exception as exc:
+                if strict_mode:
+                    _emit_route_metrics("source_compare_forced_strict_error", force=True)
+                    raise
+                print(f"[Warn] Source compare synthesis failed; fallback to raw output: {exc}")
+            _emit_route_metrics("source_compare_forced")
+            return raw_source_compare
+        except Exception as exc:
+            if strict_mode:
+                _emit_route_metrics("source_compare_forced_strict_error", force=True)
+                raise
+            _emit_route_metrics("source_compare_forced_error", force=True)
+            return f"Source comparison request detected, but DB query failed: {exc}"
+
     # Deterministic guardrail: for explicit A-vs-B comparisons, force DB-backed compare tool.
     compare_req = _extract_compare_request(user_message)
     if compare_req:
@@ -1305,7 +1378,13 @@ def generate_response(history: list[dict], user_message: str) -> str:
                     raw_landscape = retry_landscape
             if _is_landscape_no_data(raw_landscape):
                 _emit_route_metrics("landscape_forced")
-                return raw_landscape
+                return _format_landscape_no_data_response(
+                    user_message=user_message,
+                    topic=topic,
+                    days=days,
+                    entities=entities,
+                    raw_landscape=raw_landscape,
+                )
 
             if not _is_landscape_evidence_sufficient(raw_landscape):
                 _metrics_inc("landscape_low_evidence")
@@ -1328,6 +1407,10 @@ def generate_response(history: list[dict], user_message: str) -> str:
                     landscape_output=raw_landscape,
                 )
                 if analyzed:
+                    if _is_unstable_landscape_synthesis(analyzed):
+                        print("[Warn] Landscape synthesis unstable; fallback to raw landscape snapshot.")
+                        _emit_route_metrics("landscape_forced")
+                        return raw_landscape
                     result = _ensure_landscape_evidence(analyzed, raw_landscape, user_message)
                     _emit_route_metrics("landscape_forced")
                     return result
@@ -1344,6 +1427,117 @@ def generate_response(history: list[dict], user_message: str) -> str:
                 raise
             _emit_route_metrics("landscape_forced_error", force=True)
             return f"Landscape analysis request detected, but DB query failed: {exc}"
+
+    # Deterministic guardrail: trend questions should use trend_analysis before synthesis.
+    trend_req = _extract_trend_request(user_message)
+    if trend_req:
+        topic, window = trend_req
+        try:
+            raw_trend = trend_analysis(topic=topic, window=window)
+            if raw_trend.startswith("trend_analysis failed:") or raw_trend.startswith("trend_analysis requires"):
+                _emit_route_metrics("trend_forced")
+                return raw_trend
+            try:
+                analyzed = _analyze_trend_output(
+                    user_message=user_message,
+                    topic=topic,
+                    window=window,
+                    trend_output=raw_trend,
+                )
+                if analyzed:
+                    result = _ensure_trend_evidence(analyzed, raw_trend, user_message)
+                    _emit_route_metrics("trend_forced")
+                    return result
+            except Exception as exc:
+                if strict_mode:
+                    _emit_route_metrics("trend_forced_strict_error", force=True)
+                    raise
+                print(f"[Warn] Trend synthesis failed; fallback to raw output: {exc}")
+            _emit_route_metrics("trend_forced")
+            return raw_trend
+        except Exception as exc:
+            if strict_mode:
+                _emit_route_metrics("trend_forced_strict_error", force=True)
+                raise
+            _emit_route_metrics("trend_forced_error", force=True)
+            return f"Trend request detected, but DB query failed: {exc}"
+
+    # Deterministic guardrail: fulltext/deep-read questions should use fulltext_batch first.
+    fulltext_req = _extract_fulltext_request(user_message)
+    if fulltext_req:
+        request_query, max_chars = fulltext_req
+        try:
+            raw_fulltext = fulltext_batch(urls=request_query, max_chars_per_article=max_chars)
+            if raw_fulltext.startswith("fulltext_batch requires") or raw_fulltext.startswith("No candidate articles found"):
+                _emit_route_metrics("fulltext_forced")
+                return raw_fulltext
+            try:
+                analyzed = _analyze_fulltext_output(
+                    user_message=user_message,
+                    request_query=request_query,
+                    fulltext_output=raw_fulltext,
+                )
+                if analyzed:
+                    result = _ensure_fulltext_evidence(analyzed, raw_fulltext, user_message)
+                    _emit_route_metrics("fulltext_forced")
+                    return result
+            except Exception as exc:
+                if strict_mode:
+                    _emit_route_metrics("fulltext_forced_strict_error", force=True)
+                    raise
+                print(f"[Warn] Fulltext synthesis failed; fallback to raw output: {exc}")
+            _emit_route_metrics("fulltext_forced")
+            return raw_fulltext
+        except Exception as exc:
+            if strict_mode:
+                _emit_route_metrics("fulltext_forced_strict_error", force=True)
+                raise
+            _emit_route_metrics("fulltext_forced_error", force=True)
+            return f"Fulltext request detected, but tool execution failed: {exc}"
+
+    # Deterministic guardrail: filter-style retrieval requests should use query_news first.
+    query_req = _extract_query_request(user_message)
+    if query_req:
+        query, source, days, sort, limit = query_req
+        try:
+            raw_query = query_news(
+                query=query,
+                source=source,
+                days=days,
+                category="",
+                sentiment="",
+                sort=sort,
+                limit=limit,
+            )
+            if raw_query.startswith("query_news failed:") or raw_query.startswith("No matching records"):
+                _emit_route_metrics("query_forced")
+                return raw_query
+            try:
+                analyzed = _analyze_query_output(
+                    user_message=user_message,
+                    query=query,
+                    source=source,
+                    days=days,
+                    sort=sort,
+                    query_output=raw_query,
+                )
+                if analyzed:
+                    result = _ensure_query_evidence(analyzed, raw_query, user_message)
+                    _emit_route_metrics("query_forced")
+                    return result
+            except Exception as exc:
+                if strict_mode:
+                    _emit_route_metrics("query_forced_strict_error", force=True)
+                    raise
+                print(f"[Warn] Query synthesis failed; fallback to raw output: {exc}")
+            _emit_route_metrics("query_forced")
+            return raw_query
+        except Exception as exc:
+            if strict_mode:
+                _emit_route_metrics("query_forced_strict_error", force=True)
+                raise
+            _emit_route_metrics("query_forced_error", force=True)
+            return f"Query request detected, but DB query failed: {exc}"
 
     if runtime == "legacy":
         _metrics_inc("legacy_direct")

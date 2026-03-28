@@ -452,7 +452,7 @@ body {
 .secondary-btn .btn-label {
     display: inline-block;
     line-height: 1;
-    transform: translateY(0);
+    transform: translateY(0.35px);
     transition: transform var(--transition-fast);
 }
 
@@ -490,6 +490,19 @@ body {
 
 .secondary-btn:active {
     transform: translateY(0) scale(0.98);
+}
+
+.secondary-btn.btn-pressing {
+    background: var(--active-color);
+    transform: scale(0.9);
+}
+
+.secondary-btn.btn-pressing .material-symbols-outlined {
+    transform: translateY(-0.2px) scale(0.98);
+}
+
+.secondary-btn.btn-pressing .btn-label {
+    transform: translateY(-0.5px);
 }
 
 .auth-divider {

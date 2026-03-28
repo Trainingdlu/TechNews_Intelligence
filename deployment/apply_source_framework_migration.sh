@@ -2,92 +2,105 @@
 set -euo pipefail
 
 # Idempotent migration runner for source framework.
+# Reusable for schema/table extension + source seed bundle.
 # Usage:
 #   bash deployment/apply_source_framework_migration.sh
+#   bash deployment/apply_source_framework_migration.sh --skip-seeds
+#   bash deployment/apply_source_framework_migration.sh --seed-file sql/infrastructure/seed_source_xxx.sql
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEPLOY_DIR="${REPO_ROOT}/deployment"
+COMMON_LIB="${SCRIPT_DIR}/db_common.sh"
 MIGRATION_SQL="${REPO_ROOT}/sql/infrastructure/source_framework_migration.sql"
 VIEW_SQL="${REPO_ROOT}/sql/infrastructure/view_logic.sql"
-SEED_BATCH1_SQL="${REPO_ROOT}/sql/infrastructure/seed_source_batch1_official.sql"
-SEED_NVIDIA_SQL="${REPO_ROOT}/sql/infrastructure/seed_source_batch2_nvidia.sql"
+SEED_GLOB_DIR="${REPO_ROOT}/sql/infrastructure"
+SKIP_SEEDS=false
+SEED_FILES=()
 
-if [[ ! -f "${MIGRATION_SQL}" ]]; then
-  echo "Missing migration SQL: ${MIGRATION_SQL}" >&2
-  exit 1
-fi
+usage() {
+  cat <<'EOF'
+Usage:
+  bash deployment/apply_source_framework_migration.sh [options]
 
-if [[ ! -f "${VIEW_SQL}" ]]; then
-  echo "Missing view SQL: ${VIEW_SQL}" >&2
-  exit 1
-fi
-
-if [[ ! -f "${SEED_BATCH1_SQL}" ]]; then
-  echo "Missing first-batch source seed SQL: ${SEED_BATCH1_SQL}" >&2
-  exit 1
-fi
-
-if [[ ! -f "${SEED_NVIDIA_SQL}" ]]; then
-  echo "Missing NVIDIA source seed SQL: ${SEED_NVIDIA_SQL}" >&2
-  exit 1
-fi
-
-cd "${DEPLOY_DIR}"
-
-if [[ ! -f ".env" ]]; then
-  echo "Missing deployment/.env. Please copy from .env.example and fill DB credentials first." >&2
-  exit 1
-fi
-
-# Read only required DB vars from .env without executing it.
-read_env_var() {
-  local key="$1"
-  local file="$2"
-  local raw
-  raw="$(grep -E "^${key}=" "${file}" | tail -n 1 | cut -d '=' -f2- || true)"
-  raw="${raw%$'\r'}"
-  raw="${raw%\"}"
-  raw="${raw#\"}"
-  raw="${raw%\'}"
-  raw="${raw#\'}"
-  printf '%s' "${raw}"
+Options:
+  --skip-seeds             Apply schema/view only, do not apply seed_source_*.sql.
+  --seed-file <path>       Apply specific seed SQL file (can be repeated).
+                           If omitted, all sql/infrastructure/seed_source_*.sql are applied.
+  -h, --help               Show this help message.
+EOF
 }
 
-POSTGRES_USER="${POSTGRES_USER:-$(read_env_var POSTGRES_USER .env)}"
-POSTGRES_DB="${POSTGRES_DB:-$(read_env_var POSTGRES_DB .env)}"
-
-if [[ -z "${POSTGRES_USER:-}" || -z "${POSTGRES_DB:-}" ]]; then
-  echo "POSTGRES_USER / POSTGRES_DB must be set in deployment/.env" >&2
+if [[ ! -f "${COMMON_LIB}" ]]; then
+  echo "Missing common helper: ${COMMON_LIB}" >&2
   exit 1
 fi
+source "${COMMON_LIB}"
 
-if docker compose version >/dev/null 2>&1; then
-  COMPOSE_CMD=(docker compose)
-elif command -v docker-compose >/dev/null 2>&1; then
-  COMPOSE_CMD=(docker-compose)
-else
-  echo "Neither 'docker compose' nor 'docker-compose' is available." >&2
-  exit 1
+resolve_seed_file() {
+  local raw="$1"
+  local resolved=""
+  if [[ "${raw}" = /* ]]; then
+    resolved="${raw}"
+  elif [[ -f "${raw}" ]]; then
+    resolved="$(cd "$(dirname "${raw}")" && pwd)/$(basename "${raw}")"
+  else
+    resolved="${REPO_ROOT}/${raw}"
+  fi
+  printf '%s' "${resolved}"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --skip-seeds)
+      SKIP_SEEDS=true
+      shift
+      ;;
+    --seed-file)
+      [[ $# -ge 2 ]] || { echo "Missing value for --seed-file" >&2; exit 1; }
+      SEED_FILES+=("$(resolve_seed_file "$2")")
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+db_require_file "${MIGRATION_SQL}" "migration SQL"
+db_require_file "${VIEW_SQL}" "view SQL"
+
+if [[ "${SKIP_SEEDS}" == false && "${#SEED_FILES[@]}" -eq 0 ]]; then
+  while IFS= read -r file; do
+    SEED_FILES+=("${file}")
+  done < <(find "${SEED_GLOB_DIR}" -maxdepth 1 -type f -name 'seed_source_*.sql' | sort)
 fi
 
-echo "Starting postgres service if needed..."
-"${COMPOSE_CMD[@]}" up -d postgres >/dev/null
+db_init_runtime "${REPO_ROOT}"
+db_ensure_postgres_running
 
 echo "Applying source framework migration..."
-cat "${MIGRATION_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
+db_psql_file "${MIGRATION_SQL}"
 
 echo "Refreshing dashboard view logic..."
-cat "${VIEW_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
+db_psql_file "${VIEW_SQL}"
 
-echo "Seeding first-batch official sources (Google/AWS/Microsoft)..."
-cat "${SEED_BATCH1_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
+if [[ "${SKIP_SEEDS}" == true ]]; then
+  echo "Skipping seed SQL as requested (--skip-seeds)."
+elif [[ "${#SEED_FILES[@]}" -eq 0 ]]; then
+  echo "No seed_source_*.sql found, skipping source seed step."
+else
+  echo "Applying source seed files..."
+  for seed_file in "${SEED_FILES[@]}"; do
+    db_require_file "${seed_file}" "source seed SQL"
+    echo " - $(basename "${seed_file}")"
+    db_psql_file "${seed_file}"
+  done
+fi
 
-echo "Seeding NVIDIA source..."
-cat "${SEED_NVIDIA_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
-
-echo "Done. Source framework migration + official sources + NVIDIA applied successfully."
+echo "Done. Source framework migration applied successfully."

@@ -65,6 +65,13 @@
         emailStatus.className = 'status-msg ' + type;
     }
 
+    async function playButtonPress(btn) {
+        if (!btn) return;
+        btn.classList.add('btn-pressing');
+        await new Promise((resolve) => setTimeout(resolve, 90));
+        btn.classList.remove('btn-pressing');
+    }
+
     // ── API Helpers ──
     async function apiFetch(path, options = {}) {
         const url = API_BASE + path;
@@ -80,6 +87,7 @@
         const email = emailInput.value.trim();
         if (!email) return;
 
+        await playButtonPress(emailBtn);
         emailBtn.classList.add('btn-loading');
         emailBtn.disabled = true;
         setStatus('', '');
@@ -105,10 +113,12 @@
     });
 
     // ── Token Form ──
-    tokenForm.addEventListener('submit', (e) => {
+    tokenForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const t = tokenInput.value.trim();
         if (!t) return;
+        const tokenSubmitBtn = tokenForm.querySelector('button[type=\"submit\"]');
+        await playButtonPress(tokenSubmitBtn);
         token = t;
         localStorage.setItem('agent_token', token);
         showChat();
