@@ -1,16 +1,17 @@
-"""Tests for eval core metrics."""
+"""Unit tests for eval core metrics helpers."""
 
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
-AGENTS_DIR = Path(__file__).resolve().parents[1]
-if str(AGENTS_DIR) not in sys.path:
-    sys.path.insert(0, str(AGENTS_DIR))
+try:
+    from agents.tests.utils.bootstrap import ensure_agents_on_path
+except ModuleNotFoundError:
+    from utils.bootstrap import ensure_agents_on_path
 
-from eval.eval_core import (
+ensure_agents_on_path()
+
+from eval.eval_core import (  # noqa: E402  pylint: disable=wrong-import-position
     average_pairwise_similarity,
     build_baseline_comparison,
     evaluate_case_outputs,
@@ -38,10 +39,10 @@ class EvalCoreTests(unittest.TestCase):
 
     def test_evaluate_case_outputs_constraints(self) -> None:
         outputs = [
-            "## 证据来源\n- https://a.com",
-            "没有证据来源",
+            "## Sources\n- https://a.com",
+            "No sources in this output",
         ]
-        metrics = evaluate_case_outputs(outputs, min_urls=1, must_contain=["证据"])
+        metrics = evaluate_case_outputs(outputs, min_urls=1, must_contain=["sources"])
         self.assertEqual(metrics["run_count"], 2)
         self.assertEqual(metrics["runs_with_min_urls"], 1)
         self.assertAlmostEqual(metrics["min_url_hit_rate"], 0.5, places=6)
@@ -60,17 +61,18 @@ class EvalCoreTests(unittest.TestCase):
     def test_build_baseline_comparison(self) -> None:
         current = {
             "summary": {
-                "avg_pairwise_similarity": 0.9,
-                "avg_unique_response_ratio": 0.2,
+                "avg_pairwise_similarity": 0.90,
+                "avg_unique_response_ratio": 0.20,
                 "avg_min_url_hit_rate": 0.95,
-                "avg_phrase_hit_rate": 0.9,
+                "avg_phrase_hit_rate": 0.90,
                 "avg_error_rate": 0.01,
             },
             "route_metrics": {
                 "fallback_rate_total": 0.02,
                 "fallback_rate_langchain": 0.03,
                 "langchain_success_rate": 0.97,
-                "forced_route_rate": 0.4,
+                "forced_route_rate": 0.40,
+                "landscape_low_evidence_rate": 0.10,
             },
         }
         baseline = {
@@ -86,6 +88,7 @@ class EvalCoreTests(unittest.TestCase):
                 "fallback_rate_langchain": 0.05,
                 "langchain_success_rate": 0.95,
                 "forced_route_rate": 0.35,
+                "landscape_low_evidence_rate": 0.20,
             },
         }
         cmp_out = build_baseline_comparison(current, baseline)
@@ -97,7 +100,7 @@ class EvalCoreTests(unittest.TestCase):
         report = {
             "summary": {
                 "avg_error_rate": 0.01,
-                "avg_min_url_hit_rate": 0.9,
+                "avg_min_url_hit_rate": 0.90,
             },
             "route_metrics": {
                 "fallback_rate_total": 0.04,
@@ -114,7 +117,7 @@ class EvalCoreTests(unittest.TestCase):
                 "name": "url_min",
                 "metric_path": "summary.avg_min_url_hit_rate",
                 "op": "min",
-                "threshold": 0.8,
+                "threshold": 0.80,
             },
             {
                 "name": "fallback_max",
@@ -127,7 +130,3 @@ class EvalCoreTests(unittest.TestCase):
         self.assertEqual(out["total"], 3)
         self.assertEqual(out["failed_count"], 1)
         self.assertFalse(out["ok"])
-
-
-if __name__ == "__main__":
-    unittest.main()

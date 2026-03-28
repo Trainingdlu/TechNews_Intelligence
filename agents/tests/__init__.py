@@ -1,2 +1,1 @@
-"""Unit tests for agent evaluation helpers."""
-
+"""Test package for agent runtime and bot robustness."""

@@ -11,6 +11,7 @@ DEPLOY_DIR="${REPO_ROOT}/deployment"
 MIGRATION_SQL="${REPO_ROOT}/sql/infrastructure/source_framework_migration.sql"
 VIEW_SQL="${REPO_ROOT}/sql/infrastructure/view_logic.sql"
 SEED_BATCH1_SQL="${REPO_ROOT}/sql/infrastructure/seed_source_batch1_official.sql"
+SEED_NVIDIA_SQL="${REPO_ROOT}/sql/infrastructure/seed_source_batch2_nvidia.sql"
 
 if [[ ! -f "${MIGRATION_SQL}" ]]; then
   echo "Missing migration SQL: ${MIGRATION_SQL}" >&2
@@ -24,6 +25,11 @@ fi
 
 if [[ ! -f "${SEED_BATCH1_SQL}" ]]; then
   echo "Missing first-batch source seed SQL: ${SEED_BATCH1_SQL}" >&2
+  exit 1
+fi
+
+if [[ ! -f "${SEED_NVIDIA_SQL}" ]]; then
+  echo "Missing NVIDIA source seed SQL: ${SEED_NVIDIA_SQL}" >&2
   exit 1
 fi
 
@@ -80,4 +86,8 @@ echo "Seeding first-batch official sources (Google/AWS/Microsoft)..."
 cat "${SEED_BATCH1_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
   psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
 
-echo "Done. Source framework migration + first-batch sources applied successfully."
+echo "Seeding NVIDIA source..."
+cat "${SEED_NVIDIA_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
+  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
+
+echo "Done. Source framework migration + official sources + NVIDIA applied successfully."

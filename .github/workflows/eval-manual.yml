@@ -11,6 +11,10 @@ on:
         description: "Runs per question"
         required: false
         default: "1"
+      suite:
+        description: "Eval suite (default|smoke)"
+        required: false
+        default: "smoke"
 
 jobs:
   eval-smoke:
@@ -36,7 +40,7 @@ jobs:
       - name: Run eval smoke (manual only)
         run: |
           python agents/eval/run_eval.py \
-            --dataset agents/eval/questions_default.jsonl \
+            --suite "${{ github.event.inputs.suite }}" \
             --max-cases "${{ github.event.inputs.max_cases }}" \
             --runs-per-question "${{ github.event.inputs.runs_per_question }}" \
             --output agents/eval/reports/ci_smoke.json

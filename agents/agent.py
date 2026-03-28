@@ -30,6 +30,7 @@ try:
         fulltext_batch,
         get_db_stats,
         list_topics,
+        lookup_url_titles,
         query_news,
         read_news_content,
         search_news,
@@ -46,6 +47,7 @@ except ImportError:  # package-style import fallback
         fulltext_batch,
         get_db_stats,
         list_topics,
+        lookup_url_titles,
         query_news,
         read_news_content,
         search_news,
@@ -352,6 +354,79 @@ def _extract_urls(text: str) -> list[str]:
     return dedup
 
 
+_SOURCE_HEADER_RE = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_existing_source_section(text: str) -> str:
+    lines = (text or "").splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if _SOURCE_HEADER_RE.match(line.strip()):
+            start = i
+            break
+    if start is None:
+        return (text or "").rstrip()
+    return "\n".join(lines[:start]).rstrip()
+
+
+def _apply_inline_citations(text: str, ordered_urls: list[str]) -> str:
+    out = text or ""
+    for idx, url in enumerate(ordered_urls, 1):
+        cite = f"[{idx}]"
+        out = out.replace(f"`{url}`", cite)
+        out = out.replace(url, cite)
+    return out
+
+
+def _max_source_urls() -> int:
+    try:
+        # Backward-compatible fallback to BOT_MAX_CITATION_URLS.
+        raw = os.getenv("AGENT_MAX_SOURCE_URLS", os.getenv("BOT_MAX_CITATION_URLS", "12"))
+        return max(1, min(30, int(raw)))
+    except Exception:
+        return 12
+
+
+def _build_source_section(ordered_urls: list[str], user_message: str) -> str:
+    header = "## 来源" if _contains_cjk(user_message) else "## Sources"
+    lines = [header]
+    for idx, url in enumerate(ordered_urls, 1):
+        lines.append(f"- [{idx}] {url}")
+    return "\n".join(lines)
+
+
+def _decorate_response_with_sources(text: str, user_message: str) -> tuple[str, dict[str, str]]:
+    """Normalize output into citation style + source section in agent layer."""
+    raw = (text or "").strip()
+    if not raw:
+        return raw, {}
+
+    body = _strip_existing_source_section(raw)
+    urls = _extract_urls(body) if body else []
+    if not urls:
+        # Preserve evidence URLs when response originally contains only a source section.
+        urls = _extract_urls(raw)
+    if not urls:
+        return raw, {}
+
+    ordered_urls = urls[:_max_source_urls()]
+    title_map: dict[str, str] = {}
+    try:
+        title_map = lookup_url_titles(ordered_urls)
+    except Exception as exc:
+        print(f"[Warn] lookup_url_titles in agent failed: {exc}")
+        title_map = {}
+
+    render_body = body if body else raw
+    cited_body = _apply_inline_citations(render_body, ordered_urls)
+    source_section = _build_source_section(ordered_urls, user_message)
+    merged = f"{cited_body.rstrip()}\n\n{source_section}".strip()
+    return merged, title_map
+
+
 def _count_timeline_items(text: str) -> int:
     if not text:
         return 0
@@ -453,6 +528,27 @@ _LANDSCAPE_ENTITY_ALIASES = {
 }
 
 
+_COMPARE_STOP_TOKENS = {
+    "对比",
+    "比较",
+    "差异",
+    "区别",
+    "vs",
+    "versus",
+    "和",
+    "与",
+    "and",
+    "the",
+    "a",
+    "an",
+    "一下",
+    "请",
+    "请问",
+    "我想",
+    "想知道",
+}
+
+
 _LANDSCAPE_STOP_TOPICS = {
     "global",
     "world",
@@ -466,7 +562,60 @@ _LANDSCAPE_STOP_TOPICS = {
     "世界",
     "现在",
     "目前",
+    "tech",
+    "technology",
+    "科技",
+    "技术",
+    "科技行业",
+    "技术行业",
+    "科技领域",
+    "技术领域",
 }
+
+
+def _normalize_landscape_topic_candidate(raw: str) -> str:
+    candidate = re.sub(r"\s+", " ", (raw or "").strip()).strip("：:，,。. ")
+    candidate = re.sub(r"^(?:当今|当前|目前|全球|世界|现在|如今)+", "", candidate).strip("的之 ")
+    return candidate
+
+
+def _normalize_compare_entity(raw: str) -> str:
+    token = re.sub(r"\s+", " ", (raw or "").strip()).strip("：:，,。.!?！？()[]{}\"'`")
+    token = re.sub(r"^(?:请|请问|对比一下|比较一下|对比|比较)+", "", token).strip()
+    return token
+
+
+def _is_valid_compare_entity(token: str) -> bool:
+    if not token:
+        return False
+    low = token.lower()
+    if low in _COMPARE_STOP_TOKENS:
+        return False
+    if re.fullmatch(r"\d{1,3}", token):
+        return False
+    if len(token) < 2:
+        return False
+    return True
+
+
+def _extract_compare_pair(text: str) -> tuple[str, str] | None:
+    topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9][\u4e00-\u9fffA-Za-z0-9 ._&/-]{1,39})"
+    patterns = [
+        rf"(?:对比|比较|差异|区别)\s*(?:一下|下)?\s*(?P<a>{topic_pattern})\s*(?:和|与|vs|VS|Vs|versus|and|&)\s*(?P<b>{topic_pattern})",
+        rf"(?P<a>{topic_pattern})\s*(?:和|与|vs|VS|Vs|versus|and|&)\s*(?P<b>{topic_pattern})",
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.IGNORECASE)
+        if not m:
+            continue
+        a = _normalize_compare_entity(m.group("a"))
+        b = _normalize_compare_entity(m.group("b"))
+        if not (_is_valid_compare_entity(a) and _is_valid_compare_entity(b)):
+            continue
+        if a.lower() == b.lower():
+            continue
+        return a, b
+    return None
 
 
 def _extract_landscape_topic(text: str, lower: str) -> str:
@@ -485,13 +634,14 @@ def _extract_landscape_topic(text: str, lower: str) -> str:
 
     m = re.search(r"([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9 _/-]{1,20})\s*(?:领域|行业|赛道)?\s*(?:格局|版图|生态)", text)
     if m:
-        candidate = m.group(1).strip().lower()
+        normalized = _normalize_landscape_topic_candidate(m.group(1))
+        candidate = normalized.lower()
         if candidate and candidate not in _LANDSCAPE_STOP_TOPICS:
-            return m.group(1).strip()
+            return normalized
 
     m = re.search(r"(?:landscape|ecosystem)\s*(?:of|for)?\s*([A-Za-z][A-Za-z0-9 _/-]{2,24})", lower)
     if m:
-        candidate = m.group(1).strip()
+        candidate = _normalize_landscape_topic_candidate(m.group(1)).lower()
         if candidate and candidate not in _LANDSCAPE_STOP_TOPICS:
             return candidate
 
@@ -504,20 +654,28 @@ def _extract_landscape_request(user_message: str) -> tuple[str, int, list[str]] 
         return None
 
     lower = text.lower()
-    landscape_keywords = [
+    strong_landscape_keywords = [
         "格局",
         "版图",
-        "生态",
         "生态位",
         "阵营",
         "角色",
         "玩家",
         "谁主导",
         "landscape",
-        "ecosystem",
         "power structure",
     ]
-    if not any((k in text) or (k in lower) for k in landscape_keywords):
+    weak_landscape_keywords = ["生态", "ecosystem"]
+    has_strong = any((k in text) or (k in lower) for k in strong_landscape_keywords)
+    has_weak = any((k in text) or (k in lower) for k in weak_landscape_keywords)
+    if not (has_strong or has_weak):
+        return None
+    if has_weak and not has_strong:
+        # Avoid false routing for product-ecosystem discussions unless role/structure intent exists.
+        weak_context = ["格局", "版图", "角色", "玩家", "主导", "竞争", "地位", "who leads", "dominant"]
+        if not any((k in text) or (k in lower) for k in weak_context):
+            return None
+    if any((k in text) or (k in lower) for k in ["时间线", "timeline", "里程碑"]):
         return None
 
     days = _extract_days(text, default=30, maximum=180)
@@ -545,20 +703,40 @@ def _extract_compare_request(user_message: str) -> tuple[str, str, int] | None:
     if not text:
         return None
     lower = text.lower()
-    if not any(k in lower for k in ["对比", "比较", "差异", " vs ", "vs", "versus", " and ", "和", "与"]):
+
+    pair = _extract_compare_pair(text)
+    if pair is None:
         return None
 
-    topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{2,20})"
-    m = re.search(
-        rf"(?P<a>{topic_pattern})\s*(?:和|与|vs|VS|Vs|versus|and)\s*(?P<b>{topic_pattern})",
-        text,
-        flags=re.IGNORECASE,
+    has_explicit_marker = any(k in lower for k in ["对比", "比较", "差异", "区别", "vs", "versus"])
+    has_comparative_question = any(
+        k in lower
+        for k in [
+            "谁更",
+            "哪个更",
+            "哪家更",
+            "谁强",
+            "高于",
+            "低于",
+            "more than",
+            "less than",
+            "better",
+            "hotter",
+            "stronger",
+        ]
     )
-    if not m:
+    score = 1  # extracted pair
+    if has_explicit_marker:
+        score += 2
+    if has_comparative_question:
+        score += 2
+    if re.search(r"\b(?:vs|versus)\b", lower):
+        score += 1
+
+    if score < 3:
         return None
 
-    topic_a = m.group("a").strip()
-    topic_b = m.group("b").strip()
+    topic_a, topic_b = pair
     days = _extract_days(text, default=14, maximum=90)
     return topic_a, topic_b, days
 
@@ -569,7 +747,26 @@ def _extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
         return None
 
     lower = text.lower()
-    if not any(k in lower for k in ["timeline", "时间线", "里程碑", "演进"]):
+    explicit_timeline_markers = ["timeline", "时间线", "里程碑", "大事记", "发展历程"]
+    action_markers = [
+        "动作",
+        "动态",
+        "动向",
+        "进展",
+        "更新",
+        "事件",
+        "发生了什么",
+        "都做了什么",
+        "moves",
+        "actions",
+        "updates",
+        "developments",
+    ]
+    has_explicit_marker = any(k in lower for k in explicit_timeline_markers)
+    has_recent_window = bool(re.search(r"(最近|过去|近|last|recent|past)\s*\d{0,3}\s*(天|day|days)?", lower))
+    has_action_intent = any(k in lower for k in action_markers)
+
+    if not (has_explicit_marker or (has_recent_window and has_action_intent)):
         return None
 
     days = _extract_days(text, default=30, maximum=180)
@@ -578,6 +775,9 @@ def _extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
     topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{2,24})"
     patterns = [
         rf"(?:构建|生成|给我|做|列出|整理|build|make|create|show)\s+(?P<t>{topic_pattern})",
+        rf"(?:最近|过去|近|last|recent|past)\s*\d{{0,3}}\s*(?:天|day|days)?\s*(?P<t>{topic_pattern})\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
+        rf"(?P<t>{topic_pattern})\s*(?:最近|过去|近|last|recent|past)\s*\d{{0,3}}\s*(?:天|day|days)?\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
+        rf"(?:最近|过去|近|last|recent|past)\s*(?P<t>{topic_pattern})\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
         rf"(?P<t>{topic_pattern})\s*(?:过去|最近|last)?\s*\d{{0,3}}\s*(?:天|day|days)?\s*(?:时间线|timeline)",
         rf"(?:时间线|timeline)\s*(?:关于|for)?\s*(?P<t>{topic_pattern})",
     ]
@@ -624,6 +824,9 @@ def _extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
 
     if not topic:
         return None
+    # Normalize possessive/structural suffix for Chinese/English patterns.
+    topic = re.sub(r"(?:的|之)$", "", topic).strip()
+    topic = re.sub(r"(?:'s)$", "", topic, flags=re.IGNORECASE).strip()
     return topic, days, limit
 
 
@@ -740,8 +943,13 @@ def _ensure_evidence_section(answer: str, source_output: str, user_message: str,
         return answer
 
     answer_urls = _extract_urls(answer)
-    low = answer.lower()
-    has_section = ("证据来源" in answer) or ("evidence source" in low) or ("evidence urls" in low)
+    has_section = bool(
+        re.search(
+            r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
+            answer,
+            flags=re.IGNORECASE | re.MULTILINE,
+        )
+    )
     if has_section and answer_urls:
         return answer
 
@@ -753,6 +961,11 @@ def _ensure_evidence_section(answer: str, source_output: str, user_message: str,
 def _ensure_compare_evidence(answer: str, compare_output: str, user_message: str) -> str:
     """Ensure compare answer always includes explicit evidence URL section."""
     return _ensure_evidence_section(answer=answer, source_output=compare_output, user_message=user_message, max_urls=6)
+
+
+def _ensure_timeline_evidence(answer: str, timeline_output: str, user_message: str) -> str:
+    """Ensure timeline answer always includes explicit evidence URL section."""
+    return _ensure_evidence_section(answer=answer, source_output=timeline_output, user_message=user_message, max_urls=8)
 
 
 def _analyze_landscape_output(
@@ -821,6 +1034,15 @@ def _analyze_landscape_output(
 def _ensure_landscape_evidence(answer: str, landscape_output: str, user_message: str) -> str:
     """Ensure landscape answer includes explicit evidence URL section."""
     return _ensure_evidence_section(answer=answer, source_output=landscape_output, user_message=user_message, max_urls=10)
+
+
+def _is_landscape_no_data(raw_landscape: str) -> bool:
+    low_landscape = (raw_landscape or "").lower()
+    return (
+        raw_landscape.startswith("analyze_landscape failed:")
+        or raw_landscape.startswith("No landscape data")
+        or ("no tracked entities matched" in low_landscape)
+    )
 
 
 def _extract_landscape_coverage(landscape_output: str) -> dict[str, int]:
@@ -1052,8 +1274,9 @@ def generate_response(history: list[dict], user_message: str) -> str:
                     timeline_output=raw_timeline,
                 )
                 if analyzed:
+                    result = _ensure_timeline_evidence(analyzed, raw_timeline, user_message)
                     _emit_route_metrics("timeline_forced")
-                    return analyzed
+                    return result
             except Exception as exc:
                 if strict_mode:
                     _emit_route_metrics("timeline_forced_strict_error", force=True)
@@ -1076,12 +1299,11 @@ def generate_response(history: list[dict], user_message: str) -> str:
         entities_csv = ",".join(entities)
         try:
             raw_landscape = analyze_landscape(topic=topic, days=days, entities=entities_csv, limit_per_entity=3)
-            low_landscape = raw_landscape.lower()
-            if (
-                raw_landscape.startswith("analyze_landscape failed:")
-                or raw_landscape.startswith("No landscape data")
-                or "no tracked entities matched" in low_landscape
-            ):
+            if _is_landscape_no_data(raw_landscape) and topic:
+                retry_landscape = analyze_landscape(topic="", days=days, entities=entities_csv, limit_per_entity=3)
+                if not _is_landscape_no_data(retry_landscape):
+                    raw_landscape = retry_landscape
+            if _is_landscape_no_data(raw_landscape):
                 _emit_route_metrics("landscape_forced")
                 return raw_landscape
 
@@ -1142,6 +1364,26 @@ def generate_response(history: list[dict], user_message: str) -> str:
         _emit_route_metrics("langchain_fallback", force=True)
         print(f"[Warn] LangChain runtime failed, fallback to legacy runtime: {exc}")
         return _generate_legacy(history, user_message)
+
+
+_generate_response_core = generate_response
+
+
+def generate_response(history: list[dict], user_message: str) -> str:
+    """Public generation entrypoint with agent-side response post-processing."""
+    core_text = _generate_response_core(history, user_message)
+    final_text, _ = _decorate_response_with_sources(core_text, user_message)
+    return final_text
+
+
+def generate_response_payload(history: list[dict], user_message: str) -> dict[str, Any]:
+    """Structured response for transport layers (e.g., Telegram bot)."""
+    core_text = _generate_response_core(history, user_message)
+    final_text, title_map = _decorate_response_with_sources(core_text, user_message)
+    return {
+        "text": final_text,
+        "url_title_map": title_map,
+    }
 
 
 @dataclass

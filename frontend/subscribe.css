@@ -1,8 +1,12 @@
 .subscribe-page {
-    background:
-        radial-gradient(circle at 12% 8%, rgba(11, 87, 208, 0.08), transparent 32%),
-        radial-gradient(circle at 88% 18%, rgba(26, 115, 232, 0.07), transparent 36%),
-        var(--bg-color);
+    background-image:
+        radial-gradient(circle at 12% 8%, var(--bg-glow-1), transparent 34%),
+        radial-gradient(circle at 88% 16%, var(--bg-glow-2), transparent 38%),
+        radial-gradient(circle at 50% 118%, var(--bg-glow-3), transparent 54%),
+        linear-gradient(var(--bg-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+    background-size: auto, auto, auto, 124px 124px, 124px 124px;
+    background-repeat: no-repeat, no-repeat, no-repeat, repeat, repeat;
 }
 
 .subscribe-page .topbar {
@@ -152,6 +156,61 @@
 .subscribe-card .input-group select:focus {
     border-color: var(--primary-blue);
     box-shadow: 0 0 0 3px rgba(11, 87, 208, 0.15);
+}
+
+.source-preferences {
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px 10px;
+    background: var(--bg-color);
+}
+
+.source-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.source-header .input-icon {
+    position: static;
+    transform: none;
+}
+
+.source-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.source-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.source-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--text-primary);
+    cursor: pointer;
+    user-select: none;
+    background: rgba(26, 115, 232, 0.02);
+}
+
+.source-option input {
+    margin: 0;
+    accent-color: var(--primary-blue);
+}
+
+.source-loading {
+    font-size: 12px;
+    color: var(--text-secondary);
 }
 
 .action-row {

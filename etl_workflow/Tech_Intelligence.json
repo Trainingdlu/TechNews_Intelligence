@@ -35,7 +35,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n                  .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n                  .replace(/\\\\/g, '/').slice(0, 100000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech content:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- **ALLOWED TAGS**: [AI], [安全], [硬件], [开发], [商业], [生态].\n\n- **CONSTRAINT & MAPPING**: \n  1. You MUST strictly select ONE Tag from the list above. DO NOT invent tags.\n  2. **Edge Case Mapping (Ambiguity Resolver)**:\n     - **[AI]**: LLM Models / RAG / Agents / Papers / Datasets / Benchmarks.\n     - **[硬件]**: Phones / Chips / Robots / EV (Tesla) / Space / Energy.\n     - **[商业]**: Crypto Prices / Game Sales / IPO / Funding / Antitrust.\n     - **[开发]**: UI/UX / Design / Game Engines / Cloud Ops / Data Science Libs.\n     - **[安全]**: Fraud / Scams / Deepfake Defense / Privacy Tools / CVE.\n     - **[生态]**: Law / Science / History / Career / Remote Work.\n\n- **TAG SELECTION LOGIC (Semantic Value Priority)**:\n  *Analyze the \"Core Event\" (What actually happened?). Use the following hierarchy to resolve overlaps, prioritizing Innovation over Context.*\n  1. **First, identify the Core Event** (e.g., Launching a model vs. Being sued).\n  2. **Then, match the most fitting category** from the list below.\n  3. **If ambiguous**, prioritize categories higher in the list (Innovation > Business > Context).\n\n  1. **[AI] (Virtual Innovation)**:\n     - **Core Definition**: New Models (LLM/SLM), Algorithms, Agents, RAG, Datasets, or Research Papers.\n     - *Tie-Breaker*: If it is software/weight-based intelligence, select [AI].\n     - *Example*: \"OpenAI releases GPT-5\", \"Google DeepMind new paper\".\n\n  2. **[硬件] (Physical Innovation)**:\n     - **Core Definition**: Physical Chips (GPU/TPU/CPU), Consumer Devices (Phones/Headsets), Robotics, EV (Cars), Space, or Energy.\n     - *Tie-Breaker*: If it is a tangible object (even an AI chip like H100), select [硬件].\n     - *Example*: \"Nvidia H200 launched\", \"Apple Vision Pro update\".\n\n  3. **[商业] (Financial Impact)**:\n     - **Core Definition**: Corporate finance events: IPO, Earnings, Layoffs, Acquisition, Funding, Antitrust lawsuits.\n     - *Constraint*: Only use this if the news is NOT primarily about a product launch.\n     - *Example*: \"Microsoft revenue up 20%\", \"Tech startup lays off 50%\".\n\n  4. **[安全] (Critical Risk)**:\n     - **Core Definition**: Malicious attacks, Data Breaches, Ransomware, Critical CVEs, or Zero-day exploits.\n     - *Constraint*: Do NOT use for routine software updates or privacy policy changes.\n     - *Example*: \"LastPass database leaked\", \"Log4j vulnerability found\".\n\n  5. **[开发] (Engineering Tools)**:\n     - **Core Definition**: Updates to Programming Languages, Frameworks (React/Vue), Databases, Linux Kernel, Git, or UI/Design tools.\n     - *Scope*: Purely for developers and builders.\n\n  6. **[生态] (Macro Context)**:\n     - **Core Definition**: Policy, Legal regulations (GDPR/AI Act), Remote Work, Career advice, History, or Scientific discovery (Math/Physics/Bio).\n     - *Fallback*: If it doesn't fit 1-5, use this.\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Scenario-Based)\n\n**CRITICAL JSON FORMATTING RULE FOR ALL SCENARIOS:**\nYou MUST NOT use standard English double quotes (\") inside the generated text values, as it will break the JSON structure. Replace all double quotes with Chinese full-width quotes (“ ”).\n\n**SCENARIO A: Standard News (TechCrunch/Blog)**\n- Action: Extract core facts, focusing exclusively on hard data, entities, and key metrics (e.g., ARR, valuation, parameter size, user counts).\n- Style Constraints:\n  1. **Cold & Objective:** Strictly NO emotional adjectives, subjective evaluations, or marketing hype (e.g., forbid words like \"令人瞩目的\", \"重磅\", \"爆发式\"). Let the numbers and facts speak for themselves.\n  2. **High Density:** Maximize the information-to-word ratio. Keep it highly concise but structurally complete.\n  3. **Logical Flow:** Group related metrics by theme rather than mixing unrelated data points in one sentence. Use natural Chinese transitions (e.g., \"目前...已...\", \"相比...提升了...\", \"面对...通过...\"), avoid clunky comma splices.\n  4. **Complete Sentences:** Your summary MUST end with a proper punctuation mark (e.g., \"。\"). Do not cut off mid-sentence.\n- Length: Max 200 Chinese characters.\n- Style: \"瑞典AI开发平台Lovable 2月ARR达4亿美元，单月新增营收1亿美元。公司估值66亿美元，仅凭146名员工实现约277万美元人均ARR。面对大厂竞争，其凭借企业级安全功能保持增长，目前拥有800万用户及超半数财富500强客户。\"\n\n**SCENARIO B: Community Discussion (Hacker News Comments)**\n- Trigger: If content contains many usernames/timestamps or is a thread of comments.\n- Action: Extract signal from noise. Synthesize the core debate, general consensus, and top mentioned entities (tools/solutions). Write the result strictly into the 'summary' string (DO NOT create new JSON keys for labels). Strictly DO NOT translate individual comments or use phrases like \"User A said...\".\n- Style Constraints:\n  1. **Structured Intel:** Categorize the synthesized information IN-TEXT using relevant labels (e.g., \"核心议题：\", \"技术分歧：\", \"典型用例：\"). Select and adapt labels based on what the discussion actually contains.\n  2. **Direct Tone:** Skip introductory filler like \"网友们讨论了...\" or \"这篇帖子主要关于...\". Start directly with the hard facts of the discussion.\n  3. **Adaptive Labels:** Only include labels that are genuinely present in the discussion. Skip a label entirely if the content does not support it.\n- Length: Max 200 Chinese characters.\n- Style: \"核心议题：静态个人网站托管方案。主要争议：自建VPS的维护成本与Serverless平台的厂商锁定风险。主流推荐方案：1. GitHub Pages（免费、免维护）；2. Cloudflare Pages（构建速度快、自带CDN）；3. Vercel（前端框架集成度高）。\"\n\n**SCENARIO C: Content Missing / Paywall / Access Denied**\n- Trigger: If content is very short, says \"Enable JavaScript\", \"403 Forbidden\", \"Access Denied\", or asks for Captcha.\n- Action: You MUST return the EXACT English string: \"Analysis failed due to content access issues.\"\n- **CRITICAL RULE**: DO NOT translate this sentence into Chinese. Treat it as a system flag and output it VERBATIM.\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n**Example 1 (Standard News - TechCrunch/Blog):**\n{\n  \"translation\": \"[商业] Lovable上月新增1亿美元营收，仅凭146名员工\",\n  \"summary\": \"瑞典AI开发平台Lovable 2月ARR达4亿美元，单月新增营收1亿美元。公司估值66亿美元，仅凭146名员工实现约277万美元人均ARR。面对大厂竞争，其凭借企业级安全功能保持增长，目前拥有800万用户及超半数财富500强客户。\",\n  \"sentiment\": \"Positive\"\n}\n**Example 2 (Community Discussion - Hacker News Comments):**\n{\n  \"translation\": \"[开发] HN热议：最好的个人博客方案\",\n  \"summary\": \"核心议题：静态个人网站托管方案。主要争议：自建VPS的维护成本与Serverless平台的厂商锁定风险。主流推荐方案：1. GitHub Pages（免费、免维护）；2. Cloudflare Pages（构建速度快、自带CDN）；3. Vercel（前端框架集成度高）。\",\n  \"sentiment\": \"Neutral\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"qwen3-max-2025-09-23\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON. NEVER use unescaped English double quotes (\\\") or single quotes (\\') inside your JSON string values. Always use Chinese full-width quotes (“”).\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt,\n          \"max_tokens\": 10000\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const sourceKey = loopNode.item.json.source_key || \"unknown\";\n    const sourceName = loopNode.item.json.source_name || \"unknown\";\n    const sourcePlatform = loopNode.item.json.source_platform || \"unknown\";\n    const signalOrigin = loopNode.item.json.signal_origin || \"unknown\";\n\n    const rawContent = $('Jina_Reader').item.json.data;\n    const sourceNameLower = String(sourceName).toLowerCase();\n    const signalOriginLower = String(signalOrigin).toLowerCase();\n\n    const isHackerNews = sourceKey === 'hackernews_frontpage' || sourceNameLower.includes('hackernews');\n    const isOfficialOrAcademic = signalOriginLower === 'official' || signalOriginLower === 'academic';\n\n    const maxContentChars = isHackerNews ? 22000 : 42000;\n\n    const content = rawContent\n      ? rawContent\n          .replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n          .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n          .replace(/\\\\/g, '/')\n          .slice(0, maxContentChars)\n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    let profile = \"MEDIA\";\n    let profileRules = [\n      \"- Focus on core facts: who did what, key product/release, measurable impact.\",\n      \"- Prefer hard numbers (benchmark/adoption/revenue/cost/latency); if missing write \\u672a\\u62ab\\u9732.\",\n      \"- Keep tone objective and concise, avoid hype.\"\n    ];\n\n    if (isHackerNews) {\n      profile = \"COMMUNITY\";\n      profileRules = [\n        \"- Treat content as community discussion signal, not official announcement.\",\n        \"- Summarize into compact structured insight: \\u6838\\u5fc3\\u8bae\\u9898 / \\u6280\\u672f\\u5206\\u6b67 / \\u53ef\\u884c\\u65b9\\u6848 (only if present).\",\n        \"- Do NOT translate user-by-user comments; synthesize consensus and disagreements.\"\n      ];\n    } else if (isOfficialOrAcademic) {\n      profile = \"OFFICIAL_OR_ACADEMIC\";\n      profileRules = [\n        \"- Use conservative factual style, no marketing wording.\",\n        \"- Sentiment default is Neutral.\",\n        \"- Upgrade to Positive ONLY with explicit measurable evidence (benchmark delta, adoption/users, revenue/ARR, GA in production, cost reduction).\"\n      ];\n    }\n\n    const promptParts = [\n      \"Task: Analyze ONE tech item and return STRICT JSON only.\",\n      \"\",\n      \"SOURCE_CONTEXT:\",\n      \"- source_key: \" + sourceKey,\n      \"- source_name: \" + sourceName,\n      \"- source_platform: \" + sourcePlatform,\n      \"- signal_origin: \" + signalOrigin,\n      \"- profile: \" + profile,\n      \"\",\n      \"OUTPUT_SCHEMA (exactly these keys):\",\n      \"{\\\"translation\\\": \\\"...\\\", \\\"summary\\\": \\\"...\\\", \\\"sentiment\\\": \\\"Positive|Neutral|Negative\\\"}\",\n      \"\",\n      \"GLOBAL_RULES:\",\n      \"- translation format: [Tag] Chinese Title\",\n      \"- allowed tags: [AI], [\\u5b89\\u5168], [\\u786c\\u4ef6], [\\u5f00\\u53d1], [\\u5546\\u4e1a], [\\u751f\\u6001]\",\n      \"- [\\u5b89\\u5168] only for concrete incidents: CVE/0day/exploit/breach/ransomware/fraud/privacy incident\",\n      \"- summary must be Chinese, <= 200 Chinese chars, complete sentence\",\n      \"- if content inaccessible/paywall/403/captcha/too short, set summary EXACTLY to: Analysis failed due to content access issues.\",\n      \"- if summary is the failure flag, sentiment must be Neutral\",\n      \"- return JSON only, no markdown, no extra keys\",\n      \"\",\n      \"PROFILE_RULES:\",\n      ...profileRules,\n      \"\",\n      \"INPUT_HEADLINE:\",\n      title,\n      \"\",\n      \"FULL_CONTENT_START\",\n      content,\n      \"FULL_CONTENT_END\"\n    ];\n\n    const userPrompt = promptParts.join(\"\\n\");\n\n    return JSON.stringify({\n      model: \"qwen3-max-2025-09-23\",\n      max_tokens: 900,\n      messages: [\n        {\n          role: \"system\",\n          content: \"You are a senior tech intelligence analyst. Output strict valid JSON only with keys translation, summary, sentiment. Never output markdown or extra fields.\"\n        },\n        {\n          role: \"user\",\n          content: userPrompt\n        }\n      ],\n      response_format: { type: \"json_object\" }\n    });\n  })()\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -1169,7 +1169,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={{\n  {\n    \"source\": \"Jina_Reader\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error\": \"抓取失败，内容为空或被拦截\"\n  }\n}}",
+        "jsonOutput": "={{\n  {\n    \"event_type\": \"CONTENT_FETCH_FAILED\",\n    \"source\": \"Jina_Reader\",\n    \"source_key\": $('Loop Over Items').item.json.source_key || null,\n    \"source_name\": $('Loop Over Items').item.json.source_name || null,\n    \"source_platform\": $('Loop Over Items').item.json.source_platform || null,\n    \"signal_origin\": $('Loop Over Items').item.json.signal_origin || null,\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error\": \"Content fetch failed: empty content or blocked response\"\n  }\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.set",
@@ -1184,7 +1184,7 @@
     {
       "parameters": {
         "mode": "raw",
-        "jsonOutput": "={{\n  {\n    \"source\": \"AI_Response\",\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error\": \"AI节点分析失败\"\n  }\n}}",
+        "jsonOutput": "={{\n  {\n    \"event_type\": \"AI_ANALYSIS_FAILED\",\n    \"source\": \"AI_Response\",\n    \"source_key\": $('Loop Over Items').item.json.source_key || null,\n    \"source_name\": $('Loop Over Items').item.json.source_name || null,\n    \"source_platform\": $('Loop Over Items').item.json.source_platform || null,\n    \"signal_origin\": $('Loop Over Items').item.json.signal_origin || null,\n    \"url\": $('Loop Over Items').item.json.url,\n    \"error\": \"AI node analysis failed\"\n  }\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.set",
@@ -1668,6 +1668,115 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "url": "https://developer.nvidia.com/blog/feed/",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.1,
+      "position": [
+        -1408,
+        -1328
+      ],
+      "id": "e8d3335b-ea91-4932-a966-e0d43a0ec603",
+      "name": "RSS Read NVIDIA"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5758ffa6-d1ad-4b0f-ba8f-debae2f09c5a",
+              "name": "title",
+              "value": "={{ $json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "8a865918-c720-4d62-ba38-703d4b473e4a",
+              "name": "url",
+              "value": "={{ $json.link }}",
+              "type": "string"
+            },
+            {
+              "id": "bea891ca-e822-4467-86cc-2ad16f3a9b74",
+              "name": "points",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "437196c9-960f-4669-b584-721f1a991a2d",
+              "name": "created_at",
+              "value": "={{ $json.pubDate || $json.isoDate || $json.date || $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "b01b6e22-36d3-4bc9-a792-07b5d839d5c4",
+              "name": "id",
+              "value": "={{ $json.guid || $json.id || null }}",
+              "type": "string"
+            },
+            {
+              "id": "5f0f8882-50fc-4c6d-8d2b-b09263e73c50",
+              "name": "source_key",
+              "value": "nvidia_dev_blog",
+              "type": "string"
+            },
+            {
+              "id": "4b612845-cbb1-4dc7-b1dc-eac8e509366a",
+              "name": "source_name",
+              "value": "NVIDIA Developer Blog",
+              "type": "string"
+            },
+            {
+              "id": "20bea758-ca8f-4a01-b92f-a0bcf9232477",
+              "name": "source_platform",
+              "value": "DirectRSS",
+              "type": "string"
+            },
+            {
+              "id": "5d80971e-6419-48af-ab59-1adfb6b0def9",
+              "name": "signal_origin",
+              "value": "Official",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -976,
+        -1328
+      ],
+      "id": "4bb239c2-b67e-4010-af73-b5eb218df2f9",
+      "name": "Edit Fields RSS NVIDIA"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -208,
+        -1200
+      ],
+      "id": "b7af70a4-3c2c-48ad-8196-37fffae31fbe",
+      "name": "Merge RSS Sources 4"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst MAX_ITEMS = 8;\nconst MAX_AGE_HOURS = 120;\nconst cutoff = Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000;\n\n// Keep only high-value AI infra / model platform / measurable performance signals.\nconst strongKeywords = [\n  'blackwell', 'hopper', 'gb200', 'b200', 'h200', 'h100', 'a100',\n  'dgx', 'nvlink', 'grace', 'data center', 'datacenter', 'cluster',\n  'nemo', 'nim', 'tensorrt', 'tensorrt-llm', 'triton', 'cuda', 'cudnn',\n  'llm', 'lmm', 'inference', 'training', 'rag', 'agent', 'agents',\n  'benchmark', 'throughput', 'latency', 'qps', 'tps', 'token/s',\n  'cost reduction', 'production', 'ga', 'deployment', 'kubernetes', 'k8s'\n];\n\n// Hard-drop topics that are usually low signal for this intelligence workflow.\nconst hardBlockKeywords = [\n  'geforce', 'rtx', 'dlss', 'ray tracing', 'raytracing',\n  'gaming', 'game', 'unreal engine', 'unity',\n  'graphics', 'rendering', 'creator', '3d art'\n];\n\nfunction toText(item) {\n  const j = item.json || {};\n  const cats = Array.isArray(j.categories) ? j.categories.join(' ') : '';\n  return [j.title, j.contentSnippet, j.content, j.link, cats]\n    .filter(Boolean)\n    .join(' ')\n    .toLowerCase();\n}\n\nfunction parseTs(item) {\n  const j = item.json || {};\n  const rawDate = j.isoDate || j.pubDate || j.date || j.published || null;\n  const ts = rawDate ? Date.parse(rawDate) : NaN;\n  return Number.isFinite(ts) ? ts : null;\n}\n\nfunction hasAny(text, keywords) {\n  return keywords.some((k) => text.includes(k));\n}\n\nfunction scoreItem(item) {\n  const j = item.json || {};\n  const title = String(j.title || '').toLowerCase();\n  const text = toText(item);\n\n  if (!text) return -999;\n  if (hasAny(text, hardBlockKeywords)) return -999;\n\n  let score = 0;\n\n  // Title hit is stronger than body hit.\n  if (hasAny(title, strongKeywords)) score += 3;\n  if (hasAny(text, strongKeywords)) score += 2;\n\n  // Bonus for measurable signals.\n  if (/(\\d+\\.?\\d*\\s*(%|x|ms|s|qps|tps|tokens\\/s|token\\/s))/i.test(text)) score += 1;\n  if (/(benchmark|throughput|latency|cost|production|ga|deploy|deployment)/i.test(text)) score += 1;\n\n  return score;\n}\n\nconst kept = items\n  .map((item) => {\n    const ts = parseTs(item);\n    const score = scoreItem(item);\n    return { item, ts, score };\n  })\n  .filter((x) => x.score >= 3) // strict threshold: drop low-value content\n  .filter((x) => x.ts === null || x.ts >= cutoff)\n  .sort((a, b) => {\n    if (b.score !== a.score) return b.score - a.score;\n    return (b.ts || 0) - (a.ts || 0);\n  })\n  .slice(0, MAX_ITEMS)\n  .map((x) => x.item);\n\nreturn kept;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1184,
+        -1328
+      ],
+      "id": "ddfc6241-ba81-47de-a7d5-bd9c0b22d991",
+      "name": "Limit NVIDIA Feed"
     }
   ],
   "pinData": {},
@@ -1697,6 +1806,11 @@
           },
           {
             "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Read NVIDIA",
             "type": "main",
             "index": 0
           }
@@ -1861,7 +1975,7 @@
       "main": [
         [
           {
-            "node": "Merge",
+            "node": "Merge RSS Sources 4",
             "type": "main",
             "index": 0
           }
@@ -2081,6 +2195,50 @@
         [
           {
             "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read NVIDIA": {
+      "main": [
+        [
+          {
+            "node": "Limit NVIDIA Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields RSS NVIDIA": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Sources 4",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge RSS Sources 4": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit NVIDIA Feed": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields RSS NVIDIA",
             "type": "main",
             "index": 0
           }

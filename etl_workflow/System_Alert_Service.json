@@ -18,8 +18,8 @@
       "parameters": {
         "fromEmail": "trainingcqy@gmail.com",
         "toEmail": "trainingcqy@gmail.com",
-        "subject": "={{ $json.source || $execution?.lastNodeExecuted || 'System' }} 故障",
-        "html": "=<div style=\"font-family: 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #ffffff; color: #202124; padding: 20px 0;\">\n    \n    <div style=\"padding: 32px;\">\n      \n      <div style=\"margin-bottom: 32px;\">\n        <h1 style=\"margin: 0; font-size: 22px; font-weight: 400; color: #d93025; letter-spacing: -0.5px;\">System Alert Triggered</h1>\n      </div>\n      <div style=\"margin-bottom: 24px;\">\n        <div style=\"font-size: 14px; font-weight: 700; color: #202124;\">\n          {{ new Date().toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'}) }}\n        </div>\n      </div>\n\n      <div style=\"margin-bottom: 24px;\">\n        <div style=\"font-size: 11px; font-weight: 800; color: #5f6368; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.8px;\">Source</div>\n        <div style=\"font-size: 14px; font-weight: 600; color: #202124;\">\n          {{ $json.source || $execution.lastNodeExecuted || 'Unknown Source' }}\n        </div>\n      </div>\n\n      <div style=\"margin-bottom: 32px;\">\n        <div style=\"font-size: 11px; font-weight: 800; color: #5f6368; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.8px;\">Error</div>\n        <div style=\"font-size: 14px; font-weight: 600; color: #202124; line-height: 1.6;\">\n          {{ $json.error || $execution?.error?.message || 'No error details provided.' }}\n        </div>\n      </div>\n\n      <div style=\"margin-bottom: 24px;\">\n        <div style=\"font-size: 11px; font-weight: 800; color: #5f6368; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.8px;\">Target</div>\n        <div style=\"font-size: 14px; font-weight: 600; color: #202124; font-family: 'Menlo', monospace; word-break: break-all;\">\n          {{ $json.url || '-' }}\n            </a>\n        </div>\n      </div>\n\n      <div style=\"text-align: center;\">\n        <a href=\"http://localhost:5678\" style=\"background-color: #1a73e8; color: #ffffff; padding: 10px 24px; border-radius: 4px; text-decoration: none; font-size: 14px; font-weight: 500; display: inline-block;\">\n          Open Console\n        </a>\n      </div>\n\n    </div>\n  </div>\n  \n  <div style=\"text-align: center; margin-top: 24px; font-size: 12px; color: #70757a;\">\n    &copy; 2026 TechNews Intelligence\n  </div>\n</div>",
+        "subject": "={{ '[' + ($json.event_type || 'ERROR') + '] ' + ($json.source_name || $json.source || $json.source_key || 'System') + ' Alert' }}",
+        "html": "=<div style=\"font-family: 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #ffffff; color: #202124; padding: 20px 0;\">\n  <div style=\"max-width: 700px; margin: 0 auto; padding: 28px 26px; border: 1px solid #dfe1e5; border-radius: 12px;\">\n    <h1 style=\"margin: 0 0 10px; font-size: 22px; font-weight: 600; color: #d93025;\">System Alert</h1>\n    <p style=\"margin: 0 0 18px; color: #5f6368; font-size: 13px;\">{{ $json.alert_time }}</p>\n\n    <table style=\"width: 100%; border-collapse: collapse; font-size: 14px;\">\n      <tr><td style=\"width: 180px; padding: 8px 0; color: #5f6368;\">Event Type</td><td style=\"padding: 8px 0; font-weight: 600;\">{{ $json.event_type || 'ERROR' }}</td></tr>\n      <tr><td style=\"padding: 8px 0; color: #5f6368;\">Source Name</td><td style=\"padding: 8px 0; font-weight: 600;\">{{ $json.source_name || $json.source || '-' }}</td></tr>\n      <tr><td style=\"padding: 8px 0; color: #5f6368;\">Source Key</td><td style=\"padding: 8px 0; font-family: Menlo, monospace;\">{{ $json.source_key || '-' }}</td></tr>\n      <tr><td style=\"padding: 8px 0; color: #5f6368;\">Platform / Origin</td><td style=\"padding: 8px 0;\">{{ $json.source_platform || '-' }} / {{ $json.signal_origin || '-' }}</td></tr>\n      <tr><td style=\"padding: 8px 0; color: #5f6368;\">Workflow / Node</td><td style=\"padding: 8px 0;\">{{ $json.workflow_name || '-' }} / {{ $json.node_name || '-' }}</td></tr>\n      <tr><td style=\"padding: 8px 0; color: #5f6368;\">Execution ID</td><td style=\"padding: 8px 0; font-family: Menlo, monospace;\">{{ $json.execution_id || '-' }}</td></tr>\n      <tr><td style=\"padding: 8px 0; color: #5f6368;\">Target URL</td><td style=\"padding: 8px 0; word-break: break-all;\">{{ $json.target_url || '-' }}</td></tr>\n    </table>\n\n    <div style=\"margin-top: 18px; padding: 12px 14px; border-radius: 8px; background: #f8f9fa; border: 1px solid #eceff1;\">\n      <div style=\"font-size: 12px; color: #5f6368; margin-bottom: 6px;\">Error Message</div>\n      <div style=\"font-size: 14px; line-height: 1.6; color: #202124;\">{{ $json.error || $json.message || 'No error details provided.' }}</div>\n    </div>\n\n    <div style=\"text-align: center; margin-top: 20px;\">\n      <a href=\"{{ $json.console_url }}\" style=\"background-color: #1a73e8; color: #ffffff; padding: 10px 22px; border-radius: 6px; text-decoration: none; font-size: 14px; font-weight: 600; display: inline-block;\">Open n8n Console</a>\n    </div>\n  </div>\n  <div style=\"text-align: center; margin-top: 16px; font-size: 12px; color: #70757a;\">&copy; 2026 TechNews Intelligence</div>\n</div>",
         "options": {}
       },
       "type": "n8n-nodes-base.emailSend",
@@ -65,11 +65,11 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "event_type": "ERROR",
-            "source": "={{ $json.source || $execution?.lastNodeExecuted || 'Unknown Source' }}",
-            "target_url": "={{ $json.url || '-' }}",
-            "message": "={{ $json.error || $execution?.error?.message || 'No error details provided.' }}",
-            "created_at": "={{ new Date().toISOString() }}"
+            "event_type": "={{ $json.event_type || 'ERROR' }}",
+            "source": "={{ $json.source_name || $json.source || $json.source_key || 'Unknown Source' }}",
+            "target_url": "={{ $json.target_url || $json.url || '-' }}",
+            "message": "={{ '[' + ($json.source_key || '-') + '|' + ($json.signal_origin || '-') + '] ' + ($json.error || $json.message || 'No error details provided.') }}",
+            "created_at": "={{ $json.alert_time || new Date().toISOString() }}"
           },
           "matchingColumns": [
             "id"
@@ -151,6 +151,19 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $json || {};\n\nconst sourceName = payload.source_name || payload.source || payload.workflowName || payload?.workflow?.name || 'Unknown Source';\nconst sourceKey = payload.source_key || null;\nconst sourcePlatform = payload.source_platform || null;\nconst signalOrigin = payload.signal_origin || null;\nconst eventType = payload.event_type || (payload.execution ? 'WORKFLOW_ERROR' : 'ERROR');\nconst errorMessage = payload.error || payload.message || payload?.execution?.error?.message || 'No error details provided.';\nconst targetUrl = payload.target_url || payload.url || '-';\nconst workflowName = payload.workflow_name || payload.workflowName || payload?.workflow?.name || null;\nconst nodeName = payload.node_name || payload.nodeName || payload?.node?.name || null;\nconst executionId = payload.execution_id || payload.executionId || payload?.execution?.id || null;\nconst nowIso = new Date().toISOString();\n\nreturn [{\n  json: {\n    event_type: eventType,\n    source: sourceName,\n    source_key: sourceKey,\n    source_name: payload.source_name || sourceName,\n    source_platform: sourcePlatform,\n    signal_origin: signalOrigin,\n    target_url: targetUrl,\n    error: errorMessage,\n    message: errorMessage,\n    workflow_name: workflowName,\n    node_name: nodeName,\n    execution_id: executionId,\n    alert_time: nowIso,\n    console_url: $env.N8N_EDITOR_BASE_URL || 'http://localhost:5678'\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        -48
+      ],
+      "id": "e5e71a7a-0b8f-4ad8-b95c-13c34c7884dd",
+      "name": "Normalize Alert Data"
     }
   ],
   "pinData": {},
@@ -159,12 +172,7 @@
       "main": [
         [
           {
-            "node": "Insert rows in system log",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Send email",
+            "node": "Normalize Alert Data",
             "type": "main",
             "index": 0
           }
@@ -172,6 +180,17 @@
       ]
     },
     "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize Alert Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Alert Data": {
       "main": [
         [
           {

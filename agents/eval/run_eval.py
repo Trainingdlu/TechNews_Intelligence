@@ -13,6 +13,13 @@ from typing import Any
 from dotenv import load_dotenv
 
 try:
+    from capabilities import CAPABILITY_CATALOG, supported_capabilities
+    from dataset_loader import (
+        filter_eval_cases,
+        load_eval_cases,
+        parse_csv_filter_arg,
+        summarize_case_matrix,
+    )
     from eval_core import (
         build_baseline_comparison,
         evaluate_case_outputs,
@@ -21,6 +28,13 @@ try:
         summarize_case_results,
     )
 except ImportError:  # package-style import fallback
+    from .capabilities import CAPABILITY_CATALOG, supported_capabilities
+    from .dataset_loader import (
+        filter_eval_cases,
+        load_eval_cases,
+        parse_csv_filter_arg,
+        summarize_case_matrix,
+    )
     from .eval_core import (
         build_baseline_comparison,
         evaluate_case_outputs,
@@ -42,34 +56,6 @@ def _bootstrap_imports() -> tuple[Any, Any, Any]:
     )
 
     return generate_response, get_route_metrics_snapshot, reset_route_metrics
-
-
-def _load_cases(dataset_path: Path) -> list[dict[str, Any]]:
-    cases: list[dict[str, Any]] = []
-    with dataset_path.open("r", encoding="utf-8") as f:
-        for i, line in enumerate(f, 1):
-            raw = line.strip()
-            if not raw or raw.startswith("#"):
-                continue
-            try:
-                item = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid JSONL at line {i}: {exc}") from exc
-
-            question = str(item.get("question", "")).strip()
-            if not question:
-                raise ValueError(f"Missing question at line {i}")
-
-            case_id = str(item.get("id", f"case_{len(cases)+1}")).strip()
-            case = {
-                "id": case_id,
-                "category": str(item.get("category", "general")),
-                "question": question,
-                "min_urls": int(item.get("min_urls", 0) or 0),
-                "must_contain": list(item.get("must_contain", [])),
-            }
-            cases.append(case)
-    return cases
 
 
 def _run_case(
@@ -107,11 +93,13 @@ def _run_case(
     item: dict[str, Any] = {
         "id": case["id"],
         "category": case.get("category", "general"),
+        "capability": case.get("capability", "general_qa"),
         "question": case["question"],
         "constraints": {
             "min_urls": case.get("min_urls", 0),
             "must_contain": case.get("must_contain", []),
         },
+        "tags": case.get("tags", []),
         "metrics": metrics,
         "runs": output_meta,
     }
@@ -120,13 +108,49 @@ def _run_case(
     return item
 
 
-def _build_arg_parser(default_dataset: Path) -> argparse.ArgumentParser:
+def _build_arg_parser(eval_dir: Path) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run stability eval for TechNews agent.")
+    parser.add_argument(
+        "--suite",
+        type=str,
+        default="default",
+        help="Dataset suite name under agents/eval/datasets (default|smoke).",
+    )
     parser.add_argument(
         "--dataset",
         type=Path,
-        default=default_dataset,
-        help="Path to JSONL dataset.",
+        default=None,
+        help="Optional JSONL dataset path. If set, --suite is ignored.",
+    )
+    parser.add_argument(
+        "--categories",
+        type=str,
+        default="",
+        help="Comma-separated category filter (e.g. compare,timeline,landscape).",
+    )
+    parser.add_argument(
+        "--capabilities",
+        type=str,
+        default="",
+        help="Comma-separated capability filter (e.g. compare_topics,timeline).",
+    )
+    parser.add_argument(
+        "--include-disabled",
+        action="store_true",
+        help="Include cases marked as enabled=false in dataset.",
+    )
+    parser.add_argument(
+        "--strict-capability-check",
+        dest="strict_capability_check",
+        action="store_true",
+        default=True,
+        help="Fail fast if dataset references unsupported capabilities.",
+    )
+    parser.add_argument(
+        "--no-strict-capability-check",
+        dest="strict_capability_check",
+        action="store_false",
+        help="Do not fail when dataset has unsupported capabilities (fallback to general_qa).",
     )
     parser.add_argument(
         "--runs-per-question",
@@ -143,14 +167,14 @@ def _build_arg_parser(default_dataset: Path) -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parent / "reports" / "latest.json",
+        default=eval_dir / "reports" / "latest.json",
         help="Where to write the report JSON.",
     )
     parser.add_argument(
         "--max-cases",
         type=int,
         default=0,
-        help="If > 0, only run the first N cases.",
+        help="If > 0, only run the first N selected cases.",
     )
     parser.add_argument(
         "--include-outputs",
@@ -229,18 +253,8 @@ def _build_gate_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
             }
         )
 
-    _add(
-        "avg_error_rate_max",
-        "summary.avg_error_rate",
-        "max",
-        args.fail_on_avg_error_rate,
-    )
-    _add(
-        "fallback_rate_total_max",
-        "route_metrics.fallback_rate_total",
-        "max",
-        args.fail_on_fallback_rate_total,
-    )
+    _add("avg_error_rate_max", "summary.avg_error_rate", "max", args.fail_on_avg_error_rate)
+    _add("fallback_rate_total_max", "route_metrics.fallback_rate_total", "max", args.fail_on_fallback_rate_total)
     _add(
         "fallback_rate_langchain_max",
         "route_metrics.fallback_rate_langchain",
@@ -253,12 +267,7 @@ def _build_gate_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
         "min",
         args.fail_on_avg_min_url_hit_rate,
     )
-    _add(
-        "avg_phrase_hit_rate_min",
-        "summary.avg_phrase_hit_rate",
-        "min",
-        args.fail_on_avg_phrase_hit_rate,
-    )
+    _add("avg_phrase_hit_rate_min", "summary.avg_phrase_hit_rate", "min", args.fail_on_avg_phrase_hit_rate)
     _add(
         "avg_pairwise_similarity_min",
         "summary.avg_pairwise_similarity",
@@ -280,9 +289,15 @@ def _build_gate_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
     return specs
 
 
+def _resolve_dataset_path(eval_dir: Path, args: argparse.Namespace) -> Path:
+    if args.dataset:
+        return args.dataset.resolve()
+    return (eval_dir / "datasets" / f"{args.suite.strip().lower()}.jsonl").resolve()
+
+
 def main() -> int:
     eval_dir = Path(__file__).resolve().parent
-    parser = _build_arg_parser(eval_dir / "questions_default.jsonl")
+    parser = _build_arg_parser(eval_dir)
     args = parser.parse_args()
 
     if args.runs_per_question < 1:
@@ -293,12 +308,48 @@ def main() -> int:
     if env_path.exists():
         load_dotenv(dotenv_path=env_path, override=False)
 
-    generate_response, get_route_metrics_snapshot, reset_route_metrics = _bootstrap_imports()
+    dataset_path = _resolve_dataset_path(eval_dir, args)
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
-    dataset_path = args.dataset.resolve()
-    cases = _load_cases(dataset_path)
+    cases = load_eval_cases(
+        dataset_path,
+        strict_capability_check=bool(args.strict_capability_check),
+        include_disabled=bool(args.include_disabled),
+    )
+
+    category_filter = parse_csv_filter_arg(args.categories)
+    capability_filter = parse_csv_filter_arg(args.capabilities)
+    if capability_filter:
+        unknown = capability_filter.difference(supported_capabilities())
+        if unknown:
+            raise ValueError(
+                f"Unknown capabilities in --capabilities: {sorted(unknown)}; "
+                f"supported={sorted(supported_capabilities())}"
+            )
+
+    cases = filter_eval_cases(
+        cases,
+        categories=category_filter,
+        capabilities=capability_filter,
+    )
     if args.max_cases and args.max_cases > 0:
         cases = cases[: args.max_cases]
+    if not cases:
+        raise ValueError("No eval cases selected. Check dataset/filter arguments.")
+
+    selection = summarize_case_matrix(cases)
+    selection["suite"] = args.suite
+    selection["dataset"] = str(dataset_path)
+    selection["filters"] = {
+        "categories": sorted(category_filter),
+        "capabilities": sorted(capability_filter),
+        "max_cases": int(args.max_cases or 0),
+        "include_disabled": bool(args.include_disabled),
+        "strict_capability_check": bool(args.strict_capability_check),
+    }
+
+    generate_response, get_route_metrics_snapshot, reset_route_metrics = _bootstrap_imports()
 
     reset_route_metrics()
 
@@ -324,6 +375,8 @@ def main() -> int:
         "dataset": str(dataset_path),
         "runs_per_question": args.runs_per_question,
         "elapsed_seconds": round(elapsed, 3),
+        "selection": selection,
+        "capability_catalog": CAPABILITY_CATALOG,
         "summary": summary,
         "route_metrics": route_metrics,
         "cases": results,
@@ -354,6 +407,12 @@ def main() -> int:
         encoding="utf-8",
     )
 
+    print(
+        "[Eval] selection: "
+        f"cases={selection['case_count']} "
+        f"categories={selection.get('categories', {})} "
+        f"capabilities={selection.get('capabilities', {})}"
+    )
     print(
         f"[Eval] cases={summary['case_count']} "
         f"runs={summary['run_count_total']} "
@@ -399,7 +458,6 @@ def main() -> int:
             )
 
     print(f"[Eval] report={output_path}")
-
     return 0 if gate_result.get("ok", True) else 2
 
 

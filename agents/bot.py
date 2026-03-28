@@ -17,7 +17,7 @@ from telegram.ext import (
     filters,
 )
 
-from agent import generate_response
+from agent import generate_response_payload
 from db import init_db_pool, close_db_pool, get_conn, put_conn
 
 load_dotenv()
@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 conversation_histories: dict[int, list[dict]] = {}
 chat_history_limits: dict[int, int] = {}
 chat_request_log: dict[int, list[float]] = {}
-url_title_cache: dict[str, str] = {}
 
 MAX_HISTORY_TURNS = 20  # 保留最近20轮，防止 context 太长
 
@@ -81,13 +80,6 @@ def _send_retry_base_delay_sec() -> float:
         return max(0.1, float(os.getenv("BOT_SEND_RETRY_BASE_SEC", "0.8")))
     except Exception:
         return 0.8
-
-
-def _max_citation_urls() -> int:
-    try:
-        return max(1, min(30, int(os.getenv("BOT_MAX_CITATION_URLS", "12"))))
-    except Exception:
-        return 12
 
 
 def _consume_chat_rate_token(chat_id: int) -> tuple[bool, int]:
@@ -203,46 +195,6 @@ def _fallback_title_from_url(url: str) -> str:
         return url
 
 
-def _lookup_url_titles(urls: list[str]) -> dict[str, str]:
-    if not urls:
-        return {}
-    unique_urls = list(dict.fromkeys(u for u in urls if u))
-
-    result = {u: url_title_cache[u] for u in unique_urls if u in url_title_cache}
-    missing = [u for u in unique_urls if u not in result]
-    if not missing:
-        return result
-
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT url, COALESCE(NULLIF(title_cn, ''), '')
-            FROM tech_news
-            WHERE url = ANY(%s)
-            """,
-            (missing,),
-        )
-        rows = cur.fetchall()
-        cur.close()
-        for row in rows:
-            u = str(row[0] or "")
-            title = str(row[1] or "").strip()
-            if u and title:
-                result[u] = title
-                url_title_cache[u] = title
-    except Exception as e:
-        logger.warning(f"URL title lookup failed: {e}")
-    finally:
-        put_conn(conn)
-
-    for u in unique_urls:
-        if u not in result:
-            result[u] = "暂无中文标题"
-    return result
-
-
 def _escape_and_linkify(text: str, url_title_map: dict[str, str]) -> str:
     if not text:
         return ""
@@ -256,7 +208,7 @@ def _escape_and_linkify(text: str, url_title_map: dict[str, str]) -> str:
         suffix = matched[len(raw):]
         start, end = m.span()
         out.append(html_mod.escape(text[cursor:start]))
-        title = (url_title_map.get(raw) or "").strip() or "暂无中文标题"
+        title = (url_title_map.get(raw) or "").strip() or _fallback_title_from_url(raw)
         safe_url = html_mod.escape(raw, quote=True)
         safe_title = html_mod.escape(title)
         out.append(f'<a href="{safe_url}">{safe_title}</a>')
@@ -358,40 +310,6 @@ def _format_for_telegram(text: str, url_title_map: dict[str, str] | None = None)
     return "\n".join(result)
 
 
-_EVIDENCE_HEADER_RE = re.compile(
-    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence(?:\s+sources?|\s+urls?)?)\s*:?\s*$",
-    re.IGNORECASE,
-)
-
-
-def _strip_existing_evidence_section(text: str) -> str:
-    lines = (text or "").splitlines()
-    start = None
-    for i, line in enumerate(lines):
-        if _EVIDENCE_HEADER_RE.match(line.strip()):
-            start = i
-            break
-    if start is None:
-        return (text or "").rstrip()
-    return "\n".join(lines[:start]).rstrip()
-
-
-def _apply_inline_citations(text: str, ordered_urls: list[str]) -> str:
-    out = text or ""
-    for idx, url in enumerate(ordered_urls, 1):
-        cite = f"[{idx}]"
-        out = out.replace(f"`{url}`", cite)
-        out = out.replace(url, cite)
-    return out
-
-
-def _build_evidence_section(ordered_urls: list[str]) -> str:
-    lines = ["## 来源"]
-    for idx, url in enumerate(ordered_urls, 1):
-        lines.append(f"- [{idx}] {url}")
-    return "\n".join(lines)
-
-
 async def _reply_text_with_retry(message, text: str, parse_mode: str | None = None):
     attempts = _send_retry_attempts()
     base_delay = _send_retry_base_delay_sec()
@@ -414,26 +332,9 @@ async def _reply_text_with_retry(message, text: str, parse_mode: str | None = No
     raise last_error if last_error else RuntimeError("send failed")
 
 
-async def _send_reply(message, text: str):
-    """尝试以 HTML 模式发送，失败则回退到纯文本。"""
-    base_text = _strip_existing_evidence_section(text)
-    scan_text = base_text if base_text else text
-    urls = _extract_urls(scan_text)[:_max_citation_urls()]
-    title_map: dict[str, str] = {}
-    if urls:
-        try:
-            title_map = await asyncio.to_thread(_lookup_url_titles, urls)
-        except Exception as e:
-            logger.warning(f"Prepare URL title map failed: {e}")
-
-    render_text = base_text if base_text else text
-    if urls:
-        body = base_text if base_text else text
-        body = _apply_inline_citations(body, urls)
-        evidence = _build_evidence_section(urls)
-        render_text = f"{body}\n\n{evidence}" if body else evidence
-
-    formatted = _format_for_telegram(render_text, url_title_map=title_map)
+async def _send_reply(message, text: str, url_title_map: dict[str, str] | None = None):
+    """Send pre-processed agent output as Telegram-friendly HTML."""
+    formatted = _format_for_telegram(text, url_title_map=url_title_map or {})
     chunks = _chunk_by_lines(formatted, 4096)
     for chunk in chunks:
         try:
@@ -709,7 +610,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         history = conversation_histories[chat_id]
         # 使用 asyncio.to_thread 避免阻塞事件循环
-        reply = await asyncio.to_thread(generate_response, history, user_text)
+        payload = await asyncio.to_thread(generate_response_payload, history, user_text)
+        reply = str(payload.get("text", "")).strip()
+        title_map = payload.get("url_title_map", {}) if isinstance(payload, dict) else {}
 
         # 更新历史
         history.append({"role": "user", "parts": [{"text": user_text}]})
@@ -722,7 +625,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await thinking_msg.delete()
         except Exception:
             pass
-        await _send_reply(update.message, reply)
+        await _send_reply(update.message, reply, url_title_map=title_map if isinstance(title_map, dict) else {})
 
     except Exception as e:
         logger.error(f"[chat_id={chat_id}] message handling error: {e}")

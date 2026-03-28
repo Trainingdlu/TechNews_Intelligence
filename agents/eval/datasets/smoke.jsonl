@@ -1,0 +1,4 @@
+{"id":"smoke_compare_openai_anthropic","category":"compare","capability":"compare_topics","question":"如果只看最近两周，OpenAI vs Anthropic 谁更热、情绪如何？","min_urls":2,"must_contain":[],"tags":["smoke","forced_route"]}
+{"id":"smoke_timeline_google_30d","category":"timeline","capability":"timeline","question":"构建 Google 过去30天时间线","min_urls":1,"must_contain":[],"tags":["smoke","forced_route"]}
+{"id":"smoke_landscape_ai_30d","category":"landscape","capability":"landscape","question":"过去30天AI格局里，OpenAI、Google、Microsoft 分别扮演什么角色？","min_urls":2,"must_contain":[],"tags":["smoke","forced_route"]}
+{"id":"smoke_query_ai_tc_7d","category":"query","capability":"query_news","question":"检索 AI，来源 TechCrunch，最近7天，按热度排序","min_urls":1,"must_contain":[],"tags":["smoke","tool_call"]}

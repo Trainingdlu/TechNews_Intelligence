@@ -56,7 +56,12 @@
 
 | 参数 | 说明 |
 |---|---|
-| `--dataset` | JSONL 题库路径 |
+| `--suite` | 题库套件名（`default` / `smoke`，对应 `agents/eval/datasets/*.jsonl`） |
+| `--dataset` | 自定义 JSONL 题库路径（设置后覆盖 `--suite`） |
+| `--categories` | 按类别过滤（逗号分隔） |
+| `--capabilities` | 按能力过滤（逗号分隔） |
+| `--include-disabled` | 是否包含 `enabled=false` 的 case |
+| `--strict-capability-check` / `--no-strict-capability-check` | 是否严格校验题库能力字段 |
 | `--runs-per-question` | 每题重复运行次数 |
 | `--sleep-seconds` | 重复运行间隔 |
 | `--include-outputs` | 报告中包含完整回答 |
@@ -66,13 +71,18 @@
 新增门禁参数：
 - `--fail-on-landscape-low-evidence-rate`
 
+能力字段说明：
+- 题库 case 支持 `capability` 字段，并与 `agents/eval/capabilities.py` 的能力注册表对齐。
+- 当前标准能力：`compare_topics`、`timeline`、`landscape`、`trend_analysis`、`compare_sources`、`query_news`、`fulltext_batch`、`general_qa`。
+
 ### 4.3 测试文件职责矩阵
 
 | 测试文件 | 主要测试内容 | 在系统中的作用 | 失败时通常意味着什么 | 建议排查方向 |
 |---|---|---|---|---|
-| `agents/tests/test_eval_core.py` | `eval_core.py` 的纯函数逻辑：文本归一化、URL 提取去重、稳定性指标聚合、质量门禁判定 | 保证评测指标与门禁结论可信，避免“评测本身有 bug” | 指标计算回归、门禁阈值判断错误、报告统计不可信 | 先看 `eval/eval_core.py` 是否改动，再核对该测试中对应的输入/期望 |
-| `agents/tests/test_agent_route_metrics.py` | `agent.py` 路由与指标快照：LangChain 成功/回退计数、compare/timeline/landscape 强制路由、低证据降级分支 | 保证“走哪条链路”和“统计出来的成功率/回退率”正确 | 路由逻辑被改坏，或 metrics 字段定义变化导致监控失真 | 检查 `agent.py` 的 `_extract_*`、`generate_response`、`_metrics_inc` 与 snapshot 结构 |
-| `agents/tests/test_bot_robustness.py` | `bot.py` 的输出稳健性：URL 处理、`[1][2]` 引用重建、“来源”段重建、HTML 回退、发送重试、限流 `retry_after` | 保证 Telegram 用户可见行为稳定，避免格式错乱/发送失败体验差 | Bot 消息后处理链路回归，或重试/回退行为失效 | 检查 `bot.py` 的 `_send_reply`、`_format_for_telegram`、`_reply_text_with_retry`、`_consume_chat_rate_token` |
+| `agents/tests/unit/test_eval_core.py` | `eval_core.py` 的纯函数逻辑：文本归一化、URL 提取去重、稳定性指标聚合、质量门禁判定 | 保证评测指标与门禁结论可信，避免“评测本身有 bug” | 指标计算回归、门禁阈值判断错误、报告统计不可信 | 先看 `eval/eval_core.py` 是否改动，再核对该测试中对应的输入/期望 |
+| `agents/tests/unit/test_eval_dataset_loader.py` | `dataset_loader.py` 与能力映射：题库解析、`category -> capability` 推导、能力合法性校验、过滤与统计汇总 | 保证评测题库与当前 Agent 能力对齐，避免“题目超纲导致误判” | 题库字段不规范、能力字段拼错、筛选逻辑异常 | 检查 `agents/eval/capabilities.py` 与 `agents/eval/dataset_loader.py` 的映射和过滤逻辑 |
+| `agents/tests/unit/test_agent_route_metrics.py` | `agent.py` 路由与指标快照：LangChain 成功/回退计数、compare/timeline/landscape 强制路由、低证据降级分支 | 保证“走哪条链路”和“统计出来的成功率/回退率”正确 | 路由逻辑被改坏，或 metrics 字段定义变化导致监控失真 | 检查 `agent.py` 的 `_extract_*`、`generate_response`、`_metrics_inc` 与 snapshot 结构 |
+| `agents/tests/unit/test_bot_robustness.py` | `bot.py` 的输出稳健性：URL 处理、`[1][2]` 引用重建、“来源”段重建、HTML 回退、发送重试、限流 `retry_after` | 保证 Telegram 用户可见行为稳定，避免格式错乱/发送失败体验差 | Bot 消息后处理链路回归，或重试/回退行为失效 | 检查 `bot.py` 的 `_send_reply`、`_format_for_telegram`、`_reply_text_with_retry`、`_consume_chat_rate_token` |
 
 说明：
 - 以上测试均属于“快速单元测试”，默认 CI 会全部执行。
@@ -93,7 +103,7 @@ python -m unittest discover -s agents/tests -p "test_*.py" -v
 
 Bot 关键链路可单独快速回归：
 ```bash
-python -m unittest agents.tests.test_bot_robustness -v
+python -m unittest agents.tests.unit.test_bot_robustness -v
 ```
 
 该用例覆盖：
@@ -107,13 +117,15 @@ python -m unittest agents.tests.test_bot_robustness -v
 ### 5.2 稳定性评测
 ```bash
 python agents/eval/run_eval.py \
-  --dataset agents/eval/questions_default.jsonl \
+  --suite default \
   --runs-per-question 3 \
   --include-outputs \
   --output agents/eval/reports/latest.json
 ```
 
 产物字段：
+- `selection`（题库筛选结果、按类别/能力分布）
+- `capability_catalog`（能力注册表快照）
 - `summary`
 - `route_metrics`
 - `cases`
@@ -156,7 +168,7 @@ CI workflow 文件：`.github/workflows/ci.yml`
 该 workflow 执行命令：
 ```bash
 python agents/eval/run_eval.py \
-  --dataset agents/eval/questions_default.jsonl \
+  --suite smoke \
   --max-cases <max_cases> \
   --runs-per-question <runs_per_question> \
   --output agents/eval/reports/ci_smoke.json
@@ -248,7 +260,7 @@ python agents/eval/run_eval.py \
 
 smoke 示例：
 ```bash
-python agents/eval/run_eval.py --max-cases 3 --runs-per-question 1 --output agents/eval/reports/smoke.json
+python agents/eval/run_eval.py --suite smoke --runs-per-question 1 --output agents/eval/reports/smoke.json
 ```
 
 ---

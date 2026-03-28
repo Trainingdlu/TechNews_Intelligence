@@ -205,6 +205,42 @@ def _is_probable_url(text: str) -> bool:
     return t.startswith("http://") or t.startswith("https://")
 
 
+def lookup_url_titles(urls: list[str]) -> dict[str, str]:
+    """Lookup URL -> title_cn/title in DB for presentation layer."""
+    unique_urls = [u.strip() for u in (urls or []) if str(u).strip()]
+    if not unique_urls:
+        return {}
+
+    dedup_urls = list(dict.fromkeys(unique_urls))
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT url, COALESCE(NULLIF(title_cn, ''), NULLIF(title, ''), '')
+            FROM tech_news
+            WHERE url = ANY(%s)
+            """,
+            (dedup_urls,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        out: dict[str, str] = {}
+        for url, title in rows:
+            key = str(url or "").strip()
+            val = str(title or "").strip()
+            if key and val:
+                out[key] = val
+        return out
+    except Exception as e:
+        print(f"[Warn] lookup_url_titles failed: {e}")
+        return {}
+    finally:
+        if conn is not None:
+            put_conn(conn)
+
+
 def _normalize_landscape_entities(entities: str | list[str] | None) -> list[str]:
     raw_items: list[str] = []
     if isinstance(entities, str):
