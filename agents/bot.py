@@ -4,6 +4,7 @@ import os
 import re
 import asyncio
 import logging
+import time
 
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 # 格式: { chat_id: [{"role": "user"/"model", "parts": [{"text": "..."}]}, ...] }
 conversation_histories: dict[int, list[dict]] = {}
 chat_history_limits: dict[int, int] = {}
+chat_request_log: dict[int, list[float]] = {}
 
 MAX_HISTORY_TURNS = 20  # 保留最近20轮，防止 context 太长
 
@@ -42,6 +44,42 @@ def _trim_history(history: list[dict], max_turns: int | None = None) -> list[dic
     if len(history) > max_messages:
         return history[-max_messages:]
     return history
+
+
+def _rate_limit_window_sec() -> int:
+    try:
+        return max(1, int(os.getenv("BOT_RATE_WINDOW_SEC", "10")))
+    except Exception:
+        return 10
+
+
+def _rate_limit_max_requests() -> int:
+    try:
+        return max(1, int(os.getenv("BOT_RATE_LIMIT", "3")))
+    except Exception:
+        return 3
+
+
+def _auto_delete_seconds() -> int:
+    try:
+        return max(0, int(os.getenv("BOT_AUTO_DELETE_SEC", "30")))
+    except Exception:
+        return 30
+
+
+def _consume_chat_rate_token(chat_id: int) -> tuple[bool, int]:
+    """Return (allowed, retry_after_seconds)."""
+    now = time.time()
+    window = _rate_limit_window_sec()
+    maximum = _rate_limit_max_requests()
+    logs = [t for t in chat_request_log.get(chat_id, []) if now - t < window]
+    if len(logs) >= maximum:
+        retry_after = max(1, int(window - (now - logs[0])) + 1)
+        chat_request_log[chat_id] = logs
+        return False, retry_after
+    logs.append(now)
+    chat_request_log[chat_id] = logs
+    return True, 0
 
 
 def _parse_admin_ids() -> set[int]:
@@ -70,7 +108,15 @@ def _is_admin(update: Update) -> bool:
     return int(user.id) in admins
 
 
-async def _require_admin(update: Update, command_name: str) -> bool:
+def _is_private_chat(update: Update) -> bool:
+    chat = update.effective_chat
+    return bool(chat and chat.type == "private")
+
+
+async def _require_admin(update: Update, command_name: str, private_only: bool = False) -> bool:
+    if private_only and not _is_private_chat(update):
+        await update.message.reply_text(f"{command_name} 仅支持私聊机器人使用。")
+        return False
     if _is_admin(update):
         return True
     await update.message.reply_text(
@@ -78,6 +124,21 @@ async def _require_admin(update: Update, command_name: str) -> bool:
         "请在环境变量 TELEGRAM_ADMIN_IDS 中配置允许的 Telegram user_id。"
     )
     return False
+
+
+def _schedule_delete_messages(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_ids: list[int], delay_sec: int):
+    if delay_sec <= 0 or not message_ids:
+        return
+
+    async def _job():
+        await asyncio.sleep(delay_sec)
+        for mid in message_ids:
+            try:
+                await context.bot.delete_message(chat_id=chat_id, message_id=mid)
+            except Exception:
+                pass
+
+    asyncio.create_task(_job())
 
 
 import html as html_mod
@@ -216,6 +277,8 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "可用命令：\n"
         "/start - 开始并重置当前会话\n"
         "/menu - 查看命令菜单\n"
+        "/whoami - 查看当前 Telegram 身份\n"
+        "/status - 查看机器人状态（管理员）\n"
         "/settings - 查看或修改当前设置（管理员）\n"
         "/quota <token> - 查询 API Token 配额（管理员）\n"
         "/clear - 清空对话历史\n"
@@ -223,8 +286,24 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    chat = update.effective_chat
+    user_id = user.id if user else 0
+    username = f"@{user.username}" if (user and user.username) else "(none)"
+    chat_type = chat.type if chat else "(unknown)"
+    admin_text = "yes" if _is_admin(update) else "no"
+    await update.message.reply_text(
+        "身份信息：\n"
+        f"- user_id: {user_id}\n"
+        f"- username: {username}\n"
+        f"- chat_type: {chat_type}\n"
+        f"- is_admin: {admin_text}"
+    )
+
+
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await _require_admin(update, "/settings"):
+    if not await _require_admin(update, "/settings", private_only=True):
         return
     chat_id = update.effective_chat.id
 
@@ -294,13 +373,20 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await _require_admin(update, "/quota"):
+    if not await _require_admin(update, "/quota", private_only=True):
         return
+    chat_id = update.effective_chat.id
     token = _extract_command_arg(update.message.text or "")
     if not token:
-        await update.message.reply_text(
+        msg = await update.message.reply_text(
             "用法：/quota <token>\n"
             "示例：/quota abcdef123456"
+        )
+        _schedule_delete_messages(
+            context,
+            chat_id,
+            [update.message.message_id, msg.message_id],
+            _auto_delete_seconds(),
         )
         return
 
@@ -320,23 +406,83 @@ async def quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
         row = cur.fetchone()
         cur.close()
         if not row:
-            await update.message.reply_text("未找到该 token，请检查后重试。")
+            msg = await update.message.reply_text("未找到该 token，请检查后重试。")
+            _schedule_delete_messages(
+                context,
+                chat_id,
+                [update.message.message_id, msg.message_id],
+                _auto_delete_seconds(),
+            )
             return
 
         total, used, status = int(row[0]), int(row[1]), str(row[2] or "")
         remaining = max(0, total - used)
-        await update.message.reply_text(
+        msg = await update.message.reply_text(
             "配额信息：\n"
             f"- 总配额: {total}\n"
             f"- 已使用: {used}\n"
             f"- 剩余: {remaining}\n"
             f"- 状态: {status}"
         )
+        _schedule_delete_messages(
+            context,
+            chat_id,
+            [update.message.message_id, msg.message_id],
+            _auto_delete_seconds(),
+        )
     except Exception as e:
         logger.error(f"查询配额失败: {e}")
-        await update.message.reply_text("查询配额失败，请稍后重试。")
+        msg = await update.message.reply_text("查询配额失败，请稍后重试。")
+        _schedule_delete_messages(
+            context,
+            chat_id,
+            [update.message.message_id, msg.message_id],
+            _auto_delete_seconds(),
+        )
     finally:
         put_conn(conn)
+
+
+async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _require_admin(update, "/status", private_only=True):
+        return
+
+    runtime = os.getenv("AGENT_RUNTIME", "langchain").strip().lower()
+    strict_mode = os.getenv("AGENT_RUNTIME_STRICT", "false").strip().lower()
+    active_sessions = sum(1 for h in conversation_histories.values() if h)
+    total_sessions = len(conversation_histories)
+    per_chat_override = len(chat_history_limits)
+    window = _rate_limit_window_sec()
+    limit = _rate_limit_max_requests()
+
+    db_ok = False
+    db_err = ""
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        cur.close()
+        db_ok = True
+    except Exception as e:
+        db_err = str(e)
+    finally:
+        if conn is not None:
+            put_conn(conn)
+
+    lines = [
+        "系统状态：",
+        f"- runtime: {runtime}",
+        f"- strict: {strict_mode}",
+        f"- db: {'ok' if db_ok else 'error'}",
+        f"- sessions(active/total): {active_sessions}/{total_sessions}",
+        f"- chat_history_overrides: {per_chat_override}",
+        f"- rate_limit: {limit} req / {window}s",
+    ]
+    if db_err:
+        lines.append(f"- db_error: {db_err[:120]}")
+    await update.message.reply_text("\n".join(lines))
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -348,6 +494,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
 
     if not user_text:
+        return
+
+    allowed, retry_after = _consume_chat_rate_token(chat_id)
+    if not allowed:
+        await update.message.reply_text(
+            f"请求过于频繁，请在 {retry_after} 秒后重试。"
+        )
         return
 
     # 初始化该用户的历史
@@ -388,6 +541,8 @@ async def _post_init(app) -> None:
     commands = [
         BotCommand("start", "开始并重置会话"),
         BotCommand("menu", "查看命令菜单"),
+        BotCommand("whoami", "查看当前身份"),
+        BotCommand("status", "查看系统状态(管理员)"),
         BotCommand("settings", "查看或修改当前设置"),
         BotCommand("quota", "查询 token 配额(管理员)"),
         BotCommand("clear", "清空对话历史"),
@@ -416,6 +571,8 @@ def main():
     )
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("menu", menu))
+    app.add_handler(CommandHandler("whoami", whoami))
+    app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("settings", settings))
     app.add_handler(CommandHandler("quota", quota))
     app.add_handler(CommandHandler("clear", clear))
