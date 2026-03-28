@@ -96,24 +96,21 @@ body {
     text-decoration: none;
 }
 
-.logo-area .material-symbols-outlined {
-    color: var(--primary-blue);
-}
-
 .nav-item {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 0 16px;
     height: 40px;
-    border-radius: var(--radius-md);
+    border-radius: 20px;
     text-decoration: none;
     color: var(--text-secondary);
     font-size: 14px;
     font-weight: 500;
-    transition: background var(--transition-fast), transform var(--transition-fast);
+    transition: background 0.2s, transform 0.25s;
     cursor: pointer;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -127,8 +124,13 @@ body {
     transform: scale(0.9);
 }
 
+.nav-item.active {
+    background-color: var(--accent-blue);
+    color: var(--accent-blue-text);
+}
+
 .nav-item .material-symbols-outlined {
-    font-size: 21px;
+    font-size: 20px;
 }
 
 /* ===== Bottom Navigation (Mobile) ===== */
@@ -161,6 +163,11 @@ body {
     gap: 4px;
 }
 
+.bottom-nav-item.active .icon-container {
+    background-color: var(--accent-blue);
+    color: var(--accent-blue-text);
+}
+
 .bottom-nav-item .icon-container {
     width: 64px;
     height: 32px;
@@ -168,7 +175,11 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background-color var(--transition-fast);
+    transition: background-color 0.2s;
+}
+
+.bottom-nav-item:active .icon-container {
+    transform: scale(0.95);
 }
 
 .bottom-nav-item .material-symbols-outlined {
@@ -229,24 +240,75 @@ body {
     align-items: center;
     justify-content: center;
     margin: 0 auto 20px;
-    animation: iconPulse 2s ease-in-out infinite;
+    position: relative;
+    isolation: isolate;
+    box-shadow: 0 6px 18px rgba(11, 87, 208, 0.14);
+    animation: iconPulse 4s ease-in-out infinite;
+}
+
+.auth-icon::before,
+.auth-icon::after {
+    content: '';
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.auth-icon::before {
+    inset: -8px;
+    border: 1px solid rgba(11, 87, 208, 0.2);
+    animation: iconHalo 3.8s ease-in-out infinite;
+}
+
+.auth-icon::after {
+    inset: -15px;
+    border: 1px solid rgba(11, 87, 208, 0.12);
+    animation: iconHalo 3.8s ease-in-out infinite 1.2s;
 }
 
 @keyframes iconPulse {
 
     0%,
     100% {
+        transform: translateY(0) scale(1);
+    }
+
+    50% {
+        transform: translateY(-1px) scale(1.04);
+    }
+}
+
+@keyframes iconHalo {
+
+    0%,
+    100% {
+        opacity: 0.34;
         transform: scale(1);
     }
 
     50% {
-        transform: scale(1.05);
+        opacity: 0.08;
+        transform: scale(1.09);
+    }
+}
+
+@keyframes iconDrift {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-1px);
     }
 }
 
 .auth-icon .material-symbols-outlined {
     font-size: 36px;
     color: var(--accent-blue-text);
+    font-variation-settings: "FILL" 1, "wght" 640, "GRAD" 0, "opsz" 36;
+    animation: iconDrift 4s ease-in-out infinite;
 }
 
 .auth-title {
@@ -278,7 +340,8 @@ body {
     left: 14px;
     font-size: 20px;
     color: var(--text-tertiary);
-    transition: color var(--transition-fast);
+    transition: color var(--transition-fast), transform var(--transition-fast),
+        font-variation-settings var(--transition-fast);
     pointer-events: none;
 }
 
@@ -304,11 +367,15 @@ body {
 .input-group input:focus+.input-icon,
 .input-group input:focus~.input-icon {
     color: var(--primary-blue);
+    transform: translateY(-1px) scale(1.06);
+    font-variation-settings: "FILL" 1, "wght" 620, "GRAD" 0, "opsz" 20;
 }
 
 /* fix: icon is before input in DOM, use has() */
 .input-group:has(input:focus) .input-icon {
     color: var(--primary-blue);
+    transform: translateY(-1px) scale(1.06);
+    font-variation-settings: "FILL" 1, "wght" 620, "GRAD" 0, "opsz" 20;
 }
 
 .primary-btn,
@@ -351,7 +418,25 @@ body {
 
 .primary-btn .material-symbols-outlined,
 .secondary-btn .material-symbols-outlined {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
     font-size: 20px;
+    transform: translateY(0.2px);
+    font-variation-settings: "FILL" 0, "wght" 540, "GRAD" 0, "opsz" 20;
+    transition: transform var(--transition-fast), font-variation-settings var(--transition-fast);
+}
+
+.primary-btn:hover .material-symbols-outlined,
+.secondary-btn:hover .material-symbols-outlined {
+    transform: translateY(0.2px) scale(1.03);
+    font-variation-settings: "FILL" 1, "wght" 640, "GRAD" 0, "opsz" 20;
+}
+
+.primary-btn:active .material-symbols-outlined,
+.secondary-btn:active .material-symbols-outlined {
+    transform: translateY(0.2px) scale(0.98);
 }
 
 .secondary-btn {
@@ -507,19 +592,29 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background var(--transition-fast), transform var(--transition-fast);
+    transition: background var(--transition-fast), color var(--transition-fast),
+        box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
 .icon-btn:hover {
     background: var(--hover-color);
+    color: var(--primary-blue);
+    box-shadow: 0 0 0 1px rgba(11, 87, 208, 0.14) inset;
 }
 
 .icon-btn:active {
-    transform: scale(0.9);
+    transform: scale(0.92);
 }
 
 .icon-btn .material-symbols-outlined {
     font-size: 22px;
+    font-variation-settings: "FILL" 0, "wght" 540, "GRAD" 0, "opsz" 22;
+    transition: transform var(--transition-fast), font-variation-settings var(--transition-fast);
+}
+
+.icon-btn:hover .material-symbols-outlined {
+    transform: translateY(-1px) scale(1.04);
+    font-variation-settings: "FILL" 1, "wght" 650, "GRAD" 0, "opsz" 22;
 }
 
 .icon-link-btn {
@@ -572,40 +667,36 @@ body {
     color: var(--primary-blue);
     display: block;
     margin-bottom: 12px;
-    animation: wave 1.2s ease-in-out 2;
+    animation: wave 2.8s ease-in-out infinite;
     transform-origin: 70% 70%;
+    filter: drop-shadow(0 3px 10px rgba(11, 87, 208, 0.18));
 }
 
 @keyframes wave {
-    0% {
+
+    0%,
+    58%,
+    100% {
         transform: rotate(0deg);
     }
 
-    10% {
-        transform: rotate(14deg);
-    }
-
-    20% {
-        transform: rotate(-8deg);
-    }
-
-    30% {
-        transform: rotate(14deg);
-    }
-
-    40% {
-        transform: rotate(-4deg);
-    }
-
-    50% {
+    64% {
         transform: rotate(10deg);
     }
 
-    60% {
-        transform: rotate(0deg);
+    70% {
+        transform: rotate(-6deg);
     }
 
-    100% {
+    76% {
+        transform: rotate(8deg);
+    }
+
+    82% {
+        transform: rotate(-3deg);
+    }
+
+    88% {
         transform: rotate(0deg);
     }
 }
@@ -906,7 +997,8 @@ body {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    transition: background var(--transition-fast), transform var(--transition-spring),
+    transition: background var(--transition-fast), box-shadow var(--transition-fast),
+        transform var(--transition-spring),
         opacity var(--transition-fast);
 }
 
@@ -917,15 +1009,23 @@ body {
 }
 
 .send-btn:not(:disabled):hover {
-    transform: scale(1.08);
+    transform: translateY(-1px) scale(1.05);
+    box-shadow: 0 8px 18px rgba(11, 87, 208, 0.26);
 }
 
 .send-btn:not(:disabled):active {
-    transform: scale(0.92);
+    transform: scale(0.94);
 }
 
 .send-btn .material-symbols-outlined {
     font-size: 22px;
+    font-variation-settings: "FILL" 0, "wght" 620, "GRAD" 0, "opsz" 22;
+    transition: transform var(--transition-fast), font-variation-settings var(--transition-fast);
+}
+
+.send-btn:not(:disabled):hover .material-symbols-outlined {
+    transform: translateY(-1px);
+    font-variation-settings: "FILL" 1, "wght" 700, "GRAD" 0, "opsz" 22;
 }
 
 /* ===== Loading spinner for buttons ===== */
@@ -955,6 +1055,38 @@ body {
 @keyframes spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    .auth-icon::before {
+        border-color: rgba(138, 180, 248, 0.24);
+    }
+
+    .auth-icon::after {
+        border-color: rgba(138, 180, 248, 0.14);
+    }
+
+    .welcome-icon {
+        filter: drop-shadow(0 3px 10px rgba(138, 180, 248, 0.2));
+    }
+
+    .icon-btn:hover {
+        box-shadow: 0 0 0 1px rgba(138, 180, 248, 0.2) inset;
+    }
+
+    .send-btn:not(:disabled):hover {
+        box-shadow: 0 8px 18px rgba(138, 180, 248, 0.28);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .auth-icon,
+    .auth-icon::before,
+    .auth-icon::after,
+    .auth-icon .material-symbols-outlined,
+    .welcome-icon {
+        animation: none !important;
     }
 }
 

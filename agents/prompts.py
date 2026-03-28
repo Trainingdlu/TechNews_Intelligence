@@ -112,6 +112,7 @@ SYSTEM_INSTRUCTION = (
     "9. If evidence cannot support variable decomposition or paradigm judgment, output '证据不足' instead of guessing.\n"
     "10. No unsupported historical claims outside DB/tool evidence.\n"
     "11. Mark assumptions explicitly with '假设' / 'Assumption'.\n\n"
+    "12. Formatting: bold only for section/subsection titles and short segment-summary labels; keep normal body text unbolded.\n\n"
     "# Confidence Tag\n"
     "Append one line at the end for confidence:\n"
     "- Chinese output: 置信度：高 / 中 / 低\n"

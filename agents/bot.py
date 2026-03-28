@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -16,7 +16,7 @@ from telegram.ext import (
 )
 
 from agent import generate_response
-from db import init_db_pool, close_db_pool
+from db import init_db_pool, close_db_pool, get_conn, put_conn
 
 load_dotenv()
 
@@ -29,38 +29,86 @@ logger = logging.getLogger(__name__)
 # 按 chat_id 存储对话历史
 # 格式: { chat_id: [{"role": "user"/"model", "parts": [{"text": "..."}]}, ...] }
 conversation_histories: dict[int, list[dict]] = {}
+chat_history_limits: dict[int, int] = {}
 
 MAX_HISTORY_TURNS = 20  # 保留最近20轮，防止 context 太长
 
 
-def _trim_history(history: list[dict]) -> list[dict]:
-    """超过 MAX_HISTORY_TURNS 轮时，保留最新的"""
+def _trim_history(history: list[dict], max_turns: int | None = None) -> list[dict]:
+    """Trim history by max turns (default: MAX_HISTORY_TURNS)."""
     # 每轮 = user + model 各一条，共2条
-    max_messages = MAX_HISTORY_TURNS * 2
+    turns = max_turns if max_turns is not None else MAX_HISTORY_TURNS
+    max_messages = max(1, turns) * 2
     if len(history) > max_messages:
         return history[-max_messages:]
     return history
 
 
+def _parse_admin_ids() -> set[int]:
+    raw = os.getenv("TELEGRAM_ADMIN_IDS", "").strip()
+    if not raw:
+        return set()
+    ids: set[int] = set()
+    for part in re.split(r"[,\s]+", raw):
+        p = part.strip()
+        if not p:
+            continue
+        try:
+            ids.add(int(p))
+        except Exception:
+            continue
+    return ids
+
+
+def _is_admin(update: Update) -> bool:
+    user = update.effective_user
+    if user is None:
+        return False
+    admins = _parse_admin_ids()
+    if not admins:
+        return False
+    return int(user.id) in admins
+
+
+async def _require_admin(update: Update, command_name: str) -> bool:
+    if _is_admin(update):
+        return True
+    await update.message.reply_text(
+        f"{command_name} 仅管理员可用。\n"
+        "请在环境变量 TELEGRAM_ADMIN_IDS 中配置允许的 Telegram user_id。"
+    )
+    return False
+
+
 import html as html_mod
 
 
-def _render_inline_markdown_to_html(line: str) -> str:
-    """Render a small safe subset of markdown inline styles to Telegram HTML.
+def _render_limited_bold_line(line: str) -> str:
+    """Keep bold only for short segment-summary labels, plain text otherwise.
 
-    Supported now:
-    - **bold** -> <b>bold</b>
+    Supported bold patterns:
+    - **Summary**
+    - **Summary**: detail
+    - **Summary**\uFF1Adetail
     """
-    parts: list[str] = []
-    last = 0
-    for m in re.finditer(r"\*\*(.+?)\*\*", line):
-        if m.start() > last:
-            parts.append(html_mod.escape(line[last:m.start()]))
-        parts.append(f"<b>{html_mod.escape(m.group(1))}</b>")
-        last = m.end()
-    if last < len(line):
-        parts.append(html_mod.escape(line[last:]))
-    return "".join(parts)
+    # Case 1: full-line summary label: **Summary**
+    m = re.match(r"^(\s*)\*\*(.+?)\*\*\s*$", line)
+    if m:
+        indent, label = m.group(1), m.group(2)
+        return f"{html_mod.escape(indent)}<b>{html_mod.escape(label)}</b>"
+
+    # Case 2: prefix summary label: **Summary**: detail
+    m = re.match(r"^(\s*)\*\*(.+?)\*\*\s*([:\uFF1A])\s*(.*)$", line)
+    if m:
+        indent, label, colon, rest = m.groups()
+        prefix = f"{html_mod.escape(indent)}<b>{html_mod.escape(label)}</b>{html_mod.escape(colon)}"
+        if rest:
+            return f"{prefix} {html_mod.escape(rest)}"
+        return prefix
+
+    # Other lines: strip markdown bold markers and keep plain text.
+    plain = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
+    return html_mod.escape(plain)
 
 
 def _chunk_by_lines(text: str, max_len: int = 4096) -> list[str]:
@@ -119,8 +167,8 @@ def _format_for_telegram(text: str) -> str:
         # 将 markdown 无序列表统一为 "-"，避免 TG 中星号列表不稳定。
         line = re.sub(r"^(\s*)[\*\u2022]\s+", r"\1- ", line)
 
-        # 正文：保留粗体，其余内容安全转义
-        result.append(_render_inline_markdown_to_html(line))
+        # 正文：只允许分段综述标签加粗；其余正文全部普通文本。
+        result.append(_render_limited_bold_line(line))
     return "\n".join(result)
 
 
@@ -143,7 +191,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conversation_histories[chat_id] = []  # 清空历史
     await update.message.reply_text(
         "你好！我是 TechNews 智能分析助手。\n"
-        "发送任意问题开始对话，发送 /clear 可以清空对话历史。"
+        "发送任意问题开始对话。\n"
+        "输入 /menu 查看可用命令。"
     )
 
 
@@ -151,6 +200,147 @@ async def clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     conversation_histories[chat_id] = []
     await update.message.reply_text("对话历史已清空，可以重新开始。")
+
+
+def _extract_command_arg(text: str) -> str:
+    if not text:
+        return ""
+    parts = text.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        return ""
+    return parts[1].strip()
+
+
+async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "可用命令：\n"
+        "/start - 开始并重置当前会话\n"
+        "/menu - 查看命令菜单\n"
+        "/settings - 查看或修改当前设置（管理员）\n"
+        "/quota <token> - 查询 API Token 配额（管理员）\n"
+        "/clear - 清空对话历史\n"
+        "/help - 查看帮助"
+    )
+
+
+async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _require_admin(update, "/settings"):
+        return
+    chat_id = update.effective_chat.id
+
+    def _usage() -> str:
+        return (
+            "用法：\n"
+            "/settings                    查看当前设置\n"
+            "/settings strict on|off      设置严格模式\n"
+            "/settings runtime langchain|legacy  设置运行时\n"
+            "/settings history <1-100>    设置历史轮数上限"
+        )
+
+    arg = _extract_command_arg(update.message.text or "")
+    if not arg:
+        runtime = os.getenv("AGENT_RUNTIME", "langchain").strip().lower()
+        strict_mode = os.getenv("AGENT_RUNTIME_STRICT", "false").strip().lower()
+        chat_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
+        await update.message.reply_text(
+            "当前设置：\n"
+            f"- 运行时: {runtime}\n"
+            f"- 严格模式: {strict_mode}\n"
+            f"- 当前 chat 历史轮数上限: {chat_limit}\n"
+            f"- 默认历史轮数上限: {MAX_HISTORY_TURNS}\n"
+            "- 消息格式: HTML（仅标题/分段综述加粗）\n\n"
+            + _usage()
+        )
+        return
+
+    parts = arg.split()
+    key = parts[0].lower()
+    if key == "strict":
+        if len(parts) < 2 or parts[1].lower() not in {"on", "off"}:
+            await update.message.reply_text("参数错误。\n" + _usage())
+            return
+        val = "true" if parts[1].lower() == "on" else "false"
+        os.environ["AGENT_RUNTIME_STRICT"] = val
+        await update.message.reply_text(f"已更新：strict = {parts[1].lower()}（AGENT_RUNTIME_STRICT={val}）")
+        return
+
+    if key == "runtime":
+        if len(parts) < 2 or parts[1].lower() not in {"langchain", "legacy"}:
+            await update.message.reply_text("参数错误。\n" + _usage())
+            return
+        val = parts[1].lower()
+        os.environ["AGENT_RUNTIME"] = val
+        await update.message.reply_text(f"已更新：runtime = {val}")
+        return
+
+    if key == "history":
+        if len(parts) < 2:
+            await update.message.reply_text("参数错误。\n" + _usage())
+            return
+        try:
+            n = int(parts[1])
+        except Exception:
+            await update.message.reply_text("history 需为整数。\n" + _usage())
+            return
+        n = max(1, min(100, n))
+        chat_history_limits[chat_id] = n
+        # 仅裁剪当前 chat 的历史，避免影响其他用户
+        hist = conversation_histories.get(chat_id, [])
+        conversation_histories[chat_id] = _trim_history(hist, max_turns=n)
+        await update.message.reply_text(f"已更新：当前 chat history = {n}")
+        return
+
+    await update.message.reply_text("不支持的设置项。\n" + _usage())
+
+
+async def quota(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not await _require_admin(update, "/quota"):
+        return
+    token = _extract_command_arg(update.message.text or "")
+    if not token:
+        await update.message.reply_text(
+            "用法：/quota <token>\n"
+            "示例：/quota abcdef123456"
+        )
+        return
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT quota, used, status
+            FROM access_tokens
+            WHERE token = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (token,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        if not row:
+            await update.message.reply_text("未找到该 token，请检查后重试。")
+            return
+
+        total, used, status = int(row[0]), int(row[1]), str(row[2] or "")
+        remaining = max(0, total - used)
+        await update.message.reply_text(
+            "配额信息：\n"
+            f"- 总配额: {total}\n"
+            f"- 已使用: {used}\n"
+            f"- 剩余: {remaining}\n"
+            f"- 状态: {status}"
+        )
+    except Exception as e:
+        logger.error(f"查询配额失败: {e}")
+        await update.message.reply_text("查询配额失败，请稍后重试。")
+    finally:
+        put_conn(conn)
+
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await menu(update, context)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -175,7 +365,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 更新历史
         history.append({"role": "user", "parts": [{"text": user_text}]})
         history.append({"role": "model", "parts": [{"text": reply}]})
-        conversation_histories[chat_id] = _trim_history(history)
+        history_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
+        conversation_histories[chat_id] = _trim_history(history, max_turns=history_limit)
 
         # 删除"正在思考"，发送回复
         await thinking_msg.delete()
@@ -192,6 +383,22 @@ async def _post_shutdown(app) -> None:
     logger.info("数据库连接池已关闭")
 
 
+async def _post_init(app) -> None:
+    """Initialize Telegram slash-command menu."""
+    commands = [
+        BotCommand("start", "开始并重置会话"),
+        BotCommand("menu", "查看命令菜单"),
+        BotCommand("settings", "查看或修改当前设置"),
+        BotCommand("quota", "查询 token 配额(管理员)"),
+        BotCommand("clear", "清空对话历史"),
+        BotCommand("help", "帮助"),
+    ]
+    try:
+        await app.bot.set_my_commands(commands)
+    except Exception as e:
+        logger.warning(f"设置 Telegram 命令菜单失败: {e}")
+
+
 def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     if not token:
@@ -203,11 +410,16 @@ def main():
     app = (
         ApplicationBuilder()
         .token(token)
+        .post_init(_post_init)
         .post_shutdown(_post_shutdown)
         .build()
     )
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu", menu))
+    app.add_handler(CommandHandler("settings", settings))
+    app.add_handler(CommandHandler("quota", quota))
     app.add_handler(CommandHandler("clear", clear))
+    app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("启动中")

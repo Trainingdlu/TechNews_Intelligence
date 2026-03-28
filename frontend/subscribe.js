@@ -7,19 +7,13 @@
     const form = document.getElementById("subscribe-form");
     const emailInput = document.getElementById("email-input");
     const nameInput = document.getElementById("name-input");
-    const sourceList = document.getElementById("source-list");
     const frequencySelect = document.getElementById("frequency-select");
     const timezoneInput = document.getElementById("timezone-input");
     const saveBtn = document.getElementById("save-btn");
     const loadBtn = document.getElementById("load-btn");
     const unsubscribeBtn = document.getElementById("unsubscribe-btn");
     const statusText = document.getElementById("status-text");
-
-    let availableSources = ["HackerNews", "TechCrunch"];
-    const SOURCE_ICON_MAP = {
-        hackernews: "forum",
-        techcrunch: "newspaper",
-    };
+    const defaultEmailPlaceholder = emailInput.getAttribute("placeholder") || "输入邮箱地址";
 
     function setStatus(text, type) {
         const level = type || "info";
@@ -33,47 +27,16 @@
         unsubscribeBtn.disabled = isBusy;
     }
 
-    function renderSourceOptions(selected = []) {
-        sourceList.innerHTML = "";
-        availableSources.forEach((source) => {
-            const id = "source-" + source.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-            const iconName = SOURCE_ICON_MAP[source.toLowerCase()] || "rss_feed";
-
-            const label = document.createElement("label");
-            label.className = "source-chip";
-            label.setAttribute("for", id);
-            label.dataset.source = source.toLowerCase();
-
-            const checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.name = "sources";
-            checkbox.value = source;
-            checkbox.id = id;
-            checkbox.checked = selected.includes(source);
-
-            const icon = document.createElement("span");
-            icon.className = "material-symbols-outlined source-chip-icon";
-            icon.textContent = iconName;
-
-            const check = document.createElement("span");
-            check.className = "material-symbols-outlined source-chip-check";
-            check.textContent = "check";
-
-            const textNode = document.createElement("span");
-            textNode.className = "source-chip-text";
-            textNode.textContent = source;
-
-            label.appendChild(checkbox);
-            label.appendChild(icon);
-            label.appendChild(textNode);
-            label.appendChild(check);
-            sourceList.appendChild(label);
-        });
+    function clearEmailInlineHint() {
+        emailInput.classList.remove("input-inline-hint");
+        emailInput.placeholder = defaultEmailPlaceholder;
     }
 
-    function getSelectedSources() {
-        const checks = sourceList.querySelectorAll('input[name="sources"]:checked');
-        return Array.from(checks).map((node) => node.value);
+    function showEmailInlineHint(message) {
+        emailInput.classList.add("input-inline-hint");
+        emailInput.value = "";
+        emailInput.placeholder = message;
+        emailInput.focus();
     }
 
     async function apiFetch(path, options = {}) {
@@ -91,9 +54,6 @@
             const res = await apiFetch("/subscription-options");
             if (!res.ok) return;
             const data = await res.json();
-            if (Array.isArray(data.sources) && data.sources.length > 0) {
-                availableSources = data.sources;
-            }
             if (Array.isArray(data.frequencies) && data.frequencies.length > 0) {
                 const current = frequencySelect.value;
                 frequencySelect.innerHTML = "";
@@ -110,15 +70,14 @@
             }
         } catch {
             // keep fallback options
-        } finally {
-            renderSourceOptions(availableSources);
         }
     }
 
     async function loadCurrentSettings() {
         const email = emailInput.value.trim();
         if (!email) {
-            setStatus("请先填写邮箱。", "error");
+            setStatus("", "");
+            showEmailInlineHint("请先填写邮箱");
             return;
         }
 
@@ -129,10 +88,12 @@
             if (!res.ok) {
                 const detail = await parseError(res);
                 if (res.status === 404) {
-                    setStatus("这个邮箱目前还没有订阅记录。", "error");
+                    setStatus("", "");
+                    showEmailInlineHint("该邮箱暂无订阅记录");
                     return;
                 }
-                setStatus("读取失败：" + detail, "error");
+                setStatus("", "");
+                showEmailInlineHint("读取失败，请检查邮箱");
                 return;
             }
 
@@ -140,15 +101,15 @@
             nameInput.value = data.name || "";
             frequencySelect.value = data.frequency || "daily";
             timezoneInput.value = data.timezone || "Asia/Shanghai";
-            renderSourceOptions(Array.isArray(data.sources) ? data.sources : availableSources);
 
             if (data.is_active) {
                 setStatus("已读取当前订阅偏好。", "success");
             } else {
-                setStatus("此邮箱已退订，可点击“保存订阅”重新启用。", "error");
+                setStatus("此邮箱已退订，可点击“保存订阅”重新启用。", "info");
             }
         } catch {
-            setStatus("网络异常，请稍后重试。", "error");
+            setStatus("", "");
+            showEmailInlineHint("读取失败，请稍后再试");
         } finally {
             setBusy(false);
         }
@@ -159,20 +120,14 @@
 
         const email = emailInput.value.trim();
         if (!email) {
-            setStatus("请先填写邮箱。", "error");
-            return;
-        }
-
-        const selectedSources = getSelectedSources();
-        if (selectedSources.length === 0) {
-            setStatus("至少选择一个新闻来源。", "error");
+            setStatus("", "");
+            showEmailInlineHint("请先填写邮箱");
             return;
         }
 
         const payload = {
             email,
             name: nameInput.value.trim() || null,
-            sources: selectedSources,
             frequency: frequencySelect.value,
             timezone: timezoneInput.value.trim() || "Asia/Shanghai",
         };
@@ -190,8 +145,7 @@
                 return;
             }
 
-            const data = await res.json();
-            renderSourceOptions(Array.isArray(data.sources) ? data.sources : selectedSources);
+            await res.json();
             setStatus("订阅已保存，日报会按你的偏好推送。", "success");
         } catch {
             setStatus("网络异常，请稍后重试。", "error");
@@ -203,7 +157,8 @@
     async function unsubscribe() {
         const email = emailInput.value.trim();
         if (!email) {
-            setStatus("退订前请先填写邮箱。", "error");
+            setStatus("", "");
+            showEmailInlineHint("请先填写邮箱");
             return;
         }
 
@@ -230,6 +185,10 @@
     form.addEventListener("submit", submitSubscription);
     loadBtn.addEventListener("click", loadCurrentSettings);
     unsubscribeBtn.addEventListener("click", unsubscribe);
+    emailInput.addEventListener("input", clearEmailInlineHint);
+    emailInput.addEventListener("focus", () => {
+        if (!emailInput.value.trim()) clearEmailInlineHint();
+    });
 
     loadOptions();
 })();
