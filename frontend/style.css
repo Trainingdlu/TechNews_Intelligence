@@ -96,6 +96,10 @@ body {
     text-decoration: none;
 }
 
+.logo-area .material-symbols-outlined {
+    color: var(--primary-blue);
+}
+
 .nav-item {
     display: flex;
     align-items: center;

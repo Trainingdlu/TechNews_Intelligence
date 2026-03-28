@@ -83,6 +83,13 @@ def _send_retry_base_delay_sec() -> float:
         return 0.8
 
 
+def _max_citation_urls() -> int:
+    try:
+        return max(1, min(30, int(os.getenv("BOT_MAX_CITATION_URLS", "12"))))
+    except Exception:
+        return 12
+
+
 def _consume_chat_rate_token(chat_id: int) -> tuple[bool, int]:
     """Return (allowed, retry_after_seconds)."""
     now = time.time()
@@ -211,7 +218,7 @@ def _lookup_url_titles(urls: list[str]) -> dict[str, str]:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT url, COALESCE(NULLIF(title_cn, ''), NULLIF(title, ''), '')
+            SELECT url, COALESCE(NULLIF(title_cn, ''), '')
             FROM tech_news
             WHERE url = ANY(%s)
             """,
@@ -232,7 +239,7 @@ def _lookup_url_titles(urls: list[str]) -> dict[str, str]:
 
     for u in unique_urls:
         if u not in result:
-            result[u] = _fallback_title_from_url(u)
+            result[u] = "暂无中文标题"
     return result
 
 
@@ -249,7 +256,7 @@ def _escape_and_linkify(text: str, url_title_map: dict[str, str]) -> str:
         suffix = matched[len(raw):]
         start, end = m.span()
         out.append(html_mod.escape(text[cursor:start]))
-        title = (url_title_map.get(raw) or _fallback_title_from_url(raw)).strip() or raw
+        title = (url_title_map.get(raw) or "").strip() or "暂无中文标题"
         safe_url = html_mod.escape(raw, quote=True)
         safe_title = html_mod.escape(title)
         out.append(f'<a href="{safe_url}">{safe_title}</a>')
@@ -351,6 +358,40 @@ def _format_for_telegram(text: str, url_title_map: dict[str, str] | None = None)
     return "\n".join(result)
 
 
+_EVIDENCE_HEADER_RE = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence(?:\s+sources?|\s+urls?)?)\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _strip_existing_evidence_section(text: str) -> str:
+    lines = (text or "").splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if _EVIDENCE_HEADER_RE.match(line.strip()):
+            start = i
+            break
+    if start is None:
+        return (text or "").rstrip()
+    return "\n".join(lines[:start]).rstrip()
+
+
+def _apply_inline_citations(text: str, ordered_urls: list[str]) -> str:
+    out = text or ""
+    for idx, url in enumerate(ordered_urls, 1):
+        cite = f"[{idx}]"
+        out = out.replace(f"`{url}`", cite)
+        out = out.replace(url, cite)
+    return out
+
+
+def _build_evidence_section(ordered_urls: list[str]) -> str:
+    lines = ["## 来源"]
+    for idx, url in enumerate(ordered_urls, 1):
+        lines.append(f"- [{idx}] {url}")
+    return "\n".join(lines)
+
+
 async def _reply_text_with_retry(message, text: str, parse_mode: str | None = None):
     attempts = _send_retry_attempts()
     base_delay = _send_retry_base_delay_sec()
@@ -375,14 +416,22 @@ async def _reply_text_with_retry(message, text: str, parse_mode: str | None = No
 
 async def _send_reply(message, text: str):
     """尝试以 HTML 模式发送，失败则回退到纯文本。"""
-    urls = _extract_urls(text)
+    urls = _extract_urls(text)[:_max_citation_urls()]
     title_map: dict[str, str] = {}
     if urls:
         try:
             title_map = await asyncio.to_thread(_lookup_url_titles, urls)
         except Exception as e:
             logger.warning(f"Prepare URL title map failed: {e}")
-    formatted = _format_for_telegram(text, url_title_map=title_map)
+
+    render_text = text
+    if urls:
+        body = _strip_existing_evidence_section(text)
+        body = _apply_inline_citations(body, urls)
+        evidence = _build_evidence_section(urls)
+        render_text = f"{body}\n\n{evidence}" if body else evidence
+
+    formatted = _format_for_telegram(render_text, url_title_map=title_map)
     chunks = _chunk_by_lines(formatted, 4096)
     for chunk in chunks:
         try:
