@@ -280,12 +280,13 @@ def _render_limited_bold_line(line: str, url_title_map: dict[str, str]) -> str:
         indent, label, colon, rest = m.groups()
         prefix = f"{html_mod.escape(indent)}<b>{html_mod.escape(label)}</b>{html_mod.escape(colon)}"
         if rest:
-            return f"{prefix} {html_mod.escape(rest)}"
+            return f"{prefix} {_escape_and_linkify(rest, url_title_map)}"
         return prefix
 
     # Other lines: strip markdown bold markers and keep plain text.
     plain = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
-    return html_mod.escape(plain)
+    plain = re.sub(r"`(https?://[^`]+)`", r"\1", plain)
+    return _escape_and_linkify(plain, url_title_map)
 
 
 def _chunk_by_lines(text: str, max_len: int = 4096) -> list[str]:
@@ -320,7 +321,7 @@ def _chunk_by_lines(text: str, max_len: int = 4096) -> list[str]:
     return chunks
 
 
-def _format_for_telegram(text: str) -> str:
+def _format_for_telegram(text: str, url_title_map: dict[str, str] | None = None) -> str:
     """将 Gemini 输出的 Markdown 转换为 Telegram HTML 格式。
 
     策略：
@@ -329,6 +330,7 @@ def _format_for_telegram(text: str) -> str:
     - 其余内容 HTML 转义，防止解析错误
     """
     lines = text.split("\n")
+    title_map = url_title_map or {}
     result = []
     for line in lines:
         stripped = line.strip()
@@ -345,22 +347,51 @@ def _format_for_telegram(text: str) -> str:
         line = re.sub(r"^(\s*)[\*\u2022]\s+", r"\1- ", line)
 
         # 正文：只允许分段综述标签加粗；其余正文全部普通文本。
-        result.append(_render_limited_bold_line(line))
+        result.append(_render_limited_bold_line(line, title_map))
     return "\n".join(result)
+
+
+async def _reply_text_with_retry(message, text: str, parse_mode: str | None = None):
+    attempts = _send_retry_attempts()
+    base_delay = _send_retry_base_delay_sec()
+    last_error = None
+    for attempt in range(attempts + 1):
+        try:
+            kwargs = {"disable_web_page_preview": True}
+            if parse_mode:
+                kwargs["parse_mode"] = parse_mode
+            return await message.reply_text(text, **kwargs)
+        except Exception as e:
+            last_error = e
+            if attempt >= attempts:
+                break
+            wait_sec = base_delay * (2 ** attempt)
+            logger.warning(
+                f"Message send failed (attempt {attempt + 1}/{attempts + 1}), retry in {wait_sec:.1f}s: {e}"
+            )
+            await asyncio.sleep(wait_sec)
+    raise last_error if last_error else RuntimeError("send failed")
 
 
 async def _send_reply(message, text: str):
     """尝试以 HTML 模式发送，失败则回退到纯文本。"""
-    formatted = _format_for_telegram(text)
+    urls = _extract_urls(text)
+    title_map: dict[str, str] = {}
+    if urls:
+        try:
+            title_map = await asyncio.to_thread(_lookup_url_titles, urls)
+        except Exception as e:
+            logger.warning(f"Prepare URL title map failed: {e}")
+    formatted = _format_for_telegram(text, url_title_map=title_map)
     chunks = _chunk_by_lines(formatted, 4096)
     for chunk in chunks:
         try:
-            await message.reply_text(chunk, parse_mode="HTML")
+            await _reply_text_with_retry(message, chunk, parse_mode="HTML")
         except Exception:
             # HTML 解析失败时回退纯文本（去除标签）
             plain = re.sub(r"<[^>]+>", "", chunk)
             plain = html_mod.unescape(plain)
-            await message.reply_text(plain)
+            await _reply_text_with_retry(message, plain, parse_mode=None)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -607,16 +638,14 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    user_text = update.message.text.strip()
+    user_text = (update.message.text or "").strip()
 
     if not user_text:
         return
 
     allowed, retry_after = _consume_chat_rate_token(chat_id)
     if not allowed:
-        await update.message.reply_text(
-            f"请求过于频繁，请在 {retry_after} 秒后重试。"
-        )
+        await _reply_text_with_retry(update.message, f"请求过于频繁，请在 {retry_after} 秒后重试。")
         return
 
     # 初始化该用户的历史
@@ -624,7 +653,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conversation_histories[chat_id] = []
 
     # 发送"正在思考"提示
-    thinking_msg = await update.message.reply_text("正在分析，请稍候")
+    thinking_msg = await _reply_text_with_retry(update.message, "正在分析，请稍候")
 
     try:
         history = conversation_histories[chat_id]
@@ -638,12 +667,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conversation_histories[chat_id] = _trim_history(history, max_turns=history_limit)
 
         # 删除"正在思考"，发送回复
-        await thinking_msg.delete()
+        try:
+            await thinking_msg.delete()
+        except Exception:
+            pass
         await _send_reply(update.message, reply)
 
     except Exception as e:
-        logger.error(f"[chat_id={chat_id}] 处理消息出错: {e}")
-        await thinking_msg.edit_text(f"出错：{str(e)}")
+        logger.error(f"[chat_id={chat_id}] message handling error: {e}")
+        try:
+            await thinking_msg.edit_text(f"出错：{str(e)}")
+        except Exception:
+            await _reply_text_with_retry(update.message, f"出错：{str(e)}")
 
 
 async def _post_shutdown(app) -> None:
