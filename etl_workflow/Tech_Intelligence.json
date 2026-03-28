@@ -67,13 +67,13 @@
             {
               "id": "a1c889c5-d527-4f58-ac6b-130ad51f50c3",
               "name": "url",
-              "value": "={{ $('Merge').item.json.url || $('Merge').item.json.link }}",
+              "value": "={{ $('Loop Over Items').item.json.url || $('Loop Over Items').item.json.link }}",
               "type": "string"
             },
             {
               "id": "74281de8-efb5-419e-ae0b-d612c9a48b9a",
               "name": "points",
-              "value": "={{ $('Merge').item.json.points || 0 }}",
+              "value": "={{ $('Loop Over Items').item.json.points || 0 }}",
               "type": "string"
             },
             {
@@ -172,6 +172,30 @@
               "name": "id",
               "value": "0",
               "type": "string"
+            },
+            {
+              "id": "f556584f-8913-4c94-a0a6-2086f94c1744",
+              "name": "source_key",
+              "value": "techcrunch_feed",
+              "type": "string"
+            },
+            {
+              "id": "ec4295ff-1f2d-4f58-a780-74f09a2a2fdf",
+              "name": "source_name",
+              "value": "TechCrunch",
+              "type": "string"
+            },
+            {
+              "id": "f55a53d6-a5ca-4c6c-a6d2-5af789c007ca",
+              "name": "source_platform",
+              "value": "TechCrunch",
+              "type": "string"
+            },
+            {
+              "id": "89ea7938-2165-404d-b9d9-6ca1ecef39a7",
+              "name": "signal_origin",
+              "value": "Media",
+              "type": "string"
             }
           ]
         },
@@ -188,6 +212,300 @@
     },
     {
       "parameters": {
+        "url": "https://blog.google/feed/",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -1408,
+        -1040
+      ],
+      "id": "dc511d7e-18f4-45e8-ac7a-bf21df475fa5",
+      "name": "RSS Read Google AI",
+      "retryOnFail": true,
+      "maxTries": 5
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a2945bd7-9dcc-4cd4-92c8-18c6dce94127",
+              "name": "title",
+              "value": "={{ $json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "9d89f122-f750-4796-b67c-43b7df4f655f",
+              "name": "url",
+              "value": "={{ $json.link }}",
+              "type": "string"
+            },
+            {
+              "id": "1bf0b676-8716-4e4b-8578-4125560502d9",
+              "name": "points",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "af9f9ab9-f66e-4252-912f-2fce42c85478",
+              "name": "created_at",
+              "value": "={{ $json.pubDate }}",
+              "type": "string"
+            },
+            {
+              "id": "b1f5fd3a-97d6-4b5e-99e0-7f936f5e5d4b",
+              "name": "id",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "6f3c4f33-6875-49d2-aa8d-d5ab3df643ff",
+              "name": "source_key",
+              "value": "google_ai_blog",
+              "type": "string"
+            },
+            {
+              "id": "8064f6df-49b7-4c29-80f2-f8f8dd6ddfcd",
+              "name": "source_name",
+              "value": "Google AI Blog",
+              "type": "string"
+            },
+            {
+              "id": "7f741f89-2eaf-4667-a448-328238ec17f4",
+              "name": "source_platform",
+              "value": "DirectRSS",
+              "type": "string"
+            },
+            {
+              "id": "19d6ab71-cf50-4fc2-a6ec-65a7a6151f09",
+              "name": "signal_origin",
+              "value": "Official",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -976,
+        -1040
+      ],
+      "id": "70f6bd9e-8a47-4b20-991b-5274950ed57b",
+      "name": "Edit Fields RSS Google AI"
+    },
+    {
+      "parameters": {
+        "url": "https://aws.amazon.com/blogs/machine-learning/feed/",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -1408,
+        -1136
+      ],
+      "id": "95f4e03b-5f9f-4cff-b0ec-f3aeb0abdb13",
+      "name": "RSS Read AWS ML",
+      "retryOnFail": true,
+      "maxTries": 5
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4e3438bf-c35d-4e06-8a95-c4eec7d5fdae",
+              "name": "title",
+              "value": "={{ $json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "8c22b009-bad1-4702-a41a-e4a7db4f2f1e",
+              "name": "url",
+              "value": "={{ $json.link }}",
+              "type": "string"
+            },
+            {
+              "id": "34b59c28-1847-4d6b-a8ff-2ac6f5d7bb34",
+              "name": "points",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "de0333d0-399d-435a-a1fa-6ecde8dd3ff6",
+              "name": "created_at",
+              "value": "={{ $json.pubDate }}",
+              "type": "string"
+            },
+            {
+              "id": "f7fadcf6-cdf0-4d53-b7c8-64f3e7d75da8",
+              "name": "id",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "68ad28f6-5f2f-4e05-b5cf-0341f4bd5e7a",
+              "name": "source_key",
+              "value": "aws_ml_blog",
+              "type": "string"
+            },
+            {
+              "id": "1db0ccbf-a869-4518-8860-f9f0fe17a19e",
+              "name": "source_name",
+              "value": "AWS Machine Learning Blog",
+              "type": "string"
+            },
+            {
+              "id": "7f95e282-c8ac-4eaf-9bab-0b8960c5d34b",
+              "name": "source_platform",
+              "value": "DirectRSS",
+              "type": "string"
+            },
+            {
+              "id": "e612efa5-4294-4e1d-8dbe-f4de4916ab39",
+              "name": "signal_origin",
+              "value": "Official",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -976,
+        -1136
+      ],
+      "id": "6cb6fbca-f27e-4747-b9f3-c39d9a8bea11",
+      "name": "Edit Fields RSS AWS ML"
+    },
+    {
+      "parameters": {
+        "url": "https://blogs.microsoft.com/?feed=rss2",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -1408,
+        -1232
+      ],
+      "id": "ce44a243-e6d7-4ecc-b464-2d4eaa9547eb",
+      "name": "RSS Read Microsoft AI",
+      "retryOnFail": true,
+      "maxTries": 5
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0682f5f2-0fca-422e-b807-337a85dcbea5",
+              "name": "title",
+              "value": "={{ $json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "f9f17822-60d2-4bc4-9f45-6af48182f770",
+              "name": "url",
+              "value": "={{ $json.link }}",
+              "type": "string"
+            },
+            {
+              "id": "a3cdbf55-8c58-4faf-a03f-d325eb63d64e",
+              "name": "points",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "f500c4d8-4cb0-41a5-a502-80880af7f6fd",
+              "name": "created_at",
+              "value": "={{ $json.pubDate }}",
+              "type": "string"
+            },
+            {
+              "id": "52ca52b7-8a73-4400-a677-49fc9dc8f1e7",
+              "name": "id",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "f70f2bfd-b0d0-4b57-a242-7f770f4919a1",
+              "name": "source_key",
+              "value": "microsoft_ai_blog",
+              "type": "string"
+            },
+            {
+              "id": "f956b94c-79e6-4306-a6dd-e74ca0942f83",
+              "name": "source_name",
+              "value": "Microsoft AI Blog",
+              "type": "string"
+            },
+            {
+              "id": "2c1025f1-8216-4fc3-9682-c920513e11cb",
+              "name": "source_platform",
+              "value": "DirectRSS",
+              "type": "string"
+            },
+            {
+              "id": "5f73f9fd-1a90-4b9c-b058-0fca3622111d",
+              "name": "signal_origin",
+              "value": "Official",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -976,
+        -1232
+      ],
+      "id": "5b34a5e6-64f8-4f3d-8db1-cc2f2f3eb824",
+      "name": "Edit Fields RSS Microsoft AI"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -784,
+        -1032
+      ],
+      "id": "fcf1af31-a7f8-43c4-8e5d-8b7b4f3c6eb0",
+      "name": "Merge RSS Sources 1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -592,
+        -1088
+      ],
+      "id": "5392ea6f-13ca-4d52-8596-ccf8f2aac9bc",
+      "name": "Merge RSS Sources 2"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -384,
+        -1144
+      ],
+      "id": "40321384-14f8-4b08-b30f-0c98f91fe3a2",
+      "name": "Merge RSS Sources 3"
+    },
+    {
+      "parameters": {
         "assignments": {
           "assignments": [
             {
@@ -198,14 +516,38 @@
             },
             {
               "id": "13ba9b0c-8d68-4044-a781-35cf56d09851",
-              "name": "=url",
+              "name": "url",
               "value": "={{ $json.url || 'https://news.ycombinator.com/item?id=' + $json.objectID }}",
               "type": "string"
             },
             {
               "id": "31e8e3cb-5a8e-4def-9113-fcb0b36fa10b",
-              "name": "=id",
+              "name": "id",
               "value": "={{ $json.objectID }}",
+              "type": "string"
+            },
+            {
+              "id": "a9f53dc1-b689-4fdf-b22c-1e76f2bbf05e",
+              "name": "source_key",
+              "value": "hackernews_frontpage",
+              "type": "string"
+            },
+            {
+              "id": "8bd90f16-c5f5-4941-8a8a-81fd0874f682",
+              "name": "source_name",
+              "value": "HackerNews",
+              "type": "string"
+            },
+            {
+              "id": "1462c1dc-9054-4f35-b390-24881ce099cb",
+              "name": "source_platform",
+              "value": "HackerNews",
+              "type": "string"
+            },
+            {
+              "id": "24f33088-3b40-444b-aa5c-12c34d9d8e4f",
+              "name": "signal_origin",
+              "value": "Community",
               "type": "string"
             }
           ]
@@ -285,13 +627,17 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "title": "={{ $('Merge').item.json.title }}",
+            "title": "={{ $json.title }}",
             "url": "={{ $json.url }}",
             "points": "={{ $json.points }}",
             "title_cn": "={{ $json.title_cn }}",
             "sentiment": "={{ $json.sentiment ? $json.sentiment : 'Neutral' }}",
-            "source_id": "={{ $('Merge').item.json.id ? String($('Merge').item.json.id) : null }}",
-            "created_at": "={{ $('Merge').item.json.created_at }}",
+            "source_id": "={{ $json.id ? String($json.id) : null }}",
+            "source_key": "={{ $json.source_key || null }}",
+            "source_name": "={{ $json.source_name || null }}",
+            "source_platform": "={{ $json.source_platform || null }}",
+            "signal_origin": "={{ $json.signal_origin || null }}",
+            "created_at": "={{ $json.created_at }}",
             "summary": "={{ $json.summary }}",
             "updated_at": "={{ $now.toISO() }}"
           },
@@ -368,6 +714,42 @@
             {
               "id": "source_id",
               "displayName": "source_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source_key",
+              "displayName": "source_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source_name",
+              "displayName": "source_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source_platform",
+              "displayName": "source_platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "signal_origin",
+              "displayName": "signal_origin",
               "required": false,
               "defaultMatch": false,
               "display": true,
@@ -805,7 +1187,11 @@
             "original_title": "={{ $('Loop Over Items').item.json.title }}",
             "url": "={{ $('Loop Over Items').item.json.url }}",
             "error_reason": "Content Fetch Failed",
-            "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
+            "source_type": "={{ $('Loop Over Items').item.json.source_name || 'Other' }}",
+            "source_key": "={{ $('Loop Over Items').item.json.source_key || null }}",
+            "source_name": "={{ $('Loop Over Items').item.json.source_name || null }}",
+            "source_platform": "={{ $('Loop Over Items').item.json.source_platform || null }}",
+            "signal_origin": "={{ $('Loop Over Items').item.json.signal_origin || null }}",
             "created_at": "={{ $now.toISO() }}",
             "title_cn": "={{ null }}"
           },
@@ -855,6 +1241,42 @@
             {
               "id": "source_type",
               "displayName": "source_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source_key",
+              "displayName": "source_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source_name",
+              "displayName": "source_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source_platform",
+              "displayName": "source_platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "signal_origin",
+              "displayName": "signal_origin",
               "required": false,
               "defaultMatch": false,
               "display": true,
@@ -917,11 +1339,15 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "original_title": "={{ $('Merge').item.json.title }}",
+            "original_title": "={{ $('Loop Over Items').item.json.title }}",
             "title_cn": "={{ $('Edit Fields').item.json.title_cn || null }}",
             "url": "={{ $('Edit Fields').item.json.url }}",
             "error_reason": "AI Analysis Failed",
-            "source_type": "={{ $('Loop Over Items').item.json.url.includes('techcrunch') ? 'TechCrunch' : 'HackerNews' }}",
+            "source_type": "={{ $('Loop Over Items').item.json.source_name || 'Other' }}",
+            "source_key": "={{ $('Loop Over Items').item.json.source_key || null }}",
+            "source_name": "={{ $('Loop Over Items').item.json.source_name || null }}",
+            "source_platform": "={{ $('Loop Over Items').item.json.source_platform || null }}",
+            "signal_origin": "={{ $('Loop Over Items').item.json.signal_origin || null }}",
             "created_at": "={{ $now.toISO() }}"
           },
           "matchingColumns": [
@@ -969,6 +1395,42 @@
             {
               "id": "source_type",
               "displayName": "source_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source_key",
+              "displayName": "source_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source_name",
+              "displayName": "source_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "source_platform",
+              "displayName": "source_platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "signal_origin",
+              "displayName": "signal_origin",
               "required": false,
               "defaultMatch": false,
               "display": true,
@@ -1175,6 +1637,21 @@
             "index": 0
           },
           {
+            "node": "RSS Read Google AI",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Read AWS ML",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Read Microsoft AI",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "HTTP Request",
             "type": "main",
             "index": 0
@@ -1215,6 +1692,39 @@
         ]
       ]
     },
+    "RSS Read Google AI": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields RSS Google AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read AWS ML": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields RSS AWS ML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read Microsoft AI": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields RSS Microsoft AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Merge": {
       "main": [
         [
@@ -1238,6 +1748,72 @@
       ]
     },
     "Edit Fields RSS": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Sources 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields RSS Google AI": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Sources 1",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge RSS Sources 1": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Sources 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields RSS AWS ML": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Sources 2",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge RSS Sources 2": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Sources 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields RSS Microsoft AI": {
+      "main": [
+        [
+          {
+            "node": "Merge RSS Sources 3",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge RSS Sources 3": {
       "main": [
         [
           {
