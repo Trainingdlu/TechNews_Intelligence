@@ -33,18 +33,23 @@ class AgentRouteMetricsTests(unittest.TestCase):
             os.environ["AGENT_ROUTE_METRICS"] = self._old_flag
 
     def test_snapshot_rates(self) -> None:
-        agent_mod._metrics_inc("requests_total", 2)
+        agent_mod._metrics_inc("requests_total", 7)
         agent_mod._metrics_inc("langchain_attempts", 2)
         agent_mod._metrics_inc("langchain_success", 1)
         agent_mod._metrics_inc("langchain_fallback", 1)
+        agent_mod._metrics_inc("source_compare_forced", 1)
         agent_mod._metrics_inc("compare_forced", 1)
+        agent_mod._metrics_inc("timeline_forced", 1)
         agent_mod._metrics_inc("landscape_forced", 1)
+        agent_mod._metrics_inc("trend_forced", 1)
+        agent_mod._metrics_inc("fulltext_forced", 1)
+        agent_mod._metrics_inc("query_forced", 1)
         agent_mod._metrics_inc("landscape_low_evidence", 1)
 
         snapshot = agent_mod.get_route_metrics_snapshot()
-        self.assertEqual(snapshot["requests_total"], 2)
+        self.assertEqual(snapshot["requests_total"], 7)
         self.assertEqual(snapshot["langchain_attempts"], 2)
-        self.assertAlmostEqual(snapshot["fallback_rate_total"], 0.5, places=6)
+        self.assertAlmostEqual(snapshot["fallback_rate_total"], 1.0 / 7.0, places=6)
         self.assertAlmostEqual(snapshot["fallback_rate_langchain"], 0.5, places=6)
         self.assertAlmostEqual(snapshot["langchain_success_rate"], 0.5, places=6)
         self.assertAlmostEqual(snapshot["forced_route_rate"], 1.0, places=6)
@@ -129,6 +134,23 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertEqual(days, 7)
         self.assertEqual(sort, "heat_desc")
         self.assertEqual(limit, 8)
+
+    def test_extract_query_request_detects_natural_language_filter_intent(self) -> None:
+        req = agent_mod._extract_query_request("OpenAI 在 TechCrunch 最近14天报道")
+        self.assertIsNotNone(req)
+        query, source, days, sort, limit = req
+        self.assertEqual(query, "OpenAI")
+        self.assertEqual(source, "TechCrunch")
+        self.assertEqual(days, 14)
+        self.assertEqual(sort, "time_desc")
+        self.assertEqual(limit, 8)
+
+    def test_extract_source_compare_request_allows_single_source_hint(self) -> None:
+        req = agent_mod._extract_source_compare_request("对比 OpenAI 在 HN 来源上的差异")
+        self.assertIsNotNone(req)
+        topic, days = req
+        self.assertEqual(topic, "OpenAI")
+        self.assertEqual(days, 14)
 
     def test_extract_fulltext_request_detects_keyword(self) -> None:
         req = agent_mod._extract_fulltext_request("批量读取 OpenAI Voice Engine 相关全文并总结争议点")
@@ -494,6 +516,8 @@ class AgentRouteMetricsTests(unittest.TestCase):
             self.assertIn("来源", out)
             self.assertIn("https://a.com", out)
             self.assertIn("https://b.com", out)
+            snapshot = agent_mod.get_route_metrics_snapshot()
+            self.assertEqual(snapshot["source_compare_forced"], 1)
 
         if old_runtime is None:
             os.environ.pop("AGENT_RUNTIME", None)
@@ -534,6 +558,8 @@ class AgentRouteMetricsTests(unittest.TestCase):
             self.assertIn("来源", out)
             self.assertIn("https://a.com", out)
             self.assertIn("https://b.com", out)
+            snapshot = agent_mod.get_route_metrics_snapshot()
+            self.assertEqual(snapshot["query_forced"], 1)
 
         if old_runtime is None:
             os.environ.pop("AGENT_RUNTIME", None)
@@ -570,6 +596,8 @@ class AgentRouteMetricsTests(unittest.TestCase):
             self.assertIn("来源", out)
             self.assertIn("https://a.com", out)
             self.assertIn("https://b.com", out)
+            snapshot = agent_mod.get_route_metrics_snapshot()
+            self.assertEqual(snapshot["fulltext_forced"], 1)
 
         if old_runtime is None:
             os.environ.pop("AGENT_RUNTIME", None)
@@ -607,6 +635,8 @@ class AgentRouteMetricsTests(unittest.TestCase):
             out = agent_mod.generate_response([], "OpenAI 最近7天是在升温还是降温？")
             self.assertIn("趋势结论", out)
             self.assertIn("热度抬升", out)
+            snapshot = agent_mod.get_route_metrics_snapshot()
+            self.assertEqual(snapshot["trend_forced"], 1)
 
         if old_runtime is None:
             os.environ.pop("AGENT_RUNTIME", None)

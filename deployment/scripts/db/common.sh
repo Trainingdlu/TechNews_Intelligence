@@ -19,12 +19,29 @@ db_read_env_var() {
   local key="$1"
   local file="$2"
   local raw
-  raw="$(grep -E "^${key}=" "${file}" | tail -n 1 | cut -d '=' -f2- || true)"
+  raw="$(
+    grep -E "^(export[[:space:]]+)?${key}=" "${file}" | tail -n 1 \
+      | sed -E "s/^(export[[:space:]]+)?${key}=//" || true
+  )"
   raw="${raw%$'\r'}"
-  raw="${raw%\"}"
-  raw="${raw#\"}"
-  raw="${raw%\'}"
-  raw="${raw#\'}"
+
+  # Trim leading/trailing spaces.
+  raw="${raw#"${raw%%[![:space:]]*}"}"
+  raw="${raw%"${raw##*[![:space:]]}"}"
+
+  if [[ "${raw}" == \"*\" ]]; then
+    raw="${raw#\"}"
+    raw="${raw%\"}"
+  elif [[ "${raw}" == \'*\' ]]; then
+    raw="${raw#\'}"
+    raw="${raw%\'}"
+  else
+    # Unquoted value: strip inline comments and trim again.
+    raw="${raw%%#*}"
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+  fi
+
   printf '%s' "${raw}"
 }
 

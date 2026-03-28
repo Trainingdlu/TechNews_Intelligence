@@ -44,6 +44,9 @@ except ImportError:  # package-style import fallback
     )
 
 
+ROUTE_METRICS_SCHEMA_VERSION = 2
+
+
 def _bootstrap_imports() -> tuple[Any, Any, Any]:
     agents_dir = Path(__file__).resolve().parents[1]
     if str(agents_dir) not in sys.path:
@@ -375,6 +378,7 @@ def main() -> int:
         "dataset": str(dataset_path),
         "runs_per_question": args.runs_per_question,
         "elapsed_seconds": round(elapsed, 3),
+        "route_metrics_schema_version": ROUTE_METRICS_SCHEMA_VERSION,
         "selection": selection,
         "capability_catalog": CAPABILITY_CATALOG,
         "summary": summary,
@@ -385,8 +389,10 @@ def main() -> int:
     if args.baseline:
         baseline_path = args.baseline.resolve()
         baseline_report = json.loads(baseline_path.read_text(encoding="utf-8"))
+        baseline_schema = int(baseline_report.get("route_metrics_schema_version", 1) or 1)
         report["baseline"] = {
             "path": str(baseline_path),
+            "route_metrics_schema_version": baseline_schema,
             "comparison": build_baseline_comparison(
                 current_report=report,
                 baseline_report=baseline_report,
@@ -431,6 +437,13 @@ def main() -> int:
 
     if "baseline" in report:
         bc = report["baseline"]["comparison"]
+        baseline_schema = int(report["baseline"].get("route_metrics_schema_version", 1))
+        if baseline_schema != ROUTE_METRICS_SCHEMA_VERSION:
+            print(
+                "[Eval][Warn] baseline schema mismatch: "
+                f"baseline={baseline_schema} current={ROUTE_METRICS_SCHEMA_VERSION}; "
+                "regenerate baseline for accurate route metrics comparison."
+            )
         print(
             "[Eval] baseline: "
             f"improved={bc.get('improved_count', 0)} "

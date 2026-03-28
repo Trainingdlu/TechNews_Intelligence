@@ -37,8 +37,42 @@ def extract_query_request(user_message: str) -> tuple[str, str, int, str, int] |
     if not text:
         return None
     lower = text.lower()
-    query_markers = ["检索", "搜索", "查询", "query", "search"]
-    if not any(k in text or k in lower for k in query_markers):
+    query_markers = ["检索", "搜索", "查询", "query", "search", "查一下", "找一下", "look up"]
+    content_markers = [
+        "新闻",
+        "报道",
+        "文章",
+        "资讯",
+        "动态",
+        "消息",
+        "news",
+        "article",
+        "articles",
+        "coverage",
+        "headline",
+        "headlines",
+        "updates",
+    ]
+    filter_markers = [
+        "来源",
+        "source",
+        "按热度",
+        "按时间",
+        "sort",
+        "排序",
+        "sentiment",
+        "情绪",
+        "category",
+        "分类",
+    ]
+    has_recent_window = bool(
+        re.search(r"(?:最近|过去|近|last|recent|past)\s*\d{0,3}\s*(?:天|day|days|小时|hour|hours)?", text, flags=re.IGNORECASE)
+    )
+    source = extract_source_label(text)
+    has_explicit_query = any(k in text or k in lower for k in query_markers)
+    has_content_intent = any(k in text or k in lower for k in content_markers)
+    has_filter_intent = any(k in text or k in lower for k in filter_markers) or (source != "all")
+    if not (has_explicit_query or has_filter_intent or (has_content_intent and has_recent_window)):
         return None
     if any(k in text or k in lower for k in ["全文", "fulltext", "批量读取", "批量读", "deep read"]):
         return None
@@ -48,6 +82,15 @@ def extract_query_request(user_message: str) -> tuple[str, str, int, str, int] |
     if m:
         query = m.group(1).strip()
         query = re.split(r"[，,。]|(?:来源|source|最近|过去|sort|按)", query, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+
+    if not query:
+        m = re.search(
+            r"(?:关于|有关|聊聊|look up|about)\s*([A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{2,24})",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            query = m.group(1).strip()
 
     if not query:
         topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{1,24})"
@@ -70,8 +113,35 @@ def extract_query_request(user_message: str) -> tuple[str, str, int, str, int] |
             "desc",
             "asc",
             "天",
+            "小时",
+            "hour",
+            "hours",
             "day",
             "days",
+            "最近",
+            "过去",
+            "近",
+            "last",
+            "recent",
+            "past",
+            "新闻",
+            "报道",
+            "文章",
+            "资讯",
+            "动态",
+            "消息",
+            "news",
+            "article",
+            "articles",
+            "coverage",
+            "headline",
+            "headlines",
+            "updates",
+            "什么",
+            "有什么",
+            "哪些",
+            "最新",
+            "today",
         }
         for c in re.findall(topic_pattern, text):
             if c.lower() in stop:
@@ -81,7 +151,10 @@ def extract_query_request(user_message: str) -> tuple[str, str, int, str, int] |
             query = c
             break
 
-    source = extract_source_label(text)
+    if not query and not has_explicit_query:
+        return None
+    if not has_explicit_query and query.lower() in {"什么", "有什么", "哪些", "news", "update", "updates"}:
+        return None
     days = extract_days(text, default=21, maximum=365)
     sort = "heat_desc" if any(k in text or k in lower for k in ["热度", "heat", "points"]) else "time_desc"
     limit = extract_limit(text, default=8, maximum=30)
@@ -133,12 +206,36 @@ def extract_source_compare_request(user_message: str) -> tuple[str, int] | None:
     if not text:
         return None
     lower = text.lower()
+    compare_markers = ["对比", "比较", "差异", "区别", "compare", "difference", "vs", "versus"]
+    if not any(k in text or k in lower for k in compare_markers):
+        return None
+
     has_hn = any(k in lower for k in ["hackernews", "hacker news", "hn"])
     has_tc = any(k in lower for k in ["techcrunch", "tc"])
-    if not (has_hn and has_tc):
+    has_source_context = any(
+        k in text or k in lower
+        for k in [
+            "来源",
+            "source",
+            "渠道",
+            "平台",
+            "媒体",
+            "社区",
+            "community",
+            "media",
+            "两种来源",
+            "两个来源",
+        ]
+    )
+    has_generic_pair = (
+        ("社区" in text and "媒体" in text)
+        or ("community" in lower and "media" in lower)
+    )
+    if not ((has_hn and has_tc) or has_source_context or has_generic_pair):
         return None
-    compare_markers = ["对比", "比较", "差异", "区别", "compare", "difference"]
-    if not any(k in text or k in lower for k in compare_markers):
+
+    pair = extract_compare_pair(text)
+    if pair and not ((has_hn or has_tc) or has_source_context or has_generic_pair):
         return None
 
     days = extract_days(text, default=14, maximum=90)
@@ -150,6 +247,14 @@ def extract_source_compare_request(user_message: str) -> tuple[str, int] | None:
         m = re.search(
             r"(?:compare)\s*([A-Za-z][A-Za-z0-9._&/-]{1,39})\s*(?:across|between|in)",
             lower,
+        )
+        if m:
+            topic = m.group(1).strip()
+    if not topic:
+        m = re.search(
+            r"(?:来源|source|社区|媒体)\s*(?:上|中的|for|for the)?\s*([A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{1,24})",
+            text,
+            flags=re.IGNORECASE,
         )
         if m:
             topic = m.group(1).strip()
@@ -528,4 +633,3 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
     topic = re.sub(r"(?:的|之)$", "", topic).strip()
     topic = re.sub(r"(?:'s)$", "", topic, flags=re.IGNORECASE).strip()
     return topic, days, limit
-

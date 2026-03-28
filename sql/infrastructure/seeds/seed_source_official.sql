@@ -1,4 +1,4 @@
--- Seed first-batch official sources (Google / AWS / Microsoft)
+-- Seed official sources batch (Google / AWS / Microsoft / NVIDIA)
 -- Safe to run repeatedly (idempotent upsert)
 
 INSERT INTO public.source_registry (
@@ -58,6 +58,21 @@ VALUES
           "model_focus":["Copilot","Phi"],
           "fallback_endpoints":["https://blogs.microsoft.com/ai/feed/"],
           "keyword_filters":["copilot","azure ai","microsoft ai","phi","openai"]
+        }'::jsonb
+    ),
+    (
+        'nvidia_dev_blog',
+        'NVIDIA Developer Blog',
+        'DirectRSS',
+        'Official',
+        'rss',
+        'https://developer.nvidia.com/blog/feed/',
+        TRUE,
+        80,
+        '{
+          "company":"NVIDIA",
+          "model_focus":["NIM","NeMo","TensorRT","CUDA","DGX"],
+          "keyword_filters":["nvidia ai","nim","nemo","tensorrt","llm","inference","gpu"]
         }'::jsonb
     )
 ON CONFLICT (source_key) DO UPDATE

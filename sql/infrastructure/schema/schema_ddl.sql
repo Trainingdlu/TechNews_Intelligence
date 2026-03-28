@@ -113,6 +113,16 @@ CREATE TABLE IF NOT EXISTS public.subscribers (
     CONSTRAINT unique_subscriber_email UNIQUE (email)
 );
 
+-- Backward-compatible subscriber columns for old deployments
+ALTER TABLE public.subscribers
+    ADD COLUMN IF NOT EXISTS source_preferences JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE public.subscribers
+    ADD COLUMN IF NOT EXISTS frequency VARCHAR(20) NOT NULL DEFAULT 'daily';
+ALTER TABLE public.subscribers
+    ADD COLUMN IF NOT EXISTS timezone VARCHAR(50) NOT NULL DEFAULT 'Asia/Shanghai';
+ALTER TABLE public.subscribers
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 -- 7. Source Registry (fill-in source onboarding framework)
 CREATE TABLE IF NOT EXISTS public.source_registry (
     id SERIAL PRIMARY KEY,

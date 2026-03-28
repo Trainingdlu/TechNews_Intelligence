@@ -3,18 +3,23 @@ set -euo pipefail
 
 # Read-only data quality checks for TechNews.
 # Usage:
-#   bash deployment/run_data_quality_checks.sh
-#   bash deployment/run_data_quality_checks.sh 48
+#   bash deployment/scripts/db/run_data_quality_checks.sh
+#   bash deployment/scripts/db/run_data_quality_checks.sh 48
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-COMMON_LIB="${SCRIPT_DIR}/db_common.sh"
-CHECK_SQL="${REPO_ROOT}/sql/infrastructure/data_quality_checks.sql"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+COMMON_LIB="${SCRIPT_DIR}/common.sh"
+CHECK_SQL="${REPO_ROOT}/sql/infrastructure/checks/data_quality_checks.sql"
 
 CHECK_HOURS="${1:-24}"
 
 if ! [[ "${CHECK_HOURS}" =~ ^[0-9]+$ ]] || [[ "${CHECK_HOURS}" -le 0 ]]; then
   echo "check_hours must be a positive integer, got: ${CHECK_HOURS}" >&2
+  exit 1
+fi
+
+if [[ "${CHECK_HOURS}" -gt 720 ]]; then
+  echo "check_hours must be <= 720 (30 days), got: ${CHECK_HOURS}" >&2
   exit 1
 fi
 

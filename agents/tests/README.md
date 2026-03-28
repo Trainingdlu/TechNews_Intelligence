@@ -1,13 +1,6 @@
-# Tests Structure
+# 说明
 
-`agents/tests` is standardized into:
+测试说明文档已迁移到 `docs/testing` 目录：
 
-- `unit/`: executable unit test cases (`test_*.py`)
-- `utils/`: shared test helpers (path bootstrap, import stubs)
-
-Run all tests:
-
-```bash
-python -m unittest discover -s agents/tests -p "test_*.py" -v
-```
-
+- [测试文档索引](../../docs/testing/README.md)
+- [单元测试结构说明](../../docs/testing/agent-tests-structure.md)

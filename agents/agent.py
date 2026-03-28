@@ -6,6 +6,7 @@ Fallback runtime: native Gemini SDK (legacy) for compatibility.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -41,6 +42,16 @@ try:
         extract_timeline_request as _extract_timeline_request,
         extract_trend_request as _extract_trend_request,
         extract_source_compare_request as _extract_source_compare_request,
+    )
+    from core.pipelines import (
+        run_compare_pipeline,
+        run_fulltext_pipeline,
+        run_landscape_pipeline,
+        run_query_pipeline,
+        run_runtime_pipeline,
+        run_source_compare_pipeline,
+        run_timeline_pipeline,
+        run_trend_pipeline,
     )
     from tools import (
         analyze_landscape,
@@ -80,6 +91,16 @@ except ImportError:  # package-style import fallback
         extract_timeline_request as _extract_timeline_request,
         extract_trend_request as _extract_trend_request,
         extract_source_compare_request as _extract_source_compare_request,
+    )
+    from .core.pipelines import (
+        run_compare_pipeline,
+        run_fulltext_pipeline,
+        run_landscape_pipeline,
+        run_query_pipeline,
+        run_runtime_pipeline,
+        run_source_compare_pipeline,
+        run_timeline_pipeline,
+        run_trend_pipeline,
     )
     from .tools import (
         analyze_landscape,
@@ -312,6 +333,92 @@ def _coerce_to_text(content: Any) -> str:
     return str(content)
 
 
+def _parse_tool_json(output: str, expected_tool: str = "") -> dict[str, Any] | None:
+    raw = (output or "").strip()
+    if not raw.startswith("{"):
+        return None
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    tool_name = str(payload.get("tool", "")).strip().lower()
+    if expected_tool and tool_name and tool_name != expected_tool.strip().lower():
+        return None
+    return payload
+
+
+def _format_query_ground_truth(query_output: str) -> str:
+    payload = _parse_tool_json(query_output, expected_tool="query_news")
+    if not payload:
+        return query_output
+
+    records = payload.get("records") or []
+    if not records:
+        return "No matching records."
+
+    lines = [f"Query records: {len(records)}"]
+    for item in records[:20]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title_cn") or item.get("title") or "").strip()
+        source = str(item.get("source") or "").strip()
+        created_at = str(item.get("created_at") or "").replace("T", " ")[:16]
+        sentiment = str(item.get("sentiment") or "").strip()
+        points = item.get("points", 0)
+        url = str(item.get("url") or "").strip()
+        summary = str(item.get("summary") or "").strip()
+        rank = item.get("rank", 0)
+        lines.append(
+            f"{rank}. [{source}] {title}\n"
+            f"   time={created_at}, sentiment={sentiment}, points={points}\n"
+            f"   url={url}\n"
+            f"   summary={summary[:220]}"
+        )
+    return "\n".join(lines)
+
+
+def _format_fulltext_ground_truth(fulltext_output: str) -> str:
+    payload = _parse_tool_json(fulltext_output, expected_tool="fulltext_batch")
+    if not payload:
+        return fulltext_output
+
+    status = str(payload.get("status", "ok")).lower()
+    if status != "ok":
+        return str(payload.get("error") or "No candidate articles found.")
+
+    selected = payload.get("selected") or []
+    articles = payload.get("articles") or []
+    lines: list[str] = [f"Selected articles: {len(selected)}"]
+
+    for idx, item in enumerate(selected, 1):
+        if not isinstance(item, dict):
+            continue
+        source_type = str(item.get("source_type") or "").strip()
+        headline = str(item.get("headline") or "").strip()
+        points = item.get("points", 0)
+        score = item.get("score")
+        created_at = str(item.get("created_at") or "").replace("T", " ")[:16]
+        url = str(item.get("url") or "").strip()
+        if score is None:
+            lines.append(
+                f"{idx}. [{source_type}] {headline} | points={points} | {created_at} | {url}"
+            )
+        else:
+            lines.append(
+                f"{idx}. [{source_type}] {headline} | points={points} | score={float(score):.3f} | {created_at} | {url}"
+            )
+
+    for idx, item in enumerate(articles, 1):
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url") or "").strip()
+        content = str(item.get("content") or "")
+        lines.append(f"=== [{idx}] {url} ===\n{content}")
+    return "\n".join(lines).strip()
+
+
 def _extract_final_text(result: Any) -> str:
     if isinstance(result, dict) and "messages" in result:
         messages = result["messages"]
@@ -328,210 +435,13 @@ def _extract_final_text(result: Any) -> str:
     return _coerce_to_text(result)
 
 
-_LANDSCAPE_ENTITY_ALIASES = {
-    "openai": "OpenAI",
-    "anthropic": "Anthropic",
-    "google": "Google",
-    "microsoft": "Microsoft",
-    "meta": "Meta",
-    "amazon": "Amazon",
-    "aws": "Amazon",
-    "nvidia": "NVIDIA",
-    "apple": "Apple",
-    "tesla": "Tesla",
-    "tsmc": "TSMC",
-    "intel": "Intel",
-    "amd": "AMD",
-    "crowdstrike": "CrowdStrike",
-    "palo alto": "Palo Alto Networks",
-    "palo alto networks": "Palo Alto Networks",
-    "cloudflare": "Cloudflare",
-    "cisco": "Cisco",
-    "xai": "xAI",
-    "谷歌": "Google",
-    "微软": "Microsoft",
-    "亚马逊": "Amazon",
-    "英伟达": "NVIDIA",
-    "苹果": "Apple",
-    "特斯拉": "Tesla",
-    "台积电": "TSMC",
-    "英特尔": "Intel",
-}
-
-
-_COMPARE_STOP_TOKENS = {
-    "对比",
-    "比较",
-    "差异",
-    "区别",
-    "vs",
-    "versus",
-    "和",
-    "与",
-    "and",
-    "the",
-    "a",
-    "an",
-    "一下",
-    "请",
-    "请问",
-    "我想",
-    "想知道",
-}
-
-
-_LANDSCAPE_STOP_TOPICS = {
-    "global",
-    "world",
-    "today",
-    "current",
-    "landscape",
-    "ecosystem",
-    "当今",
-    "当前",
-    "全球",
-    "世界",
-    "现在",
-    "目前",
-    "tech",
-    "technology",
-    "科技",
-    "技术",
-    "科技行业",
-    "技术行业",
-    "科技领域",
-    "技术领域",
-}
-
-
-def _normalize_landscape_topic_candidate(raw: str) -> str:
-    candidate = re.sub(r"\s+", " ", (raw or "").strip()).strip("：:，,。. ")
-    candidate = re.sub(r"^(?:当今|当前|目前|全球|世界|现在|如今)+", "", candidate).strip("的之 ")
-    return candidate
-
-
-def _normalize_compare_entity(raw: str) -> str:
-    token = re.sub(r"\s+", " ", (raw or "").strip()).strip("：:，,。.!?！？()[]{}\"'`")
-    token = re.sub(r"^(?:请|请问|对比一下|比较一下|对比|比较)+", "", token).strip()
-    return token
-
-
-def _is_valid_compare_entity(token: str) -> bool:
-    if not token:
-        return False
-    low = token.lower()
-    if low in _COMPARE_STOP_TOKENS:
-        return False
-    if re.fullmatch(r"\d{1,3}", token):
-        return False
-    if len(token) < 2:
-        return False
-    return True
-
-
-def _extract_compare_pair(text: str) -> tuple[str, str] | None:
-    topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9][\u4e00-\u9fffA-Za-z0-9 ._&/-]{1,39})"
-    patterns = [
-        rf"(?:对比|比较|差异|区别)\s*(?:一下|下)?\s*(?P<a>{topic_pattern})\s*(?:和|与|vs|VS|Vs|versus|and|&)\s*(?P<b>{topic_pattern})",
-        rf"(?P<a>{topic_pattern})\s*(?:和|与|vs|VS|Vs|versus|and|&)\s*(?P<b>{topic_pattern})",
-    ]
-    for pat in patterns:
-        m = re.search(pat, text, flags=re.IGNORECASE)
-        if not m:
-            continue
-        a = _normalize_compare_entity(m.group("a"))
-        b = _normalize_compare_entity(m.group("b"))
-        if not (_is_valid_compare_entity(a) and _is_valid_compare_entity(b)):
-            continue
-        if a.lower() == b.lower():
-            continue
-        return a, b
-    return None
-
-
-def _extract_landscape_topic(text: str, lower: str) -> str:
-    if bool(re.search(r"(?<![a-z])ai(?![a-z])", lower)) or ("人工智能" in text) or ("大模型" in text) or ("llm" in lower):
-        return "AI"
-
-    if any(k in lower for k in ["business", "market", "finance", "commercial"]) or any(
-        k in text for k in ["商业", "金融", "市场", "财经"]
-    ):
-        return "business"
-
-    if any(k in lower for k in ["security", "cybersecurity", "cyber"]) or any(
-        k in text for k in ["安全", "网络安全", "攻防", "威胁"]
-    ):
-        return "security"
-
-    m = re.search(r"([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9 _/-]{1,20})\s*(?:领域|行业|赛道)?\s*(?:格局|版图|生态)", text)
-    if m:
-        normalized = _normalize_landscape_topic_candidate(m.group(1))
-        candidate = normalized.lower()
-        if candidate and candidate not in _LANDSCAPE_STOP_TOPICS:
-            return normalized
-
-    m = re.search(r"(?:landscape|ecosystem)\s*(?:of|for)?\s*([A-Za-z][A-Za-z0-9 _/-]{2,24})", lower)
-    if m:
-        candidate = _normalize_landscape_topic_candidate(m.group(1)).lower()
-        if candidate and candidate not in _LANDSCAPE_STOP_TOPICS:
-            return candidate
-
-    return ""
-
-
-def _extract_landscape_request(user_message: str) -> tuple[str, int, list[str]] | None:
-    text = (user_message or "").strip()
-    if not text:
-        return None
-
-    lower = text.lower()
-    strong_landscape_keywords = [
-        "格局",
-        "局势",
-        "态势",
-        "版图",
-        "全局",
-        "全貌",
-        "宏观",
-        "生态位",
-        "阵营",
-        "角色",
-        "玩家",
-        "谁主导",
-        "landscape",
-        "power structure",
-    ]
-    weak_landscape_keywords = ["生态", "ecosystem"]
-    has_strong = any((k in text) or (k in lower) for k in strong_landscape_keywords)
-    has_weak = any((k in text) or (k in lower) for k in weak_landscape_keywords)
-    if not (has_strong or has_weak):
-        return None
-    if has_weak and not has_strong:
-        # Avoid false routing for product-ecosystem discussions unless role/structure intent exists.
-        weak_context = ["格局", "版图", "角色", "玩家", "主导", "竞争", "地位", "who leads", "dominant"]
-        if not any((k in text) or (k in lower) for k in weak_context):
-            return None
-    if any((k in text) or (k in lower) for k in ["时间线", "timeline", "里程碑"]):
-        return None
-
-    days = _extract_days(text, default=30, maximum=180)
-    topic = _extract_landscape_topic(text, lower)
-
-    entities: list[str] = []
-    seen: set[str] = set()
-    for alias, canonical in _LANDSCAPE_ENTITY_ALIASES.items():
-        if re.fullmatch(r"[A-Za-z0-9. ]+", alias):
-            if not re.search(rf"\b{re.escape(alias)}\b", lower):
-                continue
-        else:
-            if alias not in text:
-                continue
-        key = canonical.lower()
-        if key not in seen:
-            seen.add(key)
-            entities.append(canonical)
-
-    return topic, days, entities
+def _decorate_response_with_sources(text: str, user_message: str) -> tuple[str, dict[str, str]]:
+    """Attach numbered citations and source section via shared evidence helper."""
+    return _decorate_response_with_sources_core(
+        text=text,
+        user_message=user_message,
+        lookup_url_titles=lookup_url_titles,
+    )
 
 
 def _is_unstable_landscape_synthesis(text: str) -> bool:
@@ -583,138 +493,6 @@ def _format_landscape_no_data_response(
         "- a broader topic query.\n"
         "Confidence: Low"
     )
-
-
-def _extract_compare_request(user_message: str) -> tuple[str, str, int] | None:
-    text = (user_message or "").strip()
-    if not text:
-        return None
-    lower = text.lower()
-
-    pair = _extract_compare_pair(text)
-    if pair is None:
-        return None
-
-    has_explicit_marker = any(k in lower for k in ["对比", "比较", "差异", "区别", "vs", "versus"])
-    has_comparative_question = any(
-        k in lower
-        for k in [
-            "谁更",
-            "哪个更",
-            "哪家更",
-            "谁强",
-            "高于",
-            "低于",
-            "more than",
-            "less than",
-            "better",
-            "hotter",
-            "stronger",
-        ]
-    )
-    score = 1  # extracted pair
-    if has_explicit_marker:
-        score += 2
-    if has_comparative_question:
-        score += 2
-    if re.search(r"\b(?:vs|versus)\b", lower):
-        score += 1
-
-    if score < 3:
-        return None
-
-    topic_a, topic_b = pair
-    days = _extract_days(text, default=14, maximum=90)
-    return topic_a, topic_b, days
-
-
-def _extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
-    text = (user_message or "").strip()
-    if not text:
-        return None
-
-    lower = text.lower()
-    explicit_timeline_markers = ["timeline", "时间线", "里程碑", "大事记", "发展历程"]
-    action_markers = [
-        "动作",
-        "动态",
-        "动向",
-        "进展",
-        "更新",
-        "事件",
-        "发生了什么",
-        "都做了什么",
-        "moves",
-        "actions",
-        "updates",
-        "developments",
-    ]
-    has_explicit_marker = any(k in lower for k in explicit_timeline_markers)
-    has_recent_window = bool(re.search(r"(最近|过去|近|last|recent|past)\s*\d{0,3}\s*(天|day|days)?", lower))
-    has_action_intent = any(k in lower for k in action_markers)
-
-    if not (has_explicit_marker or (has_recent_window and has_action_intent)):
-        return None
-
-    days = _extract_days(text, default=30, maximum=180)
-    limit = _extract_limit(text, default=12, maximum=40)
-
-    topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{2,24})"
-    patterns = [
-        rf"(?:构建|生成|给我|做|列出|整理|build|make|create|show)\s+(?P<t>{topic_pattern})",
-        rf"(?:最近|过去|近|last|recent|past)\s*\d{{0,3}}\s*(?:天|day|days)?\s*(?P<t>{topic_pattern})\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
-        rf"(?P<t>{topic_pattern})\s*(?:最近|过去|近|last|recent|past)\s*\d{{0,3}}\s*(?:天|day|days)?\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
-        rf"(?:最近|过去|近|last|recent|past)\s*(?P<t>{topic_pattern})\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
-        rf"(?P<t>{topic_pattern})\s*(?:过去|最近|last)?\s*\d{{0,3}}\s*(?:天|day|days)?\s*(?:时间线|timeline)",
-        rf"(?:时间线|timeline)\s*(?:关于|for)?\s*(?P<t>{topic_pattern})",
-    ]
-
-    topic = ""
-    for p in patterns:
-        m = re.search(p, text, flags=re.IGNORECASE)
-        if m:
-            topic = m.group("t").strip()
-            break
-
-    if not topic:
-        stop = {
-            "构建",
-            "生成",
-            "给我",
-            "做",
-            "列出",
-            "整理",
-            "时间线",
-            "里程碑",
-            "演进",
-            "timeline",
-            "build",
-            "create",
-            "show",
-            "recent",
-            "last",
-            "最近",
-            "过去",
-            "天",
-            "day",
-            "days",
-        }
-        candidates = re.findall(topic_pattern, text)
-        for c in candidates:
-            lc = c.lower()
-            if lc in stop:
-                continue
-            if re.fullmatch(r"\d{1,3}", c):
-                continue
-            topic = c
-            break
-
-    if not topic:
-        return None
-    # Normalize possessive/structural suffix for Chinese/English patterns.
-    topic = re.sub(r"(?:的|之)$", "", topic).strip()
-    topic = re.sub(r"(?:'s)$", "", topic, flags=re.IGNORECASE).strip()
-    return topic, days, limit
 
 
 def _get_langgraph_agent():
@@ -819,30 +597,6 @@ def _analyze_compare_output(
     )
     text = _coerce_to_text(getattr(result, "content", result))
     return text.strip()
-
-
-def _ensure_evidence_section(answer: str, source_output: str, user_message: str, max_urls: int = 8) -> str:
-    """Ensure answer includes an evidence URL section based on tool output."""
-    if not answer:
-        return answer
-    source_urls = _extract_urls(source_output)
-    if not source_urls:
-        return answer
-
-    answer_urls = _extract_urls(answer)
-    has_section = bool(
-        re.search(
-            r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
-            answer,
-            flags=re.IGNORECASE | re.MULTILINE,
-        )
-    )
-    if has_section and answer_urls:
-        return answer
-
-    header = "## 证据来源" if _contains_cjk(user_message) else "## Evidence Sources"
-    lines = [f"- {u}" for u in source_urls[:max_urls]]
-    return f"{answer.rstrip()}\n\n{header}\n" + "\n".join(lines)
 
 
 def _ensure_compare_evidence(answer: str, compare_output: str, user_message: str) -> str:
@@ -951,6 +705,7 @@ def _analyze_query_output(
 ) -> str:
     """Turn query tool output into concise analyst summary without adding new facts."""
     model = _get_analysis_model()
+    normalized_ground_truth = _format_query_ground_truth(query_output)
     system_prompt = (
         "You are a strict tech-intelligence analyst.\n"
         "You will receive filtered retrieval output.\n"
@@ -965,7 +720,7 @@ def _analyze_query_output(
         f"User question:\n{user_message}\n\n"
         f"Query target: query={query}, source={source}, window={days}d, sort={sort}\n\n"
         "Query tool output (ground truth):\n"
-        f"{query_output}\n\n"
+        f"{normalized_ground_truth}\n\n"
         "Now produce concise analysis with sections:\n"
         "- 检索结果摘要\n"
         "- 关键信号\n"
@@ -982,6 +737,7 @@ def _analyze_fulltext_output(
 ) -> str:
     """Turn batch fulltext output into evidence-grounded synthesis."""
     model = _get_analysis_model()
+    normalized_ground_truth = _format_fulltext_ground_truth(fulltext_output)
     system_prompt = (
         "You are a strict tech-intelligence analyst.\n"
         "You will receive batch fulltext output.\n"
@@ -996,7 +752,7 @@ def _analyze_fulltext_output(
         f"User question:\n{user_message}\n\n"
         f"Fulltext batch target: {request_query}\n\n"
         "Fulltext tool output (ground truth):\n"
-        f"{fulltext_output}\n\n"
+        f"{normalized_ground_truth}\n\n"
         "Now produce concise analysis with sections:\n"
         "- 核心结论\n"
         "- 争议焦点\n"
@@ -1247,317 +1003,139 @@ def generate_response(history: list[dict], user_message: str) -> str:
     # Deterministic guardrail: source-comparison intent must use compare_sources tool first.
     source_compare_req = _extract_source_compare_request(user_message)
     if source_compare_req:
+        _metrics_inc("source_compare_forced")
         topic, days = source_compare_req
-        try:
-            raw_source_compare = compare_sources(topic=topic, days=days)
-            if raw_source_compare.startswith("compare_sources failed:") or raw_source_compare.startswith("No comparison data"):
-                _emit_route_metrics("source_compare_forced")
-                return raw_source_compare
-            try:
-                analyzed = _analyze_source_compare_output(
-                    user_message=user_message,
-                    topic=topic,
-                    days=days,
-                    source_compare_output=raw_source_compare,
-                )
-                if analyzed:
-                    result = _ensure_source_compare_evidence(analyzed, raw_source_compare, user_message)
-                    _emit_route_metrics("source_compare_forced")
-                    return result
-            except Exception as exc:
-                if strict_mode:
-                    _emit_route_metrics("source_compare_forced_strict_error", force=True)
-                    raise
-                print(f"[Warn] Source compare synthesis failed; fallback to raw output: {exc}")
-            _emit_route_metrics("source_compare_forced")
-            return raw_source_compare
-        except Exception as exc:
-            if strict_mode:
-                _emit_route_metrics("source_compare_forced_strict_error", force=True)
-                raise
-            _emit_route_metrics("source_compare_forced_error", force=True)
-            return f"Source comparison request detected, but DB query failed: {exc}"
+        return run_source_compare_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=topic,
+            days=days,
+            compare_sources_fn=compare_sources,
+            analyze_fn=_analyze_source_compare_output,
+            ensure_evidence_fn=_ensure_source_compare_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
 
     # Deterministic guardrail: for explicit A-vs-B comparisons, force DB-backed compare tool.
     compare_req = _extract_compare_request(user_message)
     if compare_req:
         _metrics_inc("compare_forced")
         topic_a, topic_b, days = compare_req
-        try:
-            raw_compare = compare_topics(topic_a=topic_a, topic_b=topic_b, days=days)
-            if raw_compare.startswith("compare_topics failed:"):
-                _emit_route_metrics("compare_forced")
-                return raw_compare
-            try:
-                analyzed = _analyze_compare_output(
-                    user_message=user_message,
-                    topic_a=topic_a,
-                    topic_b=topic_b,
-                    days=days,
-                    compare_output=raw_compare,
-                )
-                if analyzed:
-                    result = _ensure_compare_evidence(analyzed, raw_compare, user_message)
-                    _emit_route_metrics("compare_forced")
-                    return result
-            except Exception as exc:
-                if strict_mode:
-                    _emit_route_metrics("compare_forced_strict_error", force=True)
-                    raise
-                print(f"[Warn] Compare analysis synthesis failed; fallback to raw compare: {exc}")
-            _emit_route_metrics("compare_forced")
-            return raw_compare
-        except Exception as exc:
-            if strict_mode:
-                _emit_route_metrics("compare_forced_strict_error", force=True)
-                raise
-            _emit_route_metrics("compare_forced_error", force=True)
-            return f"Compare request detected, but DB query failed: {exc}"
+        return run_compare_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic_a=topic_a,
+            topic_b=topic_b,
+            days=days,
+            compare_topics_fn=compare_topics,
+            analyze_fn=_analyze_compare_output,
+            ensure_evidence_fn=_ensure_compare_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
 
     # Deterministic guardrail: timeline-style queries must use DB timeline tool.
     timeline_req = _extract_timeline_request(user_message)
     if timeline_req:
         _metrics_inc("timeline_forced")
         topic, days, limit = timeline_req
-        try:
-            raw_timeline = build_timeline(topic=topic, days=days, limit=limit)
-            if raw_timeline.startswith("build_timeline failed:") or raw_timeline.startswith("No timeline data"):
-                _emit_route_metrics("timeline_forced")
-                return raw_timeline
-
-            min_events = max(1, int(os.getenv("TIMELINE_MIN_EVENTS", "5")))
-            event_count = _count_timeline_items(raw_timeline)
-            if event_count < min_events:
-                result = _format_low_sample_timeline_response(
-                    user_message=user_message,
-                    topic=topic,
-                    days=days,
-                    event_count=event_count,
-                    min_events=min_events,
-                    raw_timeline=raw_timeline,
-                )
-                _emit_route_metrics("timeline_forced")
-                return result
-
-            try:
-                analyzed = _analyze_timeline_output(
-                    user_message=user_message,
-                    topic=topic,
-                    days=days,
-                    timeline_output=raw_timeline,
-                )
-                if analyzed:
-                    result = _ensure_timeline_evidence(analyzed, raw_timeline, user_message)
-                    _emit_route_metrics("timeline_forced")
-                    return result
-            except Exception as exc:
-                if strict_mode:
-                    _emit_route_metrics("timeline_forced_strict_error", force=True)
-                    raise
-                print(f"[Warn] Timeline analysis synthesis failed; fallback to raw timeline: {exc}")
-            _emit_route_metrics("timeline_forced")
-            return raw_timeline
-        except Exception as exc:
-            if strict_mode:
-                _emit_route_metrics("timeline_forced_strict_error", force=True)
-                raise
-            _emit_route_metrics("timeline_forced_error", force=True)
-            return f"Timeline request detected, but DB query failed: {exc}"
+        return run_timeline_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=topic,
+            days=days,
+            limit=limit,
+            build_timeline_fn=build_timeline,
+            count_timeline_items_fn=_count_timeline_items,
+            format_low_sample_fn=_format_low_sample_timeline_response,
+            analyze_fn=_analyze_timeline_output,
+            ensure_evidence_fn=_ensure_timeline_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
 
     # Deterministic guardrail: cross-domain landscape/role questions must use DB landscape tool.
     landscape_req = _extract_landscape_request(user_message)
     if landscape_req:
         _metrics_inc("landscape_forced")
         topic, days, entities = landscape_req
-        entities_csv = ",".join(entities)
-        try:
-            raw_landscape = analyze_landscape(topic=topic, days=days, entities=entities_csv, limit_per_entity=3)
-            if _is_landscape_no_data(raw_landscape) and topic:
-                retry_landscape = analyze_landscape(topic="", days=days, entities=entities_csv, limit_per_entity=3)
-                if not _is_landscape_no_data(retry_landscape):
-                    raw_landscape = retry_landscape
-            if _is_landscape_no_data(raw_landscape):
-                _emit_route_metrics("landscape_forced")
-                return _format_landscape_no_data_response(
-                    user_message=user_message,
-                    topic=topic,
-                    days=days,
-                    entities=entities,
-                    raw_landscape=raw_landscape,
-                )
-
-            if not _is_landscape_evidence_sufficient(raw_landscape):
-                _metrics_inc("landscape_low_evidence")
-                result = _format_low_evidence_landscape_response(
-                    user_message=user_message,
-                    topic=topic,
-                    days=days,
-                    entities=entities,
-                    raw_landscape=raw_landscape,
-                )
-                _emit_route_metrics("landscape_forced_low_evidence", force=True)
-                return result
-
-            try:
-                analyzed = _analyze_landscape_output(
-                    user_message=user_message,
-                    topic=topic,
-                    days=days,
-                    entities=entities,
-                    landscape_output=raw_landscape,
-                )
-                if analyzed:
-                    if _is_unstable_landscape_synthesis(analyzed):
-                        print("[Warn] Landscape synthesis unstable; fallback to raw landscape snapshot.")
-                        _emit_route_metrics("landscape_forced")
-                        return raw_landscape
-                    result = _ensure_landscape_evidence(analyzed, raw_landscape, user_message)
-                    _emit_route_metrics("landscape_forced")
-                    return result
-            except Exception as exc:
-                if strict_mode:
-                    _emit_route_metrics("landscape_forced_strict_error", force=True)
-                    raise
-                print(f"[Warn] Landscape analysis synthesis failed; fallback to raw landscape: {exc}")
-            _emit_route_metrics("landscape_forced")
-            return raw_landscape
-        except Exception as exc:
-            if strict_mode:
-                _emit_route_metrics("landscape_forced_strict_error", force=True)
-                raise
-            _emit_route_metrics("landscape_forced_error", force=True)
-            return f"Landscape analysis request detected, but DB query failed: {exc}"
+        return run_landscape_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=topic,
+            days=days,
+            entities=entities,
+            analyze_landscape_fn=analyze_landscape,
+            is_no_data_fn=_is_landscape_no_data,
+            format_no_data_fn=_format_landscape_no_data_response,
+            is_evidence_sufficient_fn=_is_landscape_evidence_sufficient,
+            metrics_inc_fn=_metrics_inc,
+            format_low_evidence_fn=_format_low_evidence_landscape_response,
+            analyze_output_fn=_analyze_landscape_output,
+            is_unstable_synthesis_fn=_is_unstable_landscape_synthesis,
+            ensure_evidence_fn=_ensure_landscape_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
 
     # Deterministic guardrail: trend questions should use trend_analysis before synthesis.
     trend_req = _extract_trend_request(user_message)
     if trend_req:
+        _metrics_inc("trend_forced")
         topic, window = trend_req
-        try:
-            raw_trend = trend_analysis(topic=topic, window=window)
-            if raw_trend.startswith("trend_analysis failed:") or raw_trend.startswith("trend_analysis requires"):
-                _emit_route_metrics("trend_forced")
-                return raw_trend
-            try:
-                analyzed = _analyze_trend_output(
-                    user_message=user_message,
-                    topic=topic,
-                    window=window,
-                    trend_output=raw_trend,
-                )
-                if analyzed:
-                    result = _ensure_trend_evidence(analyzed, raw_trend, user_message)
-                    _emit_route_metrics("trend_forced")
-                    return result
-            except Exception as exc:
-                if strict_mode:
-                    _emit_route_metrics("trend_forced_strict_error", force=True)
-                    raise
-                print(f"[Warn] Trend synthesis failed; fallback to raw output: {exc}")
-            _emit_route_metrics("trend_forced")
-            return raw_trend
-        except Exception as exc:
-            if strict_mode:
-                _emit_route_metrics("trend_forced_strict_error", force=True)
-                raise
-            _emit_route_metrics("trend_forced_error", force=True)
-            return f"Trend request detected, but DB query failed: {exc}"
+        return run_trend_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=topic,
+            window=window,
+            trend_analysis_fn=trend_analysis,
+            analyze_fn=_analyze_trend_output,
+            ensure_evidence_fn=_ensure_trend_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
 
     # Deterministic guardrail: fulltext/deep-read questions should use fulltext_batch first.
     fulltext_req = _extract_fulltext_request(user_message)
     if fulltext_req:
+        _metrics_inc("fulltext_forced")
         request_query, max_chars = fulltext_req
-        try:
-            raw_fulltext = fulltext_batch(urls=request_query, max_chars_per_article=max_chars)
-            if raw_fulltext.startswith("fulltext_batch requires") or raw_fulltext.startswith("No candidate articles found"):
-                _emit_route_metrics("fulltext_forced")
-                return raw_fulltext
-            try:
-                analyzed = _analyze_fulltext_output(
-                    user_message=user_message,
-                    request_query=request_query,
-                    fulltext_output=raw_fulltext,
-                )
-                if analyzed:
-                    result = _ensure_fulltext_evidence(analyzed, raw_fulltext, user_message)
-                    _emit_route_metrics("fulltext_forced")
-                    return result
-            except Exception as exc:
-                if strict_mode:
-                    _emit_route_metrics("fulltext_forced_strict_error", force=True)
-                    raise
-                print(f"[Warn] Fulltext synthesis failed; fallback to raw output: {exc}")
-            _emit_route_metrics("fulltext_forced")
-            return raw_fulltext
-        except Exception as exc:
-            if strict_mode:
-                _emit_route_metrics("fulltext_forced_strict_error", force=True)
-                raise
-            _emit_route_metrics("fulltext_forced_error", force=True)
-            return f"Fulltext request detected, but tool execution failed: {exc}"
+        return run_fulltext_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            request_query=request_query,
+            max_chars=max_chars,
+            fulltext_batch_fn=fulltext_batch,
+            analyze_fn=_analyze_fulltext_output,
+            ensure_evidence_fn=_ensure_fulltext_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
 
     # Deterministic guardrail: filter-style retrieval requests should use query_news first.
     query_req = _extract_query_request(user_message)
     if query_req:
+        _metrics_inc("query_forced")
         query, source, days, sort, limit = query_req
-        try:
-            raw_query = query_news(
-                query=query,
-                source=source,
-                days=days,
-                category="",
-                sentiment="",
-                sort=sort,
-                limit=limit,
-            )
-            if raw_query.startswith("query_news failed:") or raw_query.startswith("No matching records"):
-                _emit_route_metrics("query_forced")
-                return raw_query
-            try:
-                analyzed = _analyze_query_output(
-                    user_message=user_message,
-                    query=query,
-                    source=source,
-                    days=days,
-                    sort=sort,
-                    query_output=raw_query,
-                )
-                if analyzed:
-                    result = _ensure_query_evidence(analyzed, raw_query, user_message)
-                    _emit_route_metrics("query_forced")
-                    return result
-            except Exception as exc:
-                if strict_mode:
-                    _emit_route_metrics("query_forced_strict_error", force=True)
-                    raise
-                print(f"[Warn] Query synthesis failed; fallback to raw output: {exc}")
-            _emit_route_metrics("query_forced")
-            return raw_query
-        except Exception as exc:
-            if strict_mode:
-                _emit_route_metrics("query_forced_strict_error", force=True)
-                raise
-            _emit_route_metrics("query_forced_error", force=True)
-            return f"Query request detected, but DB query failed: {exc}"
+        return run_query_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            query=query,
+            source=source,
+            days=days,
+            sort=sort,
+            limit=limit,
+            query_news_fn=query_news,
+            analyze_fn=_analyze_query_output,
+            ensure_evidence_fn=_ensure_query_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
 
-    if runtime == "legacy":
-        _metrics_inc("legacy_direct")
-        _emit_route_metrics("legacy_direct")
-        return _generate_legacy(history, user_message)
-
-    _metrics_inc("langchain_attempts")
-    try:
-        result = _generate_langgraph(history, user_message)
-        _metrics_inc("langchain_success")
-        _emit_route_metrics("langchain_success")
-        return result
-    except Exception as exc:
-        if strict_mode:
-            _emit_route_metrics("langchain_strict_error", force=True)
-            raise
-        _metrics_inc("langchain_fallback")
-        _emit_route_metrics("langchain_fallback", force=True)
-        print(f"[Warn] LangChain runtime failed, fallback to legacy runtime: {exc}")
-        return _generate_legacy(history, user_message)
+    return run_runtime_pipeline(
+        strict_mode=strict_mode,
+        runtime=runtime,
+        history=history,
+        user_message=user_message,
+        metrics_inc_fn=_metrics_inc,
+        emit_metrics_fn=_emit_route_metrics,
+        generate_legacy_fn=_generate_legacy,
+        generate_langgraph_fn=_generate_langgraph,
+    )
 
 
 _generate_response_core = generate_response

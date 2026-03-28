@@ -1,21 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Reusable one-click source onboarding script.
-# By default it ensures source framework schema first, then upserts one source.
-#
-# Usage example:
-#   bash deployment/upsert_source.sh \
-#     --source-key openai_blog \
-#     --source-name "OpenAI Blog" \
-#     --endpoint "https://openai.com/news/rss.xml" \
-#     --signal-origin Official \
-#     --priority 30 \
-#     --extra-config '{"company":"OpenAI","keyword_filters":["openai","gpt"]}'
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-COMMON_LIB="${SCRIPT_DIR}/db_common.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+COMMON_LIB="${SCRIPT_DIR}/common.sh"
 FRAMEWORK_SCRIPT="${SCRIPT_DIR}/apply_source_framework_migration.sh"
 
 SOURCE_KEY=""
@@ -33,7 +21,7 @@ APPLY_DEFAULT_SEEDS=false
 usage() {
   cat <<'EOF'
 Usage:
-  bash deployment/upsert_source.sh --source-key <key> --source-name <name> --endpoint <url> [options]
+  bash deployment/scripts/db/upsert_source.sh --source-key <key> --source-name <name> --endpoint <url> [options]
 
 Required:
   --source-key <value>        Unique source key, e.g. openai_blog
@@ -132,6 +120,16 @@ if [[ -z "${SOURCE_KEY}" || -z "${SOURCE_NAME}" || -z "${ENDPOINT}" ]]; then
   exit 1
 fi
 
+if ! [[ "${SOURCE_KEY}" =~ ^[a-z0-9][a-z0-9_]{1,98}$ ]]; then
+  echo "--source-key must match ^[a-z0-9][a-z0-9_]{1,98}$, got: ${SOURCE_KEY}" >&2
+  exit 1
+fi
+
+if ! [[ "${ENDPOINT}" =~ ^https?:// ]]; then
+  echo "--endpoint must start with http:// or https://, got: ${ENDPOINT}" >&2
+  exit 1
+fi
+
 if ! [[ "${PRIORITY}" =~ ^-?[0-9]+$ ]]; then
   echo "--priority must be an integer, got: ${PRIORITY}" >&2
   exit 1
@@ -144,7 +142,7 @@ if [[ "${IS_ACTIVE}" != "true" && "${IS_ACTIVE}" != "false" ]]; then
 fi
 
 if [[ "${SKIP_MIGRATION}" == false ]]; then
-  if [[ ! -x "${FRAMEWORK_SCRIPT}" && ! -f "${FRAMEWORK_SCRIPT}" ]]; then
+  if [[ ! -f "${FRAMEWORK_SCRIPT}" ]]; then
     echo "Missing migration runner: ${FRAMEWORK_SCRIPT}" >&2
     exit 1
   fi
@@ -205,4 +203,3 @@ SET
   -v extra_config="${EXTRA_CONFIG}"
 
 echo "Done. Source upserted successfully."
-

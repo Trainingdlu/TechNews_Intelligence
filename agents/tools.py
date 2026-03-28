@@ -205,6 +205,17 @@ def _is_probable_url(text: str) -> bool:
     return t.startswith("http://") or t.startswith("https://")
 
 
+def _extract_time_window_days(text: str, default: int = 14, maximum: int = 180) -> int:
+    m = re.search(r"(?:最近|过去|last|recent|past)?\s*(\d{1,3})\s*(?:天|day|days)", text, flags=re.IGNORECASE)
+    if not m:
+        return _clamp_int(default, 1, maximum)
+    return _clamp_int(int(m.group(1)), 1, maximum)
+
+
+def _json_text(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def lookup_url_titles(urls: list[str]) -> dict[str, str]:
     """Lookup URL -> title_cn/title in DB for presentation layer."""
     unique_urls = [u.strip() for u in (urls or []) if str(u).strip()]
@@ -308,26 +319,145 @@ def _get_query_embedding(query: str) -> list[float] | None:
 
 
 def _lookup_urls_by_query(query: str, days: int = 14, limit: int = 5) -> list[tuple]:
-    """Return candidate URLs by keyword query."""
-    q = f"%{query.strip()}%"
+    """Return candidate URLs by fused semantic+keyword retrieval."""
+    query_clean = (query or "").strip()
+    if not query_clean:
+        return []
+
+    days = _clamp_int(days, 1, 180)
+    limit = _clamp_int(limit, 1, 12)
+    q = f"%{query_clean}%"
+    query_vec = _get_query_embedding(query_clean)
+
     conn = get_conn()
     try:
         cur = conn.cursor()
+        if query_vec:
+            vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
+            try:
+                cur.execute(
+                    """
+                    WITH keyword AS (
+                        SELECT
+                            COALESCE(v.title_cn, v.title) AS headline,
+                            v.url,
+                            v.source_type,
+                            v.created_at,
+                            COALESCE(v.points, 0) AS points,
+                            (
+                                CASE
+                                    WHEN (v.title ILIKE %s OR COALESCE(v.title_cn, '') ILIKE %s) THEN 1.3
+                                    ELSE 0.0
+                                END
+                                + CASE
+                                    WHEN COALESCE(v.summary, '') ILIKE %s THEN 0.6
+                                    ELSE 0.0
+                                END
+                                + LEAST(0.8, GREATEST(0.0, COALESCE(v.points, 0)::float / 220.0))
+                                + 0.2 * EXP(-EXTRACT(EPOCH FROM (NOW() - v.created_at)) / 86400.0 / 21.0)
+                            )::float AS score
+                        FROM view_dashboard_news v
+                        WHERE v.created_at >= NOW() - %s::interval
+                          AND (
+                              v.title ILIKE %s
+                              OR COALESCE(v.title_cn, '') ILIKE %s
+                              OR COALESCE(v.summary, '') ILIKE %s
+                          )
+                        LIMIT %s
+                    ),
+                    semantic AS (
+                        SELECT
+                            COALESCE(v.title_cn, v.title) AS headline,
+                            v.url,
+                            v.source_type,
+                            v.created_at,
+                            COALESCE(v.points, 0) AS points,
+                            (
+                                (1 - (e.embedding <=> %s::vector))
+                                + 0.2 * EXP(-EXTRACT(EPOCH FROM (NOW() - v.created_at)) / 86400.0 / 21.0)
+                                + LEAST(0.8, GREATEST(0.0, COALESCE(v.points, 0)::float / 280.0))
+                            )::float AS score
+                        FROM view_dashboard_news v
+                        JOIN news_embeddings e ON e.url = v.url
+                        WHERE v.created_at >= NOW() - %s::interval
+                        ORDER BY e.embedding <=> %s::vector
+                        LIMIT %s
+                    ),
+                    combined AS (
+                        SELECT * FROM keyword
+                        UNION ALL
+                        SELECT * FROM semantic
+                    ),
+                    dedup AS (
+                        SELECT
+                            headline,
+                            url,
+                            source_type,
+                            created_at,
+                            points,
+                            score,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY url
+                                ORDER BY score DESC, points DESC NULLS LAST, created_at DESC
+                            ) AS rn
+                        FROM combined
+                    )
+                    SELECT headline, url, source_type, created_at, points, score
+                    FROM dedup
+                    WHERE rn = 1
+                    ORDER BY score DESC, points DESC NULLS LAST, created_at DESC
+                    LIMIT %s
+                    """,
+                    (
+                        q,
+                        q,
+                        q,
+                        f"{days} days",
+                        q,
+                        q,
+                        q,
+                        limit * 4,
+                        vec_str,
+                        f"{days} days",
+                        vec_str,
+                        limit * 6,
+                        limit,
+                    ),
+                )
+                rows = cur.fetchall()
+                cur.close()
+                return rows
+            except Exception as exc:
+                # Keep fallback deterministic even when vector table/query is temporarily unavailable.
+                print(f"[Warn] semantic candidate lookup failed; fallback to keyword-only: {exc}")
+
         cur.execute(
             """
             SELECT
-                COALESCE(title_cn, title) AS headline,
-                url,
-                source_type,
-                created_at,
-                points
-            FROM view_dashboard_news
-            WHERE created_at >= NOW() - %s::interval
-              AND (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s)
-            ORDER BY points DESC NULLS LAST, created_at DESC
+                COALESCE(v.title_cn, v.title) AS headline,
+                v.url,
+                v.source_type,
+                v.created_at,
+                COALESCE(v.points, 0) AS points,
+                (
+                    CASE
+                        WHEN (v.title ILIKE %s OR COALESCE(v.title_cn, '') ILIKE %s) THEN 1.3
+                        ELSE 0.0
+                    END
+                    + CASE
+                        WHEN COALESCE(v.summary, '') ILIKE %s THEN 0.6
+                        ELSE 0.0
+                    END
+                    + LEAST(0.8, GREATEST(0.0, COALESCE(v.points, 0)::float / 220.0))
+                    + 0.2 * EXP(-EXTRACT(EPOCH FROM (NOW() - v.created_at)) / 86400.0 / 21.0)
+                )::float AS score
+            FROM view_dashboard_news v
+            WHERE v.created_at >= NOW() - %s::interval
+              AND (v.title ILIKE %s OR COALESCE(v.title_cn,'') ILIKE %s OR COALESCE(v.summary,'') ILIKE %s)
+            ORDER BY score DESC, points DESC NULLS LAST, created_at DESC
             LIMIT %s
             """,
-            (f"{days} days", q, q, q, limit),
+            (q, q, q, f"{days} days", q, q, q, limit),
         )
         rows = cur.fetchall()
         cur.close()
@@ -514,6 +644,7 @@ def query_news(
     sentiment: str = "",
     sort: str = "time_desc",
     limit: int = 8,
+    response_format: str = "text",
 ) -> str:
     """Filterable retrieval: source/days/category/sentiment/sort/limit."""
     print(f"\n[Tool] query_news: query={query}, source={source}, days={days}, sort={sort}")
@@ -564,17 +695,51 @@ def query_news(
         cur.execute(sql, tuple(params))
         rows = cur.fetchall()
         cur.close()
+        records: list[dict[str, Any]] = []
+        for idx, row in enumerate(rows, 1):
+            title, title_cn, url, summary, senti, points, src, created_at = row
+            records.append(
+                {
+                    "rank": idx,
+                    "source": src,
+                    "title": title,
+                    "title_cn": title_cn,
+                    "url": url,
+                    "summary": summary or "",
+                    "sentiment": senti or "",
+                    "points": int(points or 0),
+                    "created_at": created_at.isoformat() if created_at else "",
+                }
+            )
+
+        if response_format.strip().lower() == "json":
+            payload = {
+                "tool": "query_news",
+                "status": "ok" if records else "empty",
+                "request": {
+                    "query": query,
+                    "source": source,
+                    "days": days,
+                    "category": category,
+                    "sentiment": sentiment,
+                    "sort": sort,
+                    "limit": limit,
+                },
+                "count": len(records),
+                "records": records,
+            }
+            return _json_text(payload)
+
         if not rows:
             return "No matching records."
 
         lines = []
-        for idx, row in enumerate(rows, 1):
-            title, title_cn, url, summary, senti, points, src, created_at = row
+        for item in records:
             lines.append(
-                f"{idx}. [{src}] {title_cn or title}\n"
-                f"   time={created_at.strftime('%Y-%m-%d %H:%M')}, sentiment={senti}, points={points}\n"
-                f"   url={url}\n"
-                f"   summary={(summary or '')[:220]}"
+                f"{item['rank']}. [{item['source']}] {item.get('title_cn') or item.get('title')}\n"
+                f"   time={item['created_at'].replace('T', ' ')[:16]}, sentiment={item['sentiment']}, points={item['points']}\n"
+                f"   url={item['url']}\n"
+                f"   summary={item['summary'][:220]}"
             )
         return "\n".join(lines)
     except Exception as e:
@@ -1271,45 +1436,106 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
         put_conn(conn)
 
 
-def fulltext_batch(urls: str, max_chars_per_article: int = 4000) -> str:
+def fulltext_batch(urls: str, max_chars_per_article: int = 4000, response_format: str = "text") -> str:
     """Batch-read full text by URL list or keyword fallback."""
     print("\n[Tool] fulltext_batch")
     max_chars_per_article = _clamp_int(max_chars_per_article, 800, 12000)
+    as_json = response_format.strip().lower() == "json"
 
     raw_items = _split_urls(urls)
     direct_urls = [x for x in raw_items if _is_probable_url(x)]
 
-    selected: list[tuple[str, str]] = []
+    selected: list[tuple[str, str, dict[str, Any]]] = []
     prefix_lines: list[str] = []
+    selected_meta: list[dict[str, Any]] = []
 
     if direct_urls:
         for u in direct_urls[:12]:
-            selected.append(("direct", u))
+            meta = {"selection_mode": "direct", "url": u}
+            selected.append(("direct", u, meta))
+            selected_meta.append(meta)
     else:
         query = (urls or "").strip()
         if not query:
             return "fulltext_batch requires URLs or a keyword query."
 
-        candidates = _lookup_urls_by_query(query=query, days=14, limit=5)
+        days = _extract_time_window_days(query, default=14, maximum=120)
+        candidates = _lookup_urls_by_query(query=query, days=days, limit=6)
         if not candidates:
+            if as_json:
+                return _json_text(
+                    {
+                        "tool": "fulltext_batch",
+                        "status": "empty",
+                        "request": {
+                            "urls_or_query": urls,
+                            "query": query,
+                            "days": days,
+                            "max_chars_per_article": max_chars_per_article,
+                        },
+                        "selected": [],
+                        "articles": [],
+                        "error": f"No candidate articles found for query '{query}'.",
+                    }
+                )
             return f"No candidate articles found for query '{query}'."
 
         prefix_lines.append(
-            f"No URLs provided. Auto-selected Top {len(candidates)} articles for query '{query}':"
+            f"No URLs provided. Auto-selected Top {len(candidates)} articles for query '{query}' (window={days}d):"
         )
-        for i, (headline, url, source_type, created_at, points) in enumerate(candidates, 1):
+        for i, row in enumerate(candidates, 1):
+            headline, url, source_type, created_at, points, score = row
             prefix_lines.append(
                 f"{i}. [{source_type}] {headline} | points={points} | "
-                f"{created_at.strftime('%Y-%m-%d %H:%M')} | {url}"
+                f"score={float(score):.3f} | {created_at.strftime('%Y-%m-%d %H:%M')} | {url}"
             )
-            selected.append(("query", url))
+            meta = {
+                "selection_mode": "query",
+                "query": query,
+                "window_days": days,
+                "rank": i,
+                "headline": headline,
+                "source_type": source_type,
+                "points": int(points or 0),
+                "score": float(score or 0.0),
+                "created_at": created_at.isoformat() if created_at else "",
+                "url": url,
+            }
+            selected.append(("query", url, meta))
+            selected_meta.append(meta)
 
     chunks: list[str] = []
-    for idx, (_, url) in enumerate(selected, 1):
+    article_rows: list[dict[str, Any]] = []
+    for idx, (_, url, meta) in enumerate(selected, 1):
         content = read_news_content(url)
+        truncated = False
         if len(content) > max_chars_per_article:
             content = content[:max_chars_per_article] + "\n...[truncated]"
+            truncated = True
         chunks.append(f"=== [{idx}] {url} ===\n{content}")
+        article_rows.append(
+            {
+                "index": idx,
+                "url": url,
+                "content": content,
+                "truncated": truncated,
+                "meta": meta,
+            }
+        )
+
+    if as_json:
+        return _json_text(
+            {
+                "tool": "fulltext_batch",
+                "status": "ok",
+                "request": {
+                    "urls_or_query": urls,
+                    "max_chars_per_article": max_chars_per_article,
+                },
+                "selected": selected_meta,
+                "articles": article_rows,
+            }
+        )
 
     if prefix_lines:
         return "\n".join(prefix_lines) + "\n\n" + "\n\n".join(chunks)
