@@ -6,3 +6,6 @@ python-telegram-bot
 fastapi
 uvicorn[standard]
 email-validator
+langchain
+langgraph
+langchain-google-genai
