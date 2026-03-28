@@ -81,6 +81,48 @@
               "name": "summary",
               "value": "={{ JSON.parse($json.choices[0].message.content.replace(/```json/g, \"\").replace(/```/g, \"\").trim()).summary }}",
               "type": "string"
+            },
+            {
+              "id": "bde24608-edb3-4c8b-b443-fef7f8d11d20",
+              "name": "title",
+              "value": "={{ $('Loop Over Items').item.json.title || null }}",
+              "type": "string"
+            },
+            {
+              "id": "6e9c3778-3e6f-45df-b31b-fa7ba75f0f56",
+              "name": "id",
+              "value": "={{ $('Loop Over Items').item.json.id || null }}",
+              "type": "string"
+            },
+            {
+              "id": "2f53a631-89cf-4c16-b174-2146736bf8e5",
+              "name": "created_at",
+              "value": "={{ $('Loop Over Items').item.json.created_at || null }}",
+              "type": "string"
+            },
+            {
+              "id": "3fd6d454-2363-4e7e-a7a6-d78e6b7d58d5",
+              "name": "source_key",
+              "value": "={{ $('Loop Over Items').item.json.source_key || null }}",
+              "type": "string"
+            },
+            {
+              "id": "e3fd2d1c-fdcd-46ad-9447-4574fd251d91",
+              "name": "source_name",
+              "value": "={{ $('Loop Over Items').item.json.source_name || null }}",
+              "type": "string"
+            },
+            {
+              "id": "c96366e8-2f2f-4fd9-9b9f-8d8be420f8d2",
+              "name": "source_platform",
+              "value": "={{ $('Loop Over Items').item.json.source_platform || null }}",
+              "type": "string"
+            },
+            {
+              "id": "6d177f44-d676-40d9-8569-89145a7f9f96",
+              "name": "signal_origin",
+              "value": "={{ $('Loop Over Items').item.json.signal_origin || null }}",
+              "type": "string"
             }
           ]
         },
@@ -627,17 +669,17 @@
         "columns": {
           "mappingMode": "defineBelow",
           "value": {
-            "title": "={{ $json.title }}",
+            "title": "={{ $json.title || $('Loop Over Items').item.json.title }}",
             "url": "={{ $json.url }}",
             "points": "={{ $json.points }}",
             "title_cn": "={{ $json.title_cn }}",
             "sentiment": "={{ $json.sentiment ? $json.sentiment : 'Neutral' }}",
-            "source_id": "={{ $json.id ? String($json.id) : null }}",
-            "source_key": "={{ $json.source_key || null }}",
-            "source_name": "={{ $json.source_name || null }}",
-            "source_platform": "={{ $json.source_platform || null }}",
-            "signal_origin": "={{ $json.signal_origin || null }}",
-            "created_at": "={{ $json.created_at }}",
+            "source_id": "={{ $('Loop Over Items').item.json.id ? String($('Loop Over Items').item.json.id) : ($json.id ? String($json.id) : null) }}",
+            "source_key": "={{ $json.source_key || $('Loop Over Items').item.json.source_key || null }}",
+            "source_name": "={{ $json.source_name || $('Loop Over Items').item.json.source_name || null }}",
+            "source_platform": "={{ $json.source_platform || $('Loop Over Items').item.json.source_platform || null }}",
+            "signal_origin": "={{ $json.signal_origin || $('Loop Over Items').item.json.signal_origin || null }}",
+            "created_at": "={{ $json.created_at || $('Loop Over Items').item.json.created_at || null }}",
             "summary": "={{ $json.summary }}",
             "updated_at": "={{ $now.toISO() }}"
           },
@@ -1607,7 +1649,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO news_embeddings (url, embedding)\nVALUES (\n    $${{ $('Insert or update rows in a table').item.json.url }}$$,\n    $${{ JSON.stringify($json.data[0].embedding) }}$$::vector\n)\nON CONFLICT (url) DO UPDATE SET embedding = EXCLUDED.embedding;\n",
+        "query": "INSERT INTO news_embeddings (url, embedding)\nVALUES (\n    $${{ $('Loop Over Items').item.json.url }}$$,\n    $${{ JSON.stringify($json.data[0].embedding) }}$$::vector\n)\nON CONFLICT (url) DO UPDATE SET embedding = EXCLUDED.embedding;\n",
         "options": {}
       },
       "type": "n8n-nodes-base.postgres",
