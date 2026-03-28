@@ -199,7 +199,7 @@ docker-compose up -d
 ### Telegram Bot
 Bot 服务已包含在 docker-compose.yml 中，执行 `docker-compose up -d` 后会随其他服务一同启动，无需额外操作。
 
-### 本地 CLI（可选）
+### 本地 CLI
 ```bash
 cd agents
 cp .env.example .env
@@ -207,13 +207,7 @@ cp .env.example .env
 pip install -r requirements.txt
 python cli.py
 ```
-
 ---
 
 ## 5. 开源协议
 本项目采用 GNU AGPLv3 协议。
-
----
-
-## 6. 作者
-Trainingcqy · trainingcqy@gmail.com
