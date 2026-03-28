@@ -212,7 +212,7 @@
     },
     {
       "parameters": {
-        "url": "https://blog.google/feed/",
+        "url": "https://blog.google/rss/",
         "options": {}
       },
       "type": "n8n-nodes-base.rssFeedRead",

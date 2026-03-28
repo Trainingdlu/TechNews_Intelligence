@@ -19,13 +19,13 @@ VALUES
         'DirectRSS',
         'Official',
         'rss',
-        'https://blog.google/feed/',
+        'https://blog.google/rss/',
         TRUE,
         50,
         '{
           "company":"Google",
           "model_focus":["Gemini"],
-          "fallback_endpoints":["https://blog.google/rss/"],
+          "fallback_endpoints":["https://blog.google/feed/"],
           "keyword_filters":["gemini","google ai","deepmind","llm","model"]
         }'::jsonb
     ),
