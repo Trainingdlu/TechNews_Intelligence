@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日报订阅 | Trainingcqy</title>
+    <meta name="description" content="订阅 Tech Brief 日报，选择新闻来源和推送设置。">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="subscribe.css">
+</head>
+
+<body class="subscribe-page">
+    <nav class="topbar">
+        <a class="logo-area" href="https://trainingcqy.com/">
+            <span class="material-symbols-outlined">auto_awesome</span>
+            Trainingcqy
+        </a>
+        <a class="nav-item" href="https://trainingcqy.com/">
+            <span class="material-symbols-outlined">home</span>首页
+        </a>
+        <a class="nav-item" href="https://trainingcqy.com/projects.html">
+            <span class="material-symbols-outlined">folder_open</span>项目
+        </a>
+        <a class="nav-item" href="https://trainingcqy.com/gallery.html">
+            <span class="material-symbols-outlined">photo_library</span>摄影
+        </a>
+    </nav>
+
+    <nav class="bottom-nav">
+        <a class="bottom-nav-item" href="https://trainingcqy.com/">
+            <div class="icon-container">
+                <span class="material-symbols-outlined">home</span>
+            </div>首页
+        </a>
+        <a class="bottom-nav-item" href="https://trainingcqy.com/projects.html">
+            <div class="icon-container">
+                <span class="material-symbols-outlined">folder_open</span>
+            </div>项目
+        </a>
+        <a class="bottom-nav-item" href="https://trainingcqy.com/gallery.html">
+            <div class="icon-container">
+                <span class="material-symbols-outlined">photo_library</span>
+            </div>摄影
+        </a>
+        <a class="bottom-nav-item bottom-nav-item-current" href="subscribe.html">
+            <div class="icon-container">
+                <span class="material-symbols-outlined">newsmode</span>
+            </div>订阅
+        </a>
+    </nav>
+
+    <main id="subscribe-view" class="view active">
+        <section class="auth-card subscribe-card">
+            <div class="auth-icon">
+                <span class="material-symbols-outlined">newsmode</span>
+            </div>
+            <h1 class="auth-title">Tech Brief 日报订阅</h1>
+            <p class="auth-subtitle">
+                和智能体页面同一风格。当前默认每日推送，你可先配置来源和时区，后续来源扩展时可直接沿用这页。
+            </p>
+
+            <form id="subscribe-form" class="auth-form">
+                <div class="input-group">
+                    <span class="material-symbols-outlined input-icon">mail</span>
+                    <input id="email-input" name="email" type="email" required placeholder="输入邮箱地址" autocomplete="email">
+                </div>
+
+                <div class="input-group">
+                    <span class="material-symbols-outlined input-icon">badge</span>
+                    <input id="name-input" name="name" type="text" maxlength="50" placeholder="昵称（可选）">
+                </div>
+
+                <div class="source-area">
+                    <div class="source-label">订阅来源</div>
+                    <div id="source-list" class="source-list"></div>
+                </div>
+
+                <div class="input-group">
+                    <span class="material-symbols-outlined input-icon">schedule</span>
+                    <select id="frequency-select" name="frequency">
+                        <option value="daily">每天推送（当前可用）</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <span class="material-symbols-outlined input-icon">public</span>
+                    <input id="timezone-input" name="timezone" type="text" value="Asia/Shanghai" maxlength="50"
+                        placeholder="Asia/Shanghai">
+                </div>
+
+                <button type="submit" id="save-btn" class="secondary-btn">
+                    <span class="material-symbols-outlined">check_circle</span>
+                    保存订阅
+                </button>
+
+                <div class="action-row">
+                    <button type="button" id="load-btn" class="secondary-btn">
+                        <span class="material-symbols-outlined">settings</span>
+                        读取当前设置
+                    </button>
+                    <button type="button" id="unsubscribe-btn" class="secondary-btn danger-btn">
+                        <span class="material-symbols-outlined">unsubscribe</span>
+                        退订
+                    </button>
+                </div>
+            </form>
+
+            <p id="status-text" class="status-msg"></p>
+
+            <div class="auth-link-row">
+                <a class="auth-link" href="index.html">
+                    <span class="material-symbols-outlined">smart_toy</span>
+                    智能体对话
+                </a>
+            </div>
+        </section>
+    </main>
+
+    <script src="subscribe.js"></script>
+</body>
+
+</html>

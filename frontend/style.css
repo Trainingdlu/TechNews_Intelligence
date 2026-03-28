@@ -386,6 +386,31 @@ body {
     background: var(--border-color);
 }
 
+.auth-link-row {
+    margin-top: 16px;
+}
+
+.auth-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    color: var(--primary-blue);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 10px;
+    border-radius: var(--radius-full);
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.auth-link:hover {
+    background: var(--hover-color);
+}
+
+.auth-link .material-symbols-outlined {
+    font-size: 18px;
+}
+
 .status-msg {
     font-size: 13px;
     min-height: 20px;
@@ -495,6 +520,10 @@ body {
 
 .icon-btn .material-symbols-outlined {
     font-size: 22px;
+}
+
+.icon-link-btn {
+    text-decoration: none;
 }
 
 /* ===== Messages Area ===== */

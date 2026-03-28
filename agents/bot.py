@@ -45,6 +45,56 @@ def _trim_history(history: list[dict]) -> list[dict]:
 import html as html_mod
 
 
+def _render_inline_markdown_to_html(line: str) -> str:
+    """Render a small safe subset of markdown inline styles to Telegram HTML.
+
+    Supported now:
+    - **bold** -> <b>bold</b>
+    """
+    parts: list[str] = []
+    last = 0
+    for m in re.finditer(r"\*\*(.+?)\*\*", line):
+        if m.start() > last:
+            parts.append(html_mod.escape(line[last:m.start()]))
+        parts.append(f"<b>{html_mod.escape(m.group(1))}</b>")
+        last = m.end()
+    if last < len(line):
+        parts.append(html_mod.escape(line[last:]))
+    return "".join(parts)
+
+
+def _chunk_by_lines(text: str, max_len: int = 4096) -> list[str]:
+    """Split text into Telegram-safe chunks without breaking HTML tags mid-line."""
+    lines = text.split("\n")
+    chunks: list[str] = []
+    current: list[str] = []
+    cur_len = 0
+
+    for line in lines:
+        if len(line) > max_len:
+            if current:
+                chunks.append("\n".join(current))
+                current = []
+                cur_len = 0
+            for i in range(0, len(line), max_len):
+                chunks.append(line[i:i + max_len])
+            continue
+
+        add_len = len(line) + (1 if current else 0)
+        if current and (cur_len + add_len > max_len):
+            chunks.append("\n".join(current))
+            current = [line]
+            cur_len = len(line)
+            continue
+
+        current.append(line)
+        cur_len += add_len
+
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
+
+
 def _format_for_telegram(text: str) -> str:
     """将 Gemini 输出的 Markdown 转换为 Telegram HTML 格式。
 
@@ -60,28 +110,31 @@ def _format_for_telegram(text: str) -> str:
         # 处理 Markdown 标题行
         if stripped.startswith("#"):
             title = stripped.lstrip("#").strip()
-            title = title.replace("**", "")
+            title = re.sub(r"\*\*(.+?)\*\*", r"\1", title)
             title = html_mod.escape(title)
             if title:
                 result.append(f"<b>{title}</b>")
             continue
-        # 正文：提取 **bold** 内容后去除星号
-        line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
-        line = html_mod.escape(line)
-        result.append(line)
+
+        # 将 markdown 无序列表统一为 "-"，避免 TG 中星号列表不稳定。
+        line = re.sub(r"^(\s*)[\*\u2022]\s+", r"\1- ", line)
+
+        # 正文：保留粗体，其余内容安全转义
+        result.append(_render_inline_markdown_to_html(line))
     return "\n".join(result)
 
 
 async def _send_reply(message, text: str):
     """尝试以 HTML 模式发送，失败则回退到纯文本。"""
     formatted = _format_for_telegram(text)
-    chunks = [formatted[i:i + 4096] for i in range(0, len(formatted), 4096)]
+    chunks = _chunk_by_lines(formatted, 4096)
     for chunk in chunks:
         try:
             await message.reply_text(chunk, parse_mode="HTML")
         except Exception:
             # HTML 解析失败时回退纯文本（去除标签）
             plain = re.sub(r"<[^>]+>", "", chunk)
+            plain = html_mod.unescape(plain)
             await message.reply_text(plain)
 
 

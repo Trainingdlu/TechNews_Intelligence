@@ -205,6 +205,12 @@ def _build_arg_parser(default_dataset: Path) -> argparse.ArgumentParser:
         default=None,
         help="Fail if route_metrics.langchain_success_rate is lower than this threshold.",
     )
+    parser.add_argument(
+        "--fail-on-landscape-low-evidence-rate",
+        type=float,
+        default=None,
+        help="Fail if route_metrics.landscape_low_evidence_rate is greater than this threshold.",
+    )
     return parser
 
 
@@ -264,6 +270,12 @@ def _build_gate_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
         "route_metrics.langchain_success_rate",
         "min",
         args.fail_on_langchain_success_rate,
+    )
+    _add(
+        "landscape_low_evidence_rate_max",
+        "route_metrics.landscape_low_evidence_rate",
+        "max",
+        args.fail_on_landscape_low_evidence_rate,
     )
     return specs
 
@@ -354,7 +366,8 @@ def main() -> int:
         "[Eval] route: "
         f"fallback_total={route_metrics.get('fallback_rate_total', 0.0):.2%} "
         f"fallback_langchain={route_metrics.get('fallback_rate_langchain', 0.0):.2%} "
-        f"forced_route={route_metrics.get('forced_route_rate', 0.0):.2%}"
+        f"forced_route={route_metrics.get('forced_route_rate', 0.0):.2%} "
+        f"landscape_low_evidence={route_metrics.get('landscape_low_evidence_rate', 0.0):.2%}"
     )
 
     if "baseline" in report:

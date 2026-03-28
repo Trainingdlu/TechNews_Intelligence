@@ -9,3 +9,4 @@
 {"id":"fulltext_batch_keyword","category":"fulltext","question":"批量读取 OpenAI Voice Engine 相关全文并总结争议点","min_urls":1,"must_contain":[]}
 {"id":"broad_last_24h","category":"brief","question":"最近24小时有什么新闻？","min_urls":0,"must_contain":[]}
 
+{"id":"landscape_business_roles_30d","category":"landscape","question":"If we only look at the last 30 days, what is the business landscape and what roles do Microsoft, Google, Amazon, and Apple play?","min_urls":2,"must_contain":["Evidence"]}

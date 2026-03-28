@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr
+from psycopg2.extras import Json
 
 from agent import generate_response
 from db import init_db_pool, close_db_pool, get_conn, put_conn
@@ -35,6 +36,11 @@ ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://agentapi.trainingcqy.com")
 DEFAULT_QUOTA = 15
 UPGRADED_QUOTA = 50
+DEFAULT_SUBSCRIPTION_SOURCES = [
+    "HackerNews",
+    "TechCrunch",
+]
+SUBSCRIPTION_FREQUENCIES = ["daily"]
 
 # ---------------------------------------------------------------------------
 # Rate Limiter（内存级，按 IP 限流）
@@ -131,12 +137,201 @@ class QuotaResponse(BaseModel):
     status: str
 
 
+class SubscriptionRequest(BaseModel):
+    email: EmailStr
+    name: str | None = None
+    sources: list[str] | None = None
+    frequency: str = "daily"
+    timezone: str = "Asia/Shanghai"
+
+
+class UnsubscribeRequest(BaseModel):
+    email: EmailStr
+
+
+class SubscriptionResponse(BaseModel):
+    email: EmailStr
+    name: str | None = None
+    is_active: bool
+    sources: list[str]
+    frequency: str
+    timezone: str
+
+
+def _normalize_sources(sources: list[str] | None) -> list[str]:
+    allowed_sources = _fetch_active_source_names()
+
+    if not sources:
+        return allowed_sources.copy()
+
+    normalized: list[str] = []
+    allowed_map = {s.lower(): s for s in allowed_sources}
+    for source in sources:
+        key = source.strip().lower()
+        if key in allowed_map and allowed_map[key] not in normalized:
+            normalized.append(allowed_map[key])
+
+    if not normalized:
+        raise HTTPException(status_code=400, detail="invalid_sources")
+
+    return normalized
+
+
+def _row_to_subscription(row) -> SubscriptionResponse:
+    sources = row[3] if isinstance(row[3], list) else []
+    return SubscriptionResponse(
+        email=row[0],
+        name=row[1],
+        is_active=row[2],
+        sources=sources,
+        frequency=row[4] or "daily",
+        timezone=row[5] or "Asia/Shanghai",
+    )
+
+
+def _fetch_active_source_names() -> list[str]:
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT source_name
+            FROM public.source_registry
+            WHERE is_active = TRUE
+            ORDER BY priority ASC, source_name ASC
+            """
+        )
+        rows = cur.fetchall()
+        cur.close()
+        names = [r[0] for r in rows if r and r[0]]
+        if names:
+            return names
+        return DEFAULT_SUBSCRIPTION_SOURCES.copy()
+    except Exception:
+        return DEFAULT_SUBSCRIPTION_SOURCES.copy()
+    finally:
+        put_conn(conn)
+
+
 # ---------------------------------------------------------------------------
 # Routes — Token 管理
 # ---------------------------------------------------------------------------
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/subscription-options")
+def get_subscription_options():
+    return {
+        "sources": _fetch_active_source_names(),
+        "frequencies": SUBSCRIPTION_FREQUENCIES,
+        "default_timezone": "Asia/Shanghai",
+    }
+
+
+@app.get("/subscriptions", response_model=SubscriptionResponse)
+def get_subscription(email: EmailStr):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT email, name, is_active, source_preferences, frequency, timezone
+            FROM subscribers
+            WHERE email = %s
+            LIMIT 1
+            """,
+            (email,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        if not row:
+            raise HTTPException(status_code=404, detail="subscription_not_found")
+        return _row_to_subscription(row)
+    finally:
+        put_conn(conn)
+
+
+@app.post("/subscriptions", response_model=SubscriptionResponse)
+def subscribe_daily_brief(body: SubscriptionRequest):
+    sources = _normalize_sources(body.sources)
+    frequency = body.frequency.lower()
+    if frequency not in SUBSCRIPTION_FREQUENCIES:
+        raise HTTPException(status_code=400, detail="invalid_frequency")
+
+    timezone = body.timezone.strip() if body.timezone else "Asia/Shanghai"
+    if len(timezone) > 50:
+        raise HTTPException(status_code=400, detail="invalid_timezone")
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO subscribers (
+                email, name, is_active, source_preferences, frequency, timezone, updated_at
+            )
+            VALUES (%s, %s, TRUE, %s, %s, %s, NOW())
+            ON CONFLICT (email) DO UPDATE
+            SET
+                name = COALESCE(EXCLUDED.name, subscribers.name),
+                is_active = TRUE,
+                source_preferences = EXCLUDED.source_preferences,
+                frequency = EXCLUDED.frequency,
+                timezone = EXCLUDED.timezone,
+                updated_at = NOW()
+            RETURNING email, name, is_active, source_preferences, frequency, timezone
+            """,
+            (
+                body.email,
+                body.name.strip()[:50] if body.name else None,
+                Json(sources),
+                frequency,
+                timezone,
+            ),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        return _row_to_subscription(row)
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"订阅保存失败: {e}")
+        raise HTTPException(status_code=500, detail="subscription_save_failed")
+    finally:
+        put_conn(conn)
+
+
+@app.post("/subscriptions/unsubscribe")
+def unsubscribe_daily_brief(body: UnsubscribeRequest):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE subscribers
+            SET is_active = FALSE, updated_at = NOW()
+            WHERE email = %s
+            RETURNING id
+            """,
+            (body.email,),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        if not row:
+            raise HTTPException(status_code=404, detail="subscription_not_found")
+        return {"message": "unsubscribed"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"退订失败: {e}")
+        raise HTTPException(status_code=500, detail="subscription_unsubscribe_failed")
+    finally:
+        put_conn(conn)
 
 
 @app.post("/request-access")
@@ -299,3 +494,4 @@ async def chat(
     except Exception as e:
         logger.error(f"[{token_info['email']}] 处理失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import timedelta
 from typing import Any
 
 import requests
@@ -17,6 +18,147 @@ except ImportError:  # package-style import fallback
 
 JINA_EMBED_URL = "https://api.jina.ai/v1/embeddings"
 JINA_MODEL = "jina-embeddings-v3"
+
+DEFAULT_LANDSCAPE_ENTITIES = [
+    "OpenAI",
+    "Anthropic",
+    "Google",
+    "Microsoft",
+    "Meta",
+    "Amazon",
+    "Apple",
+    "NVIDIA",
+    "Tesla",
+    "TSMC",
+    "Intel",
+    "AMD",
+    "CrowdStrike",
+    "Palo Alto Networks",
+    "Cloudflare",
+    "Cisco",
+]
+
+LANDSCAPE_ENTITY_ALIASES = {
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "google": "Google",
+    "谷歌": "Google",
+    "microsoft": "Microsoft",
+    "微软": "Microsoft",
+    "meta": "Meta",
+    "amazon": "Amazon",
+    "aws": "Amazon",
+    "亚马逊": "Amazon",
+    "nvidia": "NVIDIA",
+    "英伟达": "NVIDIA",
+    "apple": "Apple",
+    "苹果": "Apple",
+    "tesla": "Tesla",
+    "特斯拉": "Tesla",
+    "tsmc": "TSMC",
+    "台积电": "TSMC",
+    "intel": "Intel",
+    "英特尔": "Intel",
+    "amd": "AMD",
+    "crowdstrike": "CrowdStrike",
+    "palo alto": "Palo Alto Networks",
+    "palo alto networks": "Palo Alto Networks",
+    "cloudflare": "Cloudflare",
+    "cisco": "Cisco",
+    "xai": "xAI",
+    "x.ai": "xAI",
+}
+
+LANDSCAPE_SIGNAL_KEYWORDS = {
+    "compute_cost": [
+        "gpu",
+        "tpu",
+        "chip",
+        "semiconductor",
+        "datacenter",
+        "data center",
+        "server",
+        "compute",
+        "training cost",
+        "inference cost",
+        "capex",
+        "算力",
+        "芯片",
+        "电力",
+        "能耗",
+    ],
+    "algorithm_efficiency": [
+        "model",
+        "benchmark",
+        "reasoning",
+        "architecture",
+        "transformer",
+        "agent",
+        "inference",
+        "算法",
+        "模型",
+        "推理",
+        "架构",
+        "蒸馏",
+        "微调",
+    ],
+    "data_moat": [
+        "dataset",
+        "data",
+        "corpus",
+        "licensing",
+        "proprietary",
+        "copyright",
+        "privacy",
+        "数据",
+        "语料",
+        "授权",
+        "版权",
+        "隐私",
+    ],
+    "go_to_market": [
+        "enterprise",
+        "customer",
+        "pricing",
+        "revenue",
+        "subscription",
+        "partnership",
+        "adoption",
+        "sales",
+        "商业化",
+        "客户",
+        "定价",
+        "收入",
+        "订阅",
+        "合作",
+        "落地",
+    ],
+    "policy_security": [
+        "regulation",
+        "compliance",
+        "antitrust",
+        "lawsuit",
+        "security",
+        "breach",
+        "vulnerability",
+        "policy",
+        "military",
+        "监管",
+        "合规",
+        "诉讼",
+        "安全",
+        "漏洞",
+        "军方",
+    ],
+}
+
+LANDSCAPE_SIGNAL_LABELS = {
+    "compute_cost": "Compute/Cost",
+    "algorithm_efficiency": "Algorithm/Efficiency",
+    "data_moat": "Data/Moat",
+    "go_to_market": "Go-to-Market",
+    "policy_security": "Policy/Security",
+}
 
 
 def _clamp_int(value: int, minimum: int, maximum: int) -> int:
@@ -37,7 +179,8 @@ def _source_to_db_label(source: str) -> str | None:
         return "TechCrunch"
     if norm in {"all", "*"}:
         return None
-    return None
+    # Allow direct filtering by any source name in view_dashboard_news.source_type.
+    return source.strip()
 
 
 def _split_urls(urls: str) -> list[str]:
@@ -60,6 +203,43 @@ def _split_urls(urls: str) -> list[str]:
 def _is_probable_url(text: str) -> bool:
     t = text.strip().lower()
     return t.startswith("http://") or t.startswith("https://")
+
+
+def _normalize_landscape_entities(entities: str | list[str] | None) -> list[str]:
+    raw_items: list[str] = []
+    if isinstance(entities, str):
+        raw_items = [x.strip() for x in re.split(r"[,\n;/|，、]+", entities) if x.strip()]
+    elif isinstance(entities, list):
+        raw_items = [str(x).strip() for x in entities if str(x).strip()]
+
+    if not raw_items:
+        return list(DEFAULT_LANDSCAPE_ENTITIES)
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in raw_items:
+        alias_key = item.strip().lower()
+        name = LANDSCAPE_ENTITY_ALIASES.get(alias_key, item.strip())
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(name)
+
+    if not normalized:
+        return list(DEFAULT_LANDSCAPE_ENTITIES)
+    return normalized[:12]
+
+
+def _landscape_signal_counts(rows: list[tuple]) -> dict[str, int]:
+    """Keyword-proxy variable counts from (headline + summary) rows."""
+    counts = {k: 0 for k in LANDSCAPE_SIGNAL_KEYWORDS.keys()}
+    for _, _, headline, summary, _ in rows:
+        text = f"{headline or ''} {summary or ''}".lower()
+        for key, tokens in LANDSCAPE_SIGNAL_KEYWORDS.items():
+            if any(token in text for token in tokens):
+                counts[key] += 1
+    return counts
 
 
 def _get_query_embedding(query: str) -> list[float] | None:
@@ -322,7 +502,7 @@ def query_news(
         params.extend([q, q, q])
 
     if source_label:
-        where_parts.append("source_type = %s")
+        where_parts.append("LOWER(COALESCE(source_type,'')) = LOWER(%s)")
         params.append(source_label)
 
     if category.strip():
@@ -530,6 +710,8 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
     topic_a = topic_a.strip()
     topic_b = topic_b.strip()
     days = _clamp_int(days, 1, 90)
+    split_days = max(3, days // 2)
+    prev_days = max(1, days - split_days)
     qa = f"%{topic_a}%"
     qb = f"%{topic_b}%"
 
@@ -566,6 +748,55 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
             (qa, qa, qa, qb, qb, qb, f"{days} days"),
         )
         metric_rows = cur.fetchall()
+
+        cur.execute(
+            """
+            WITH labeled AS (
+                SELECT
+                    CASE
+                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'A'
+                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'B'
+                        ELSE NULL
+                    END AS grp,
+                    source_type
+                FROM view_dashboard_news
+                WHERE created_at >= NOW() - %s::interval
+            )
+            SELECT grp, source_type, COUNT(*) AS cnt
+            FROM labeled
+            WHERE grp IS NOT NULL
+            GROUP BY grp, source_type
+            ORDER BY grp, cnt DESC, source_type ASC
+            """,
+            (qa, qa, qa, qb, qb, qb, f"{days} days"),
+        )
+        source_rows = cur.fetchall()
+
+        cur.execute(
+            """
+            WITH labeled AS (
+                SELECT
+                    CASE
+                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'A'
+                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'B'
+                        ELSE NULL
+                    END AS grp,
+                    created_at
+                FROM tech_news
+                WHERE created_at >= NOW() - %s::interval
+            )
+            SELECT
+                grp,
+                COUNT(*) FILTER (WHERE created_at >= NOW() - %s::interval) AS recent_cnt,
+                COUNT(*) FILTER (WHERE created_at < NOW() - %s::interval) AS prev_cnt
+            FROM labeled
+            WHERE grp IS NOT NULL
+            GROUP BY grp
+            ORDER BY grp
+            """,
+            (qa, qa, qa, qb, qb, qb, f"{days} days", f"{split_days} days", f"{split_days} days"),
+        )
+        momentum_rows = cur.fetchall()
 
         cur.execute(
             """
@@ -611,6 +842,15 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
         for row in metric_rows:
             metric_map[row[0]] = row
 
+        source_map: dict[str, dict[str, int]] = {"A": {}, "B": {}}
+        for grp, source_type, cnt in source_rows:
+            bucket = source_map.setdefault(grp, {})
+            bucket[source_type] = int(cnt)
+
+        momentum_map: dict[str, tuple[int, int]] = {"A": (0, 0), "B": (0, 0)}
+        for grp, recent_cnt, prev_cnt in momentum_rows:
+            momentum_map[grp] = (int(recent_cnt or 0), int(prev_cnt or 0))
+
         def fmt(name: str, row: tuple | None) -> str:
             if not row:
                 return f"{name}: count=0, avg_points=0, sentiment(P/N/Ng)=0/0/0"
@@ -620,6 +860,29 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
         lines = [f"Topic comparison: {topic_a} vs {topic_b} (last {days} days)", "Stats:"]
         lines.append("  " + fmt(topic_a, metric_map["A"]))
         lines.append("  " + fmt(topic_b, metric_map["B"]))
+        lines.append(f"Time split: recent={split_days}d, previous={prev_days}d")
+        lines.append("Momentum:")
+        for grp, label in (("A", topic_a), ("B", topic_b)):
+            recent_cnt, prev_cnt = momentum_map.get(grp, (0, 0))
+            if prev_cnt == 0:
+                delta_text = "+new" if recent_cnt > 0 else "0.0%"
+            else:
+                delta_text = f"{((float(recent_cnt) - float(prev_cnt)) / float(prev_cnt)) * 100:+.1f}%"
+            lines.append(
+                f"  {label}: recent={recent_cnt}, previous={prev_cnt}, delta={delta_text}"
+            )
+        lines.append("Source mix:")
+        for grp, label in (("A", topic_a), ("B", topic_b)):
+            source_bucket = source_map.get(grp, {})
+            total_cnt = metric_map[grp][1] if metric_map.get(grp) else 0
+            if not source_bucket:
+                lines.append(f"  {label}: no source records")
+                continue
+            mix_parts: list[str] = []
+            for source_type, source_cnt in sorted(source_bucket.items(), key=lambda x: (-x[1], x[0])):
+                source_share = (float(source_cnt) / float(total_cnt)) * 100 if total_cnt else 0.0
+                mix_parts.append(f"{source_type}={source_cnt}({source_share:.1f}%)")
+            lines.append(f"  {label}: " + ", ".join(mix_parts))
         lines.append("Evidence URLs:")
         for grp, source_type, headline, url, points, created_at, rn in top_rows:
             label = topic_a if grp == "A" else topic_b
@@ -644,6 +907,283 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
     finally:
         if conn is not None:
             put_conn(conn)
+
+
+def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit_per_entity: int = 3) -> str:
+    """Cross-domain landscape snapshot with entity stats and evidence URLs."""
+    topic = (topic or "").strip()
+    topic_label = topic or "all"
+    print(
+        f"\n[Tool] analyze_landscape: topic={topic_label}, days={days}, "
+        f"entities={entities or 'default'}, limit_per_entity={limit_per_entity}"
+    )
+    days = _clamp_int(days, 7, 180)
+    limit_per_entity = _clamp_int(limit_per_entity, 1, 5)
+    entity_list = _normalize_landscape_entities(entities)
+
+    values_sql = ", ".join(["(%s, %s)"] * len(entity_list))
+    params_entities: list[Any] = []
+    for name in entity_list:
+        params_entities.extend([name, f"%{name}%"])
+
+    topic_where_sql = ""
+    topic_params: list[Any] = []
+    if topic:
+        topic_like = f"%{topic}%"
+        topic_where_sql = (
+            "AND ("
+            "v.title ILIKE %s "
+            "OR COALESCE(v.title_cn, '') ILIKE %s "
+            "OR COALESCE(v.summary, '') ILIKE %s"
+            ")"
+        )
+        topic_params = [topic_like, topic_like, topic_like]
+
+    cte = f"""
+        WITH entities(canonical, pattern) AS (
+            VALUES {values_sql}
+        ),
+        matched AS (
+            SELECT
+                e.canonical AS entity,
+                v.source_type,
+                COALESCE(v.title_cn, v.title) AS headline,
+                COALESCE(v.summary, '') AS summary,
+                v.url,
+                v.points,
+                v.sentiment,
+                v.created_at
+            FROM view_dashboard_news v
+            JOIN entities e
+              ON (
+                  v.title ILIKE e.pattern
+                  OR COALESCE(v.title_cn, '') ILIKE e.pattern
+                  OR COALESCE(v.summary, '') ILIKE e.pattern
+              )
+            WHERE v.created_at >= NOW() - %s::interval
+              {topic_where_sql}
+        )
+    """
+
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT NOW()")
+        db_now = cur.fetchone()[0]
+
+        cur.execute(
+            cte
+            + """
+            SELECT
+                entity,
+                COUNT(*) AS cnt,
+                ROUND(AVG(points)::numeric, 1) AS avg_points,
+                COUNT(*) FILTER (WHERE sentiment = 'Positive') AS pos_cnt,
+                COUNT(*) FILTER (WHERE sentiment = 'Neutral')  AS neu_cnt,
+                COUNT(*) FILTER (WHERE sentiment = 'Negative') AS neg_cnt
+            FROM matched
+            GROUP BY entity
+            ORDER BY cnt DESC, entity ASC
+            """,
+            tuple(params_entities + [f"{days} days"] + topic_params),
+        )
+        stats_rows = cur.fetchall()
+
+        cur.execute(
+            cte
+            + """
+            SELECT COUNT(*) AS total_cnt, COUNT(DISTINCT entity) AS active_entities
+            FROM matched
+            """,
+            tuple(params_entities + [f"{days} days"] + topic_params),
+        )
+        total_cnt, active_entities = cur.fetchone()
+
+        topic_scope_sql = """
+            SELECT COUNT(*) AS topic_articles
+            FROM view_dashboard_news v
+            WHERE v.created_at >= NOW() - %s::interval
+        """
+        topic_scope_params: list[Any] = [f"{days} days"]
+        if topic:
+            topic_like = f"%{topic}%"
+            topic_scope_sql += (
+                " AND ("
+                "v.title ILIKE %s "
+                "OR COALESCE(v.title_cn, '') ILIKE %s "
+                "OR COALESCE(v.summary, '') ILIKE %s"
+                ")"
+            )
+            topic_scope_params.extend([topic_like, topic_like, topic_like])
+        cur.execute(topic_scope_sql, tuple(topic_scope_params))
+        topic_articles = int(cur.fetchone()[0] or 0)
+
+        cur.execute(
+            cte
+            + """
+            , ranked AS (
+                SELECT
+                    entity,
+                    source_type,
+                    headline,
+                    url,
+                    points,
+                    created_at,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY entity
+                        ORDER BY points DESC NULLS LAST, created_at DESC
+                    ) AS rn
+                FROM matched
+            )
+            SELECT entity, source_type, headline, url, points, created_at, rn
+            FROM ranked
+            WHERE rn <= %s
+            ORDER BY entity, rn
+            """,
+            tuple(params_entities + [f"{days} days"] + topic_params + [limit_per_entity]),
+        )
+        top_rows = cur.fetchall()
+
+        cur.execute(
+            cte
+            + """
+            SELECT entity, source_type, headline, summary, created_at
+            FROM matched
+            """,
+            tuple(params_entities + [f"{days} days"] + topic_params),
+        )
+        sample_rows = cur.fetchall()
+        cur.close()
+
+        if not total_cnt:
+            if topic_articles > 0:
+                return (
+                    f"Topic '{topic_label}' has {topic_articles} articles in the last {days} days, "
+                    f"but no tracked entities matched. Try passing explicit entities."
+                )
+            return (
+                f"No landscape data in the last {days} days for entities: "
+                f"{', '.join(entity_list)}."
+            )
+
+        stat_map: dict[str, tuple[int, Any, int, int, int]] = {}
+        for entity, cnt, avg_points, pos_cnt, neu_cnt, neg_cnt in stats_rows:
+            stat_map[entity] = (cnt, avg_points, pos_cnt, neu_cnt, neg_cnt)
+
+        split_days = max(3, days // 2)
+        prev_days = max(1, days - split_days)
+        cutoff_ts = db_now - timedelta(days=split_days)
+
+        source_counts: dict[str, int] = {}
+        entity_source_counts: dict[str, dict[str, int]] = {}
+        momentum_map: dict[str, dict[str, int]] = {name: {"recent": 0, "previous": 0} for name in entity_list}
+        for entity, source_type, headline, summary, created_at in sample_rows:
+            source_counts[source_type] = source_counts.get(source_type, 0) + 1
+            per_entity = entity_source_counts.setdefault(entity, {})
+            per_entity[source_type] = per_entity.get(source_type, 0) + 1
+            if entity not in momentum_map:
+                momentum_map[entity] = {"recent": 0, "previous": 0}
+            if created_at and created_at >= cutoff_ts:
+                momentum_map[entity]["recent"] += 1
+            else:
+                momentum_map[entity]["previous"] += 1
+
+        signal_counts = _landscape_signal_counts(sample_rows)
+
+        lines = [
+            f"Landscape snapshot: topic={topic_label} (last {days} days)",
+            f"Entities requested: {', '.join(entity_list)}",
+            (
+                f"Coverage: topic_articles={topic_articles}, matched_entity_articles={total_cnt}, "
+                f"active_entities={active_entities}/{len(entity_list)}"
+            ),
+            f"Time split: recent={split_days}d, previous={prev_days}d",
+            "Source mix:",
+        ]
+
+        if source_counts:
+            for source_type, source_cnt in sorted(source_counts.items(), key=lambda x: (-x[1], x[0])):
+                source_share = (float(source_cnt) / float(total_cnt)) * 100 if total_cnt else 0.0
+                lines.append(f"  {source_type}: count={source_cnt}, share={source_share:.1f}%")
+        else:
+            lines.append("  no source records")
+
+        lines.extend(
+            [
+            "Entity stats:",
+            ]
+        )
+
+        for name in entity_list:
+            recent = momentum_map.get(name, {}).get("recent", 0)
+            previous = momentum_map.get(name, {}).get("previous", 0)
+            if previous == 0:
+                delta_text = "+new" if recent > 0 else "0.0%"
+            else:
+                delta_text = f"{((float(recent) - float(previous)) / float(previous)) * 100:+.1f}%"
+
+            if name not in stat_map:
+                lines.append(
+                    f"  {name}: count=0, share=0.0%, avg_points=0, "
+                    f"sentiment(P/N/Ng)=0/0/0, momentum_recent_vs_prev={recent}/{previous} ({delta_text})"
+                )
+                continue
+            cnt, avg_points, pos_cnt, neu_cnt, neg_cnt = stat_map[name]
+            share = (float(cnt) / float(total_cnt)) * 100 if total_cnt else 0.0
+            avg_points_value = float(avg_points) if avg_points is not None else 0.0
+            top_source_note = ""
+            per_entity_source = entity_source_counts.get(name, {})
+            if per_entity_source:
+                top_source, top_source_cnt = max(per_entity_source.items(), key=lambda x: (x[1], x[0]))
+                top_source_share = (float(top_source_cnt) / float(cnt)) * 100 if cnt else 0.0
+                top_source_note = f", top_source={top_source}({top_source_share:.1f}%)"
+            lines.append(
+                f"  {name}: count={cnt}, share={share:.1f}%, avg_points={avg_points_value:.1f}, "
+                f"sentiment(P/N/Ng)={pos_cnt}/{neu_cnt}/{neg_cnt}, "
+                f"momentum_recent_vs_prev={recent}/{previous} ({delta_text}){top_source_note}"
+            )
+
+        lines.append("Variable signals (keyword proxy, headline+summary):")
+        for key, label in LANDSCAPE_SIGNAL_LABELS.items():
+            signal_cnt = int(signal_counts.get(key, 0))
+            signal_share = (float(signal_cnt) / float(total_cnt)) * 100 if total_cnt else 0.0
+            lines.append(f"  {label}: count={signal_cnt}, share={signal_share:.1f}%")
+        lines.append("Signal note: keyword proxy for triage; verify with evidence URLs.")
+
+        lines.append("Evidence URLs:")
+        for entity, source_type, headline, url, points, created_at, rn in top_rows:
+            lines.append(
+                f"  [{entity}] #{rn} [{source_type}] {headline} | points={points} | "
+                f"{created_at.strftime('%Y-%m-%d %H:%M')} | {url}"
+            )
+
+        url_count = len(top_rows)
+        coverage_ratio = (float(total_cnt) / float(topic_articles)) if topic_articles > 0 else 1.0
+        if (
+            active_entities >= min(4, len(entity_list))
+            and total_cnt >= 15
+            and url_count >= 8
+            and coverage_ratio >= 0.4
+        ):
+            confidence = "High"
+        elif active_entities >= 2 and total_cnt >= 4 and url_count >= 2 and coverage_ratio >= 0.15:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+        lines.append(f"Confidence: {confidence}")
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"[Error] analyze_landscape failed: {e}")
+        return f"analyze_landscape failed: {e}"
+    finally:
+        if conn is not None:
+            put_conn(conn)
+
+
+def analyze_ai_landscape(days: int = 30, entities: str = "", limit_per_entity: int = 3) -> str:
+    """Compatibility alias for AI landscape."""
+    return analyze_landscape(topic="AI", days=days, entities=entities, limit_per_entity=limit_per_entity)
 
 
 def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:

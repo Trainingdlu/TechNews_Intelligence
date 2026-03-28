@@ -6,6 +6,8 @@
     <a href="https://dashboard.trainingcqy.com" style="text-decoration:none"><strong>Metabase 演示</strong></a>
     &nbsp;&nbsp; | &nbsp;&nbsp;
     <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>Agent 交互</strong></a>
+    &nbsp;&nbsp; | &nbsp;&nbsp;
+    <a href="https://agent.trainingcqy.com/subscribe.html" style="text-decoration:none"><strong>日报订阅</strong></a>
   </p>
 </div>
 

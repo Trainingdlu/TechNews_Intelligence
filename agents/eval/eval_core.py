@@ -138,6 +138,7 @@ DEFAULT_BASELINE_METRIC_SPECS: list[tuple[str, str]] = [
     ("route_metrics.fallback_rate_langchain", "lower_better"),
     ("route_metrics.langchain_success_rate", "higher_better"),
     ("route_metrics.forced_route_rate", "higher_better"),
+    ("route_metrics.landscape_low_evidence_rate", "lower_better"),
 ]
 
 

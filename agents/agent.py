@@ -1,4 +1,4 @@
-"""Agent runtime abstraction.
+﻿"""Agent runtime abstraction.
 
 Primary runtime: LangChain/LangGraph standard agent loop.
 Fallback runtime: native Gemini SDK (legacy) for compatibility.
@@ -22,6 +22,8 @@ from langgraph.prebuilt import create_react_agent
 try:
     from prompts import SYSTEM_INSTRUCTION
     from tools import (
+        analyze_landscape,
+        analyze_ai_landscape,
         build_timeline,
         compare_topics,
         compare_sources,
@@ -36,6 +38,8 @@ try:
 except ImportError:  # package-style import fallback
     from .prompts import SYSTEM_INSTRUCTION
     from .tools import (
+        analyze_landscape,
+        analyze_ai_landscape,
         build_timeline,
         compare_topics,
         compare_sources,
@@ -122,6 +126,23 @@ def build_timeline_tool(topic: str, days: int = 30, limit: int = 12) -> str:
     return build_timeline(topic=topic, days=days, limit=limit)
 
 
+@tool("analyze_ai_landscape")
+def analyze_ai_landscape_tool(days: int = 30, entities: str = "", limit_per_entity: int = 3) -> str:
+    """Analyze global AI landscape with DB-backed entity stats and evidence URLs."""
+    return analyze_ai_landscape(days=days, entities=entities, limit_per_entity=limit_per_entity)
+
+
+@tool("analyze_landscape")
+def analyze_landscape_tool(
+    topic: str = "",
+    days: int = 30,
+    entities: str = "",
+    limit_per_entity: int = 3,
+) -> str:
+    """Analyze cross-domain landscape with DB-backed entity stats and evidence URLs."""
+    return analyze_landscape(topic=topic, days=days, entities=entities, limit_per_entity=limit_per_entity)
+
+
 @tool("fulltext_batch")
 def fulltext_batch_tool(urls: str, max_chars_per_article: int = 4000) -> str:
     """Batch read multiple article full-text contents by URLs."""
@@ -138,6 +159,8 @@ LANGCHAIN_TOOLS = [
     compare_sources_tool,
     compare_topics_tool,
     build_timeline_tool,
+    analyze_landscape_tool,
+    analyze_ai_landscape_tool,
     fulltext_batch_tool,
 ]
 
@@ -155,6 +178,8 @@ LEGACY_TOOLS = [
     compare_sources,
     compare_topics,
     build_timeline,
+    analyze_landscape,
+    analyze_ai_landscape,
     fulltext_batch,
 ]
 
@@ -205,6 +230,8 @@ _route_metrics: dict[str, int] = {
     "requests_total": 0,
     "compare_forced": 0,
     "timeline_forced": 0,
+    "landscape_forced": 0,
+    "landscape_low_evidence": 0,
     "legacy_direct": 0,
     "langchain_attempts": 0,
     "langchain_success": 0,
@@ -243,6 +270,8 @@ def _emit_route_metrics(route_event: str, force: bool = False) -> None:
     success = snapshot.get("langchain_success", 0)
     compare_forced = snapshot.get("compare_forced", 0)
     timeline_forced = snapshot.get("timeline_forced", 0)
+    landscape_forced = snapshot.get("landscape_forced", 0)
+    landscape_low_evidence = snapshot.get("landscape_low_evidence", 0)
     legacy_direct = snapshot.get("legacy_direct", 0)
 
     should_log = force or (snapshot.get("requests_total", 0) % _metrics_log_every() == 0)
@@ -252,7 +281,8 @@ def _emit_route_metrics(route_event: str, force: bool = False) -> None:
     fallback_rate_total = fallback / total
     fallback_rate_attempt = (fallback / attempts) if attempts else 0.0
     langchain_success_rate = (success / attempts) if attempts else 0.0
-    forced_route_rate = (compare_forced + timeline_forced) / total
+    forced_route_rate = (compare_forced + timeline_forced + landscape_forced) / total
+    landscape_low_evidence_rate = (landscape_low_evidence / landscape_forced) if landscape_forced else 0.0
 
     print(
         "[Metrics] "
@@ -260,6 +290,8 @@ def _emit_route_metrics(route_event: str, force: bool = False) -> None:
         f"total={snapshot.get('requests_total', 0)} "
         f"compare_forced={compare_forced} "
         f"timeline_forced={timeline_forced} "
+        f"landscape_forced={landscape_forced} "
+        f"landscape_low_evidence={landscape_low_evidence} "
         f"legacy_direct={legacy_direct} "
         f"langchain_attempts={attempts} "
         f"langchain_success={success} "
@@ -267,7 +299,8 @@ def _emit_route_metrics(route_event: str, force: bool = False) -> None:
         f"fallback_rate_total={fallback_rate_total:.1%} "
         f"fallback_rate_langchain={fallback_rate_attempt:.1%} "
         f"langchain_success_rate={langchain_success_rate:.1%} "
-        f"forced_route_rate={forced_route_rate:.1%}"
+        f"forced_route_rate={forced_route_rate:.1%} "
+        f"landscape_low_evidence_rate={landscape_low_evidence_rate:.1%}"
     )
 
 
@@ -289,11 +322,16 @@ def get_route_metrics_snapshot() -> dict[str, float]:
     success = int(snapshot.get("langchain_success", 0))
     compare_forced = int(snapshot.get("compare_forced", 0))
     timeline_forced = int(snapshot.get("timeline_forced", 0))
+    landscape_forced = int(snapshot.get("landscape_forced", 0))
+    landscape_low_evidence = int(snapshot.get("landscape_low_evidence", 0))
 
     snapshot["fallback_rate_total"] = fallback / total
     snapshot["fallback_rate_langchain"] = (fallback / attempts) if attempts else 0.0
     snapshot["langchain_success_rate"] = (success / attempts) if attempts else 0.0
-    snapshot["forced_route_rate"] = (compare_forced + timeline_forced) / total
+    snapshot["forced_route_rate"] = (compare_forced + timeline_forced + landscape_forced) / total
+    snapshot["landscape_low_evidence_rate"] = (
+        (landscape_low_evidence / landscape_forced) if landscape_forced else 0.0
+    )
     return snapshot
 
 
@@ -322,19 +360,13 @@ def _count_timeline_items(text: str) -> int:
 
 def _extract_days(text: str, default: int, maximum: int) -> int:
     m = re.search(r"(?:最近|过去|last)?\s*(\d{1,3})\s*(?:天|day|days)", text, flags=re.IGNORECASE)
-    if m:
-        val = int(m.group(1))
-    else:
-        val = default
+    val = int(m.group(1)) if m else default
     return max(1, min(maximum, val))
 
 
 def _extract_limit(text: str, default: int, maximum: int) -> int:
     m = re.search(r"(?:最多|max|limit)\s*[:=]?\s*(\d{1,2})\s*(?:条|items?)?", text, flags=re.IGNORECASE)
-    if m:
-        val = int(m.group(1))
-    else:
-        val = default
+    val = int(m.group(1)) if m else default
     return max(1, min(maximum, val))
 
 
@@ -390,6 +422,124 @@ def _extract_final_text(result: Any) -> str:
     return _coerce_to_text(result)
 
 
+_LANDSCAPE_ENTITY_ALIASES = {
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "google": "Google",
+    "microsoft": "Microsoft",
+    "meta": "Meta",
+    "amazon": "Amazon",
+    "aws": "Amazon",
+    "nvidia": "NVIDIA",
+    "apple": "Apple",
+    "tesla": "Tesla",
+    "tsmc": "TSMC",
+    "intel": "Intel",
+    "amd": "AMD",
+    "crowdstrike": "CrowdStrike",
+    "palo alto": "Palo Alto Networks",
+    "palo alto networks": "Palo Alto Networks",
+    "cloudflare": "Cloudflare",
+    "cisco": "Cisco",
+    "xai": "xAI",
+    "谷歌": "Google",
+    "微软": "Microsoft",
+    "亚马逊": "Amazon",
+    "英伟达": "NVIDIA",
+    "苹果": "Apple",
+    "特斯拉": "Tesla",
+    "台积电": "TSMC",
+    "英特尔": "Intel",
+}
+
+
+_LANDSCAPE_STOP_TOPICS = {
+    "global",
+    "world",
+    "today",
+    "current",
+    "landscape",
+    "ecosystem",
+    "当今",
+    "当前",
+    "全球",
+    "世界",
+    "现在",
+    "目前",
+}
+
+
+def _extract_landscape_topic(text: str, lower: str) -> str:
+    if bool(re.search(r"\bai\b", lower)) or ("人工智能" in text) or ("大模型" in text) or ("llm" in lower):
+        return "AI"
+
+    if any(k in lower for k in ["business", "market", "finance", "commercial"]) or any(
+        k in text for k in ["商业", "金融", "市场", "财经"]
+    ):
+        return "business"
+
+    if any(k in lower for k in ["security", "cybersecurity", "cyber"]) or any(
+        k in text for k in ["安全", "网络安全", "攻防", "威胁"]
+    ):
+        return "security"
+
+    m = re.search(r"([\u4e00-\u9fffA-Za-z][\u4e00-\u9fffA-Za-z0-9 _/-]{1,20})\s*(?:领域|行业|赛道)?\s*(?:格局|版图|生态)", text)
+    if m:
+        candidate = m.group(1).strip().lower()
+        if candidate and candidate not in _LANDSCAPE_STOP_TOPICS:
+            return m.group(1).strip()
+
+    m = re.search(r"(?:landscape|ecosystem)\s*(?:of|for)?\s*([A-Za-z][A-Za-z0-9 _/-]{2,24})", lower)
+    if m:
+        candidate = m.group(1).strip()
+        if candidate and candidate not in _LANDSCAPE_STOP_TOPICS:
+            return candidate
+
+    return ""
+
+
+def _extract_landscape_request(user_message: str) -> tuple[str, int, list[str]] | None:
+    text = (user_message or "").strip()
+    if not text:
+        return None
+
+    lower = text.lower()
+    landscape_keywords = [
+        "格局",
+        "版图",
+        "生态",
+        "生态位",
+        "阵营",
+        "角色",
+        "玩家",
+        "谁主导",
+        "landscape",
+        "ecosystem",
+        "power structure",
+    ]
+    if not any((k in text) or (k in lower) for k in landscape_keywords):
+        return None
+
+    days = _extract_days(text, default=30, maximum=180)
+    topic = _extract_landscape_topic(text, lower)
+
+    entities: list[str] = []
+    seen: set[str] = set()
+    for alias, canonical in _LANDSCAPE_ENTITY_ALIASES.items():
+        if re.fullmatch(r"[A-Za-z0-9. ]+", alias):
+            if not re.search(rf"\b{re.escape(alias)}\b", lower):
+                continue
+        else:
+            if alias not in text:
+                continue
+        key = canonical.lower()
+        if key not in seen:
+            seen.add(key)
+            entities.append(canonical)
+
+    return topic, days, entities
+
+
 def _extract_compare_request(user_message: str) -> tuple[str, str, int] | None:
     text = (user_message or "").strip()
     if not text:
@@ -398,7 +548,6 @@ def _extract_compare_request(user_message: str) -> tuple[str, str, int] | None:
     if not any(k in lower for k in ["对比", "比较", "差异", " vs ", "vs", "versus", " and ", "和", "与"]):
         return None
 
-    # Example: "对比一下 OpenAI 和 Anthropic 最近14天差异"
     topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{2,20})"
     m = re.search(
         rf"(?P<a>{topic_pattern})\s*(?:和|与|vs|VS|Vs|versus|and)\s*(?P<b>{topic_pattern})",
@@ -534,26 +683,46 @@ def _analyze_compare_output(
 ) -> str:
     """Turn DB comparison output into analyst-friendly answer without adding new facts."""
     model = _get_analysis_model()
+    is_cjk = _contains_cjk(user_message)
+    section_hint = (
+        "- 对比结论\n"
+        "- 关键变量（算力/算法/数据）\n"
+        "- 证据\n"
+        "- 工程优化 vs 范式转移\n"
+        "- 未来6-18个月影响\n"
+        "- 事实 / 推断 / 情景（分别列出）"
+        if is_cjk
+        else "- Comparison Conclusions\n"
+        "- Key Variables (compute/algorithm/data)\n"
+        "- Evidence\n"
+        "- Engineering Optimization vs Paradigm Shift\n"
+        "- Next 6-18 Months Implications\n"
+        "- Facts / Inference / Scenarios (separated)"
+    )
     system_prompt = (
         "You are a strict tech-intelligence analyst.\n"
         "You will receive DB comparison output.\n"
         "Rules:\n"
         "1) Use ONLY facts/URLs/numbers that already exist in the provided DB output.\n"
         "2) Do NOT invent any company event, model release, personnel change, or URL.\n"
-        "3) If evidence is weak, explicitly say evidence is insufficient.\n"
-        "4) Reply in the user's language.\n"
-        "5) Structure output with:\n"
-        "   - 对比结论\n"
-        "   - 证据\n"
-        "   - 对决策的影响\n"
-        "6) Keep concise and data-grounded."
+        "3) Every major conclusion must be tied to explicit evidence in the DB output.\n"
+        "4) Decompose major differences into compute/cost, algorithm/efficiency, data/moat when evidence exists.\n"
+        "5) Do not ignore accumulation effects: repeated small deltas can indicate structural change.\n"
+        "6) Explicitly label whether each major change is engineering optimization or paradigm shift.\n"
+        "7) Provide conditional 6-18 month implications; avoid deterministic prophecy.\n"
+        "8) Separate facts vs inference vs scenarios; do not mix them.\n"
+        "9) If evidence is weak or missing for any section, write evidence is insufficient.\n"
+        "10) Reply in the user's language.\n"
+        "11) Keep concise and data-grounded."
     )
     human_prompt = (
         f"User question:\n{user_message}\n\n"
         f"Comparison target: {topic_a} vs {topic_b}, window={days} days\n\n"
         "DB comparison output (ground truth):\n"
         f"{compare_output}\n\n"
-        "Now produce an analysis answer based only on the DB output above."
+        "Now produce an analysis answer based only on the DB output above.\n"
+        "Use this section order:\n"
+        f"{section_hint}"
     )
     result = model.invoke(
         [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
@@ -562,11 +731,11 @@ def _analyze_compare_output(
     return text.strip()
 
 
-def _ensure_compare_evidence(answer: str, compare_output: str, user_message: str) -> str:
-    """Ensure compare answer always includes explicit evidence URL section."""
+def _ensure_evidence_section(answer: str, source_output: str, user_message: str, max_urls: int = 8) -> str:
+    """Ensure answer includes an evidence URL section based on tool output."""
     if not answer:
         return answer
-    source_urls = _extract_urls(compare_output)
+    source_urls = _extract_urls(source_output)
     if not source_urls:
         return answer
 
@@ -577,8 +746,160 @@ def _ensure_compare_evidence(answer: str, compare_output: str, user_message: str
         return answer
 
     header = "## 证据来源" if _contains_cjk(user_message) else "## Evidence Sources"
-    lines = [f"- {u}" for u in source_urls[:6]]
+    lines = [f"- {u}" for u in source_urls[:max_urls]]
     return f"{answer.rstrip()}\n\n{header}\n" + "\n".join(lines)
+
+
+def _ensure_compare_evidence(answer: str, compare_output: str, user_message: str) -> str:
+    """Ensure compare answer always includes explicit evidence URL section."""
+    return _ensure_evidence_section(answer=answer, source_output=compare_output, user_message=user_message, max_urls=6)
+
+
+def _analyze_landscape_output(
+    user_message: str,
+    topic: str,
+    days: int,
+    entities: list[str],
+    landscape_output: str,
+) -> str:
+    """Turn DB landscape output into analyst-friendly answer without adding new facts."""
+    model = _get_analysis_model()
+    entity_text = ", ".join(entities) if entities else "default tracked companies"
+    topic_text = topic or "all"
+    is_cjk = _contains_cjk(user_message)
+    section_hint = (
+        "- 格局结论\n"
+        "- 关键变量与拐点\n"
+        "- 公司角色（基于样本）\n"
+        "- 供需-生态位分析\n"
+        "- 工程优化 vs 范式转移\n"
+        "- 18个月前瞻（条件式）\n"
+        "- 事实 / 推断 / 情景（分别列出）"
+        if is_cjk
+        else "- Landscape Conclusions\n"
+        "- Key Variables and Turning Points\n"
+        "- Company Roles (sample-based)\n"
+        "- Supply-Demand-Ecosystem Analysis\n"
+        "- Engineering Optimization vs Paradigm Shift\n"
+        "- Next 18 Months (conditional)\n"
+        "- Facts / Inference / Scenarios (separated)"
+    )
+    system_prompt = (
+        "You are a strict tech-intelligence analyst.\n"
+        "You will receive DB landscape output.\n"
+        "Rules:\n"
+        "1) Use ONLY facts/URLs/numbers from the provided DB output.\n"
+        "2) Do NOT invent company events, product launches, investments, or URLs.\n"
+        "3) Explain each company role using explicit evidence (count/share/sentiment/heat/momentum/source mix).\n"
+        "4) Identify balance-changing variables and map evidence to compute/cost, algorithm/efficiency, data/moat.\n"
+        "5) Evaluate supply barriers, demand quality, and ecosystem layer (protocol/platform/application) when supported.\n"
+        "6) Use proxy metrics when direct finance is unavailable (pricing trend, API demand, hiring density, CAPEX intensity).\n"
+        "7) Do not ignore accumulation effects: repeated small deltas can signal a coming turning point.\n"
+        "8) Distinguish engineering optimization vs paradigm shift with explicit justification.\n"
+        "9) Add conditional 6-18 month implications grounded in evidence.\n"
+        "10) Separate facts vs inference vs scenarios; do not mix them.\n"
+        "11) If evidence is sparse, say evidence is insufficient and avoid strong claims.\n"
+        "12) Reply in the user's language.\n"
+        "13) Keep concise and data-grounded."
+    )
+    human_prompt = (
+        f"User question:\n{user_message}\n\n"
+        f"Landscape target: topic={topic_text}, entities={entity_text}, window={days} days\n\n"
+        "DB landscape output (ground truth):\n"
+        f"{landscape_output}\n\n"
+        "Now produce an analysis answer based only on the DB output above.\n"
+        "Use this section order:\n"
+        f"{section_hint}"
+    )
+    result = model.invoke(
+        [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
+    )
+    text = _coerce_to_text(getattr(result, "content", result))
+    return text.strip()
+
+
+def _ensure_landscape_evidence(answer: str, landscape_output: str, user_message: str) -> str:
+    """Ensure landscape answer includes explicit evidence URL section."""
+    return _ensure_evidence_section(answer=answer, source_output=landscape_output, user_message=user_message, max_urls=10)
+
+
+def _extract_landscape_coverage(landscape_output: str) -> dict[str, int]:
+    url_count = len(_extract_urls(landscape_output))
+    matched = 0
+    active = 0
+
+    m = re.search(r"matched_entity_articles=(\d+)", landscape_output)
+    if m:
+        matched = int(m.group(1))
+
+    m = re.search(r"active_entities=(\d+)\s*/\s*(\d+)", landscape_output)
+    if m:
+        active = int(m.group(1))
+
+    return {"url_count": url_count, "matched": matched, "active": active}
+
+
+def _landscape_thresholds() -> dict[str, int]:
+    def _env_int(name: str, default: int, minimum: int = 1, maximum: int = 999) -> int:
+        try:
+            value = int(os.getenv(name, str(default)))
+        except Exception:
+            value = default
+        return max(minimum, min(maximum, value))
+
+    return {
+        "min_urls": _env_int("LANDSCAPE_MIN_URLS", 4),
+        "min_matched": _env_int("LANDSCAPE_MIN_MATCHED_ARTICLES", 6),
+        "min_active": _env_int("LANDSCAPE_MIN_ACTIVE_ENTITIES", 2),
+    }
+
+
+def _is_landscape_evidence_sufficient(landscape_output: str) -> bool:
+    cov = _extract_landscape_coverage(landscape_output)
+    th = _landscape_thresholds()
+    return (
+        cov["url_count"] >= th["min_urls"]
+        and cov["matched"] >= th["min_matched"]
+        and cov["active"] >= th["min_active"]
+    )
+
+
+def _format_low_evidence_landscape_response(
+    user_message: str,
+    topic: str,
+    days: int,
+    entities: list[str],
+    raw_landscape: str,
+) -> str:
+    cov = _extract_landscape_coverage(raw_landscape)
+    th = _landscape_thresholds()
+    topic_text = topic or "all"
+    entity_text = ", ".join(entities) if entities else "default entities"
+
+    if _contains_cjk(user_message):
+        return (
+            f"检测到这是格局类问题（topic={topic_text}, window={days}天, entities={entity_text}），"
+            "但当前证据不足，已触发保守降级。\n"
+            f"- URL 数：{cov['url_count']} / 阈值 {th['min_urls']}\n"
+            f"- 命中文章数：{cov['matched']} / 阈值 {th['min_matched']}\n"
+            f"- 活跃实体数：{cov['active']} / 阈值 {th['min_active']}\n"
+            "为避免模型补全，我仅返回数据库事实快照，不输出强结论或角色推断。\n\n"
+            f"{raw_landscape}\n\n"
+            "建议：扩大时间窗口、补充实体列表，或放宽主题关键词后重试。\n"
+            "置信度：低"
+        )
+
+    return (
+        f"Landscape question detected (topic={topic_text}, window={days}d, entities={entity_text}), "
+        "but evidence is insufficient, so conservative fallback is applied.\n"
+        f"- URLs: {cov['url_count']} / threshold {th['min_urls']}\n"
+        f"- Matched articles: {cov['matched']} / threshold {th['min_matched']}\n"
+        f"- Active entities: {cov['active']} / threshold {th['min_active']}\n"
+        "To avoid model fabrication, returning factual DB snapshot only (no strong role inference).\n\n"
+        f"{raw_landscape}\n\n"
+        "Try a wider time window, explicit entities, or a broader topic query.\n"
+        "Confidence: Low"
+    )
 
 
 def _analyze_timeline_output(
@@ -696,7 +1017,7 @@ def generate_response(history: list[dict], user_message: str) -> str:
                 _emit_route_metrics("compare_forced_strict_error", force=True)
                 raise
             _emit_route_metrics("compare_forced_error", force=True)
-            return f"已识别为对比请求，但数据库查询失败：{exc}"
+            return f"Compare request detected, but DB query failed: {exc}"
 
     # Deterministic guardrail: timeline-style queries must use DB timeline tool.
     timeline_req = _extract_timeline_request(user_message)
@@ -745,7 +1066,62 @@ def generate_response(history: list[dict], user_message: str) -> str:
                 _emit_route_metrics("timeline_forced_strict_error", force=True)
                 raise
             _emit_route_metrics("timeline_forced_error", force=True)
-            return f"已识别为时间线请求，但数据库查询失败：{exc}"
+            return f"Timeline request detected, but DB query failed: {exc}"
+
+    # Deterministic guardrail: cross-domain landscape/role questions must use DB landscape tool.
+    landscape_req = _extract_landscape_request(user_message)
+    if landscape_req:
+        _metrics_inc("landscape_forced")
+        topic, days, entities = landscape_req
+        entities_csv = ",".join(entities)
+        try:
+            raw_landscape = analyze_landscape(topic=topic, days=days, entities=entities_csv, limit_per_entity=3)
+            low_landscape = raw_landscape.lower()
+            if (
+                raw_landscape.startswith("analyze_landscape failed:")
+                or raw_landscape.startswith("No landscape data")
+                or "no tracked entities matched" in low_landscape
+            ):
+                _emit_route_metrics("landscape_forced")
+                return raw_landscape
+
+            if not _is_landscape_evidence_sufficient(raw_landscape):
+                _metrics_inc("landscape_low_evidence")
+                result = _format_low_evidence_landscape_response(
+                    user_message=user_message,
+                    topic=topic,
+                    days=days,
+                    entities=entities,
+                    raw_landscape=raw_landscape,
+                )
+                _emit_route_metrics("landscape_forced_low_evidence", force=True)
+                return result
+
+            try:
+                analyzed = _analyze_landscape_output(
+                    user_message=user_message,
+                    topic=topic,
+                    days=days,
+                    entities=entities,
+                    landscape_output=raw_landscape,
+                )
+                if analyzed:
+                    result = _ensure_landscape_evidence(analyzed, raw_landscape, user_message)
+                    _emit_route_metrics("landscape_forced")
+                    return result
+            except Exception as exc:
+                if strict_mode:
+                    _emit_route_metrics("landscape_forced_strict_error", force=True)
+                    raise
+                print(f"[Warn] Landscape analysis synthesis failed; fallback to raw landscape: {exc}")
+            _emit_route_metrics("landscape_forced")
+            return raw_landscape
+        except Exception as exc:
+            if strict_mode:
+                _emit_route_metrics("landscape_forced_strict_error", force=True)
+                raise
+            _emit_route_metrics("landscape_forced_error", force=True)
+            return f"Landscape analysis request detected, but DB query failed: {exc}"
 
     if runtime == "legacy":
         _metrics_inc("legacy_direct")
@@ -789,3 +1165,8 @@ class _SessionChat:
 def create_agent_chat():
     """Create a stateful chat session wrapper for CLI usage."""
     return _SessionChat()
+
+
+
+
+
