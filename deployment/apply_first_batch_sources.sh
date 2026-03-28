@@ -1,29 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Idempotent migration runner for source framework.
+# Idempotent runner for first-batch official sources.
 # Usage:
-#   bash deployment/apply_source_framework_migration.sh
+#   bash deployment/apply_first_batch_sources.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DEPLOY_DIR="${REPO_ROOT}/deployment"
-MIGRATION_SQL="${REPO_ROOT}/sql/infrastructure/source_framework_migration.sql"
-VIEW_SQL="${REPO_ROOT}/sql/infrastructure/view_logic.sql"
-SEED_BATCH1_SQL="${REPO_ROOT}/sql/infrastructure/seed_source_batch1_official.sql"
+SEED_SQL="${REPO_ROOT}/sql/infrastructure/seed_source_batch1_official.sql"
 
-if [[ ! -f "${MIGRATION_SQL}" ]]; then
-  echo "Missing migration SQL: ${MIGRATION_SQL}" >&2
-  exit 1
-fi
-
-if [[ ! -f "${VIEW_SQL}" ]]; then
-  echo "Missing view SQL: ${VIEW_SQL}" >&2
-  exit 1
-fi
-
-if [[ ! -f "${SEED_BATCH1_SQL}" ]]; then
-  echo "Missing first-batch source seed SQL: ${SEED_BATCH1_SQL}" >&2
+if [[ ! -f "${SEED_SQL}" ]]; then
+  echo "Missing seed SQL: ${SEED_SQL}" >&2
   exit 1
 fi
 
@@ -34,7 +22,6 @@ if [[ ! -f ".env" ]]; then
   exit 1
 fi
 
-# Read only required DB vars from .env without executing it.
 read_env_var() {
   local key="$1"
   local file="$2"
@@ -68,16 +55,8 @@ fi
 echo "Starting postgres service if needed..."
 "${COMPOSE_CMD[@]}" up -d postgres >/dev/null
 
-echo "Applying source framework migration..."
-cat "${MIGRATION_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
+echo "Applying first-batch official sources (Google/AWS/Microsoft)..."
+cat "${SEED_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
   psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
 
-echo "Refreshing dashboard view logic..."
-cat "${VIEW_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
-
-echo "Seeding first-batch official sources (Google/AWS/Microsoft)..."
-cat "${SEED_BATCH1_SQL}" | "${COMPOSE_CMD[@]}" exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${POSTGRES_DB}"
-
-echo "Done. Source framework migration + first-batch sources applied successfully."
+echo "Done. First-batch official sources applied successfully."
