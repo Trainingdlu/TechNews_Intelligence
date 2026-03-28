@@ -427,20 +427,38 @@ body {
     justify-content: center;
     line-height: 1;
     font-size: 20px;
-    transform: translateY(0.2px);
+    transform: translateY(0);
     font-variation-settings: "FILL" 0, "wght" 540, "GRAD" 0, "opsz" 20;
     transition: transform var(--transition-fast), font-variation-settings var(--transition-fast);
 }
 
+.primary-btn .btn-label,
+.secondary-btn .btn-label {
+    display: inline-block;
+    line-height: 1;
+    transform: translateY(0);
+    transition: transform var(--transition-fast);
+}
+
 .primary-btn:hover .material-symbols-outlined,
 .secondary-btn:hover .material-symbols-outlined {
-    transform: translateY(0.2px) scale(1.03);
+    transform: translateY(-0.6px) scale(1.03);
     font-variation-settings: "FILL" 1, "wght" 640, "GRAD" 0, "opsz" 20;
+}
+
+.primary-btn:hover .btn-label,
+.secondary-btn:hover .btn-label {
+    transform: translateY(-1.2px);
 }
 
 .primary-btn:active .material-symbols-outlined,
 .secondary-btn:active .material-symbols-outlined {
-    transform: translateY(0.2px) scale(0.98);
+    transform: translateY(-0.2px) scale(0.98);
+}
+
+.primary-btn:active .btn-label,
+.secondary-btn:active .btn-label {
+    transform: translateY(-0.5px);
 }
 
 .secondary-btn {

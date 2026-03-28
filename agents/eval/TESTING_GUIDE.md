@@ -16,6 +16,7 @@
 - `langchain` 主运行时与 fallback 行为
 - compare / timeline / landscape 的强制路由
 - landscape 低证据自动降级逻辑
+- Telegram Bot 输出稳健性（来源引用重建、发送重试、限流与回退）
 - `run_eval.py` 报告与质量门禁
 
 ### 2.2 范围外
@@ -47,6 +48,9 @@
 | `LANDSCAPE_MIN_URLS` | `4` | 格局分析最小 URL 证据阈值 |
 | `LANDSCAPE_MIN_MATCHED_ARTICLES` | `6` | 格局分析最小命中文章数阈值 |
 | `LANDSCAPE_MIN_ACTIVE_ENTITIES` | `2` | 格局分析最小活跃实体数阈值 |
+| `BOT_SEND_RETRY_ATTEMPTS` | `2` | Telegram 发送失败最大重试次数 |
+| `BOT_SEND_RETRY_BASE_SEC` | `0.8` | Telegram 重试指数退避基准秒数 |
+| `BOT_MAX_CITATION_URLS` | `12` | 单条回答最多重建为来源引用的 URL 数 |
 
 ### 4.2 Eval 参数（`agents/eval/run_eval.py`）
 
@@ -62,6 +66,18 @@
 新增门禁参数：
 - `--fail-on-landscape-low-evidence-rate`
 
+### 4.3 测试文件职责矩阵
+
+| 测试文件 | 主要测试内容 | 在系统中的作用 | 失败时通常意味着什么 | 建议排查方向 |
+|---|---|---|---|---|
+| `agents/tests/test_eval_core.py` | `eval_core.py` 的纯函数逻辑：文本归一化、URL 提取去重、稳定性指标聚合、质量门禁判定 | 保证评测指标与门禁结论可信，避免“评测本身有 bug” | 指标计算回归、门禁阈值判断错误、报告统计不可信 | 先看 `eval/eval_core.py` 是否改动，再核对该测试中对应的输入/期望 |
+| `agents/tests/test_agent_route_metrics.py` | `agent.py` 路由与指标快照：LangChain 成功/回退计数、compare/timeline/landscape 强制路由、低证据降级分支 | 保证“走哪条链路”和“统计出来的成功率/回退率”正确 | 路由逻辑被改坏，或 metrics 字段定义变化导致监控失真 | 检查 `agent.py` 的 `_extract_*`、`generate_response`、`_metrics_inc` 与 snapshot 结构 |
+| `agents/tests/test_bot_robustness.py` | `bot.py` 的输出稳健性：URL 处理、`[1][2]` 引用重建、“来源”段重建、HTML 回退、发送重试、限流 `retry_after` | 保证 Telegram 用户可见行为稳定，避免格式错乱/发送失败体验差 | Bot 消息后处理链路回归，或重试/回退行为失效 | 检查 `bot.py` 的 `_send_reply`、`_format_for_telegram`、`_reply_text_with_retry`、`_consume_chat_rate_token` |
+
+说明：
+- 以上测试均属于“快速单元测试”，默认 CI 会全部执行。
+- 这些测试不依赖真实模型调用，适合频繁迭代阶段做高频回归。
+
 ---
 
 ## 5. 标准测试流程
@@ -74,6 +90,19 @@ python -m unittest discover -s agents/tests -p "test_*.py" -v
 通过标准：
 - 所有用例通过
 - 无语法错误 / 导入错误
+
+Bot 关键链路可单独快速回归：
+```bash
+python -m unittest agents.tests.test_bot_robustness -v
+```
+
+该用例覆盖：
+- URL 提取去重与标点裁剪
+- 正文 `[1][2]` 引用重建
+- “来源”段落重建与旧段清理
+- HTML 发送失败回退纯文本
+- Telegram 发送自动重试
+- 频控拦截与 `retry_after` 计算
 
 ### 5.2 稳定性评测
 ```bash
@@ -90,7 +119,7 @@ python agents/eval/run_eval.py \
 - `cases`
 - `quality_gate`
 
-### 5.3 CI 门禁评测
+### 5.3 CI 门禁评测（全量，可选）
 ```bash
 python agents/eval/run_eval.py \
   --runs-per-question 3 \
@@ -104,6 +133,38 @@ python agents/eval/run_eval.py \
 返回码约定：
 - `0`：全部门禁通过
 - 非 `0`：存在门禁失败
+
+### 5.4 GitHub Actions CI（默认）
+CI workflow 文件：`.github/workflows/ci.yml`
+
+执行顺序：
+1. 安装 `agents/requirements.txt`
+2. 运行单测：`python -m unittest discover -s agents/tests -p "test_*.py" -v`
+ 
+说明：
+- 默认 CI **不调用模型**，用于频繁迭代阶段快速反馈。
+- Bot 稳健性测试（`test_bot_robustness.py`）已包含在默认单测中。
+
+### 5.5 GitHub Actions 手动 Eval（调用模型）
+手动 workflow 文件：`.github/workflows/eval-manual.yml`
+
+触发方式：
+1. 打开 GitHub Actions
+2. 选择 `Agent Eval (Manual)`
+3. 点击 `Run workflow`（可选输入 `max_cases`、`runs_per_question`）
+
+该 workflow 执行命令：
+```bash
+python agents/eval/run_eval.py \
+  --dataset agents/eval/questions_default.jsonl \
+  --max-cases <max_cases> \
+  --runs-per-question <runs_per_question> \
+  --output agents/eval/reports/ci_smoke.json
+```
+并上传产物：`agents/eval/reports/ci_smoke.json`
+
+发布前建议：
+- 手动 smoke 通过后，再执行 5.3 的全量门禁评测。
 
 ---
 

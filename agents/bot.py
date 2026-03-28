@@ -416,7 +416,9 @@ async def _reply_text_with_retry(message, text: str, parse_mode: str | None = No
 
 async def _send_reply(message, text: str):
     """尝试以 HTML 模式发送，失败则回退到纯文本。"""
-    urls = _extract_urls(text)[:_max_citation_urls()]
+    base_text = _strip_existing_evidence_section(text)
+    scan_text = base_text if base_text else text
+    urls = _extract_urls(scan_text)[:_max_citation_urls()]
     title_map: dict[str, str] = {}
     if urls:
         try:
@@ -424,9 +426,9 @@ async def _send_reply(message, text: str):
         except Exception as e:
             logger.warning(f"Prepare URL title map failed: {e}")
 
-    render_text = text
+    render_text = base_text if base_text else text
     if urls:
-        body = _strip_existing_evidence_section(text)
+        body = base_text if base_text else text
         body = _apply_inline_citations(body, urls)
         evidence = _build_evidence_section(urls)
         render_text = f"{body}\n\n{evidence}" if body else evidence

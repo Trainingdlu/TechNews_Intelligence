@@ -1,0 +1,50 @@
+name: Agent Eval (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_cases:
+        description: "Smoke case count"
+        required: false
+        default: "3"
+      runs_per_question:
+        description: "Runs per question"
+        required: false
+        default: "1"
+
+jobs:
+  eval-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "agents/requirements.txt"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r agents/requirements.txt
+
+      - name: Run eval smoke (manual only)
+        run: |
+          python agents/eval/run_eval.py \
+            --dataset agents/eval/questions_default.jsonl \
+            --max-cases "${{ github.event.inputs.max_cases }}" \
+            --runs-per-question "${{ github.event.inputs.runs_per_question }}" \
+            --output agents/eval/reports/ci_smoke.json
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-ci-smoke
+          path: agents/eval/reports/ci_smoke.json
+          if-no-files-found: warn
