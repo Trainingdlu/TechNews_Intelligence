@@ -149,10 +149,6 @@
     font-variation-settings: "FILL" 1, "wght" 560, "GRAD" 0, "opsz" 18;
 }
 
-.subscribe-card .auth-link:hover .material-symbols-outlined {
-    transform: translateX(1px) scale(1.06);
-}
-
 .subscribe-card .status-msg:empty {
     display: none;
 }

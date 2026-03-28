@@ -13,7 +13,7 @@
     const loadBtn = document.getElementById("load-btn");
     const unsubscribeBtn = document.getElementById("unsubscribe-btn");
     const statusText = document.getElementById("status-text");
-    const defaultEmailPlaceholder = emailInput.getAttribute("placeholder") || "输入邮箱地址";
+    const defaultEmailPlaceholder = emailInput.getAttribute("placeholder") || "“输入邮箱地址”订阅日报";
 
     function setStatus(text, type) {
         const level = type || "info";

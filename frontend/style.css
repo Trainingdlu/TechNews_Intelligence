@@ -485,11 +485,19 @@ body {
     font-weight: 500;
     padding: 6px 10px;
     border-radius: var(--radius-full);
-    transition: background var(--transition-fast), color var(--transition-fast);
+    transition: background 0.2s, color var(--transition-fast), transform 0.25s;
 }
 
-.auth-link:hover {
-    background: var(--hover-color);
+@media (hover: hover) and (pointer: fine) {
+    .auth-link:hover {
+        background: var(--hover-color);
+        transform: translateX(3px);
+    }
+}
+
+.auth-link:active {
+    background: var(--active-color);
+    transform: translateX(2px) scale(0.9);
 }
 
 .auth-link .material-symbols-outlined {

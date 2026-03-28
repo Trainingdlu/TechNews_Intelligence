@@ -5,6 +5,7 @@ import re
 import asyncio
 import logging
 import time
+from urllib.parse import urlparse, unquote
 
 from dotenv import load_dotenv
 from telegram import Update, BotCommand
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 conversation_histories: dict[int, list[dict]] = {}
 chat_history_limits: dict[int, int] = {}
 chat_request_log: dict[int, list[float]] = {}
+url_title_cache: dict[str, str] = {}
 
 MAX_HISTORY_TURNS = 20  # 保留最近20轮，防止 context 太长
 
@@ -65,6 +67,20 @@ def _auto_delete_seconds() -> int:
         return max(0, int(os.getenv("BOT_AUTO_DELETE_SEC", "30")))
     except Exception:
         return 30
+
+
+def _send_retry_attempts() -> int:
+    try:
+        return max(0, min(5, int(os.getenv("BOT_SEND_RETRY_ATTEMPTS", "2"))))
+    except Exception:
+        return 2
+
+
+def _send_retry_base_delay_sec() -> float:
+    try:
+        return max(0.1, float(os.getenv("BOT_SEND_RETRY_BASE_SEC", "0.8")))
+    except Exception:
+        return 0.8
 
 
 def _consume_chat_rate_token(chat_id: int) -> tuple[bool, int]:
@@ -144,7 +160,107 @@ def _schedule_delete_messages(context: ContextTypes.DEFAULT_TYPE, chat_id: int, 
 import html as html_mod
 
 
-def _render_limited_bold_line(line: str) -> str:
+_URL_PATTERN = re.compile(r"https?://[^\s<>\]\)}`]+")
+
+
+def _extract_urls(text: str) -> list[str]:
+    seen: set[str] = set()
+    urls: list[str] = []
+    for m in _URL_PATTERN.finditer(text or ""):
+        u = (m.group(0) or "").strip().rstrip(".,;:!?")
+        if not u or u in seen:
+            continue
+        seen.add(u)
+        urls.append(u)
+    return urls
+
+
+def _fallback_title_from_url(url: str) -> str:
+    try:
+        p = urlparse(url)
+        host = (p.netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = (p.path or "").strip("/")
+        if not path:
+            return host or url
+        tail = unquote(path.split("/")[-1]).strip()
+        tail = re.sub(r"\.(html?|php)$", "", tail, flags=re.IGNORECASE)
+        tail = re.sub(r"[-_]+", " ", tail).strip()
+        if not tail:
+            return host or url
+        if len(tail) > 80:
+            tail = tail[:77] + "..."
+        return tail
+    except Exception:
+        return url
+
+
+def _lookup_url_titles(urls: list[str]) -> dict[str, str]:
+    if not urls:
+        return {}
+    unique_urls = list(dict.fromkeys(u for u in urls if u))
+
+    result = {u: url_title_cache[u] for u in unique_urls if u in url_title_cache}
+    missing = [u for u in unique_urls if u not in result]
+    if not missing:
+        return result
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT url, COALESCE(NULLIF(title_cn, ''), NULLIF(title, ''), '')
+            FROM tech_news
+            WHERE url = ANY(%s)
+            """,
+            (missing,),
+        )
+        rows = cur.fetchall()
+        cur.close()
+        for row in rows:
+            u = str(row[0] or "")
+            title = str(row[1] or "").strip()
+            if u and title:
+                result[u] = title
+                url_title_cache[u] = title
+    except Exception as e:
+        logger.warning(f"URL title lookup failed: {e}")
+    finally:
+        put_conn(conn)
+
+    for u in unique_urls:
+        if u not in result:
+            result[u] = _fallback_title_from_url(u)
+    return result
+
+
+def _escape_and_linkify(text: str, url_title_map: dict[str, str]) -> str:
+    if not text:
+        return ""
+    out: list[str] = []
+    cursor = 0
+    for m in _URL_PATTERN.finditer(text):
+        matched = (m.group(0) or "").strip()
+        raw = matched.rstrip(".,;:!?")
+        if not raw:
+            continue
+        suffix = matched[len(raw):]
+        start, end = m.span()
+        out.append(html_mod.escape(text[cursor:start]))
+        title = (url_title_map.get(raw) or _fallback_title_from_url(raw)).strip() or raw
+        safe_url = html_mod.escape(raw, quote=True)
+        safe_title = html_mod.escape(title)
+        out.append(f'<a href="{safe_url}">{safe_title}</a>')
+        if suffix:
+            out.append(html_mod.escape(suffix))
+        cursor = end
+    out.append(html_mod.escape(text[cursor:]))
+    return "".join(out)
+
+
+def _render_limited_bold_line(line: str, url_title_map: dict[str, str]) -> str:
     """Keep bold only for short segment-summary labels, plain text otherwise.
 
     Supported bold patterns:
