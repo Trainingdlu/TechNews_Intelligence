@@ -476,7 +476,19 @@ def _format_landscape_no_data_response(
     topic_text = topic or "全局"
     entity_text = ", ".join(entities) if entities else "默认实体集合"
     raw_text = (raw_landscape or "").strip()
+    is_tool_error = raw_text.lower().startswith("analyze_landscape failed:")
     if _contains_cjk(user_message):
+        if is_tool_error:
+            return (
+                f"当前无法在最近 {days} 天内为“{topic_text}”生成稳定的格局分析（实体范围：{entity_text}）。\n"
+                "这次是工具执行错误，不是样本不足导致。\n\n"
+                f"数据库返回：{raw_text}\n\n"
+                "建议：\n"
+                "- 先修复工具时间戳比较/时区处理\n"
+                "- 修复后再重试同一问题验证\n"
+                "- 若仍无结果，再考虑扩大窗口或补充实体\n"
+                "置信度：低"
+            )
         return (
             f"当前无法在最近 {days} 天内为“{topic_text}”生成稳定的格局分析（实体范围：{entity_text}）。\n"
             "这通常意味着样本不足或主题与已入库新闻匹配度较低。\n\n"
@@ -486,6 +498,18 @@ def _format_landscape_no_data_response(
             "- 明确实体（例如 OpenAI, Google, Microsoft）\n"
             "- 使用更宽主题（例如“科技格局”而非过窄关键词）\n"
             "置信度：低"
+        )
+    if is_tool_error:
+        return (
+            f"Unable to produce a stable landscape answer for topic='{topic or 'all'}' "
+            f"in the last {days} days (entities: {entity_text}).\n"
+            "This is a tool execution failure (not a sparse-data issue).\n\n"
+            f"DB output: {raw_text}\n\n"
+            "Try:\n"
+            "- fix timestamp/timezone comparison in the landscape tool\n"
+            "- retry the same query after the fix\n"
+            "- only then broaden window/entities if needed.\n"
+            "Confidence: Low"
         )
     return (
         f"Unable to produce a stable landscape answer for topic='{topic or 'all'}' "

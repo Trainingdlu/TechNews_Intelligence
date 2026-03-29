@@ -689,6 +689,18 @@ _LANDSCAPE_STOP_TOPICS = {
 def normalize_landscape_topic_candidate(raw: str) -> str:
     candidate = re.sub(r"\s+", " ", (raw or "").strip()).strip("：:，,。. ")
     candidate = re.sub(r"^(?:当今|当前|目前|全球|世界|现在|如今)+", "", candidate).strip("的之 ")
+    candidate = re.sub(
+        rf"^(?:最近|过去|近|last|recent|past)\s*(?:{_DURATION_NUMBER_PATTERN})?\s*(?:{_DURATION_UNIT_PATTERN})?\s*",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    ).strip("的之 ")
+    candidate = re.sub(
+        r"^(?:分析|总结|说说|聊聊|看看|看下|看一下|给我看|给我|帮我|请问|请)\s*",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    ).strip("的之 ")
     return candidate
 
 

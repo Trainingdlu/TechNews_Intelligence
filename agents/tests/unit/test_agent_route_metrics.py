@@ -71,6 +71,22 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertEqual(days, 30)
         self.assertEqual(entities, [])
 
+    def test_extract_landscape_request_recent_window_not_polluting_topic(self) -> None:
+        req = agent_mod._extract_landscape_request("最近30天科技格局")
+        self.assertIsNotNone(req)
+        topic, days, entities = req
+        self.assertEqual(topic, "")
+        self.assertEqual(days, 30)
+        self.assertEqual(entities, [])
+
+    def test_extract_landscape_request_week_window_kept_with_broad_topic(self) -> None:
+        req = agent_mod._extract_landscape_request("最近一周科技格局")
+        self.assertIsNotNone(req)
+        topic, days, entities = req
+        self.assertEqual(topic, "")
+        self.assertEqual(days, 7)
+        self.assertEqual(entities, [])
+
     def test_extract_landscape_request_ai_situation_keyword(self) -> None:
         req = agent_mod._extract_landscape_request("\u5f53\u4eca\u4e16\u754cai\u9886\u57df\u5c40\u52bf\u662f\u4ec0\u4e48")
         self.assertIsNotNone(req)
@@ -772,6 +788,39 @@ class AgentRouteMetricsTests(unittest.TestCase):
             self.assertIn("最近 30 天", out)
             self.assertIn("置信度：低", out)
             self.assertIn("No landscape data", out)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+    def test_generate_response_landscape_tool_error_marks_execution_failure(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: ("AI", 30, [])))
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "analyze_landscape",
+                    lambda **_kwargs: "analyze_landscape failed: can't compare offset-naive and offset-aware datetimes",
+                )
+            )
+
+            out = agent_mod.generate_response([], "分析最近30天ai的局势")
+            self.assertIn("工具执行错误", out)
+            self.assertNotIn("这通常意味着样本不足", out)
+            self.assertIn("can't compare offset-naive and offset-aware datetimes", out)
 
         if old_runtime is None:
             os.environ.pop("AGENT_RUNTIME", None)
