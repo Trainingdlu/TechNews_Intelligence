@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import requests
@@ -315,23 +315,47 @@ def _json_text(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def _to_utc_naive_datetime(value: Any) -> datetime | None:
+    """Normalize timestamp-like values into UTC-naive datetime for safe comparison."""
+    if value is None:
+        return None
+
+    dt: datetime | None = None
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return None
+        # datetime.fromisoformat doesn't accept trailing "Z".
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(raw)
+        except Exception:
+            return None
+    else:
+        return None
+
+    if dt.tzinfo is not None:
+        try:
+            dt = dt.astimezone(timezone.utc)
+        except Exception:
+            pass
+        dt = dt.replace(tzinfo=None)
+    return dt
+
+
 def _is_recent_timestamp(value: Any, cutoff: Any) -> bool:
-    """Compare timestamps safely across naive/aware datetime mixes."""
-    if value is None or cutoff is None:
+    """Compare timestamps safely across naive/aware/string timestamp mixes."""
+    lhs = _to_utc_naive_datetime(value)
+    rhs = _to_utc_naive_datetime(cutoff)
+    if lhs is None or rhs is None:
         return False
     try:
-        return value >= cutoff
-    except TypeError:
-        lhs = value
-        rhs = cutoff
-        if getattr(lhs, "tzinfo", None) is not None:
-            lhs = lhs.replace(tzinfo=None)
-        if getattr(rhs, "tzinfo", None) is not None:
-            rhs = rhs.replace(tzinfo=None)
-        try:
-            return lhs >= rhs
-        except Exception:
-            return False
+        return lhs >= rhs
+    except Exception:
+        return False
 
 
 def lookup_url_titles(urls: list[str]) -> dict[str, str]:
@@ -1282,7 +1306,9 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
         conn = get_conn()
         cur = conn.cursor()
         cur.execute("SELECT NOW()")
-        db_now = cur.fetchone()[0]
+        db_now = _to_utc_naive_datetime(cur.fetchone()[0])
+        if db_now is None:
+            db_now = datetime.now(timezone.utc).replace(tzinfo=None)
 
         cur.execute(
             cte

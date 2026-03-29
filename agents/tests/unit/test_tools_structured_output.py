@@ -47,6 +47,17 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertTrue(tools_mod._is_recent_timestamp(naive_recent, cutoff))
         self.assertFalse(tools_mod._is_recent_timestamp(naive_old, cutoff - timedelta(hours=1)))
 
+    def test_is_recent_timestamp_normalizes_non_utc_offsets(self) -> None:
+        cutoff = datetime(2026, 3, 29, 0, 0, 0)  # naive UTC baseline in tool logic
+        shanghai_tz = timezone(timedelta(hours=8))
+        aware_local = datetime(2026, 3, 29, 7, 30, 0, tzinfo=shanghai_tz)  # UTC: 2026-03-28 23:30
+        self.assertFalse(tools_mod._is_recent_timestamp(aware_local, cutoff))
+
+    def test_is_recent_timestamp_accepts_iso8601_string(self) -> None:
+        cutoff = datetime(2026, 3, 29, 0, 30, 0)
+        iso_value = "2026-03-29T01:00:00Z"
+        self.assertTrue(tools_mod._is_recent_timestamp(iso_value, cutoff))
+
     def test_extract_time_window_days_supports_week_and_month(self) -> None:
         self.assertEqual(tools_mod._extract_time_window_days("最近2周相关全文", default=14), 14)
         self.assertEqual(tools_mod._extract_time_window_days("past 1 month coverage", default=14), 30)
