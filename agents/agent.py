@@ -499,6 +499,9 @@ _GENERIC_ANALYSIS_LEADIN_PATTERNS = (
 )
 _GENERIC_SEPARATOR_RE = re.compile(r"^\s*(?:-{3,}|_{3,}|\*{3,})\s*$")
 _ENTITY_ROW_REF_RE = re.compile(r"\[(?P<entity>[^\]\n]{1,80})\]\s*#(?P<rank>\d{1,2})")
+_PARENTHESIZED_CITATIONS_RE = re.compile(
+    r"[（(]\s*(?P<inner>(?:\[\d{1,3}\]\s*(?:[,，、;；]\s*)?)*)\s*[)）]"
+)
 
 
 def _strip_generic_analysis_leadin(text: str) -> str:
@@ -589,6 +592,18 @@ def _remap_entity_row_refs_to_global_sources(answer: str, source_output: str) ->
         return f"[{index}]"
 
     return _ENTITY_ROW_REF_RE.sub(_replace, body)
+
+
+def _normalize_citation_brackets(text: str) -> str:
+    body = str(text or "")
+    if not body:
+        return body
+
+    def _replace(match: re.Match[str]) -> str:
+        inner = str(match.group("inner") or "").strip()
+        return inner or match.group(0)
+
+    return _PARENTHESIZED_CITATIONS_RE.sub(_replace, body)
 
 
 def _extract_final_text(result: Any) -> str:
@@ -1113,6 +1128,7 @@ def _ensure_grounded_evidence_or_fallback(
             f"{formatted_snapshot}"
         )
     answer = _remap_entity_row_refs_to_global_sources(answer, source_output)
+    answer = _normalize_citation_brackets(answer)
     return _ensure_evidence_section(
         answer=answer,
         source_output=source_output,
@@ -2371,6 +2387,7 @@ def generate_response(history: list[dict], user_message: str) -> str:
     """Public generation entrypoint with agent-side response post-processing."""
     core_text = _generate_response_core(history, user_message)
     core_text = _strip_generic_analysis_leadin(core_text)
+    core_text = _normalize_citation_brackets(core_text)
     final_text, _ = _decorate_response_with_sources(core_text, user_message)
     return final_text
 
@@ -2379,6 +2396,7 @@ def generate_response_payload(history: list[dict], user_message: str) -> dict[st
     """Structured response for transport layers (e.g., Telegram bot)."""
     core_text = _generate_response_core(history, user_message)
     core_text = _strip_generic_analysis_leadin(core_text)
+    core_text = _normalize_citation_brackets(core_text)
     final_text, title_map = _decorate_response_with_sources(core_text, user_message)
     return {
         "text": final_text,

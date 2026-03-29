@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Callable
+from typing import Callable
 
 
 def contains_cjk(text: str) -> bool:
@@ -17,10 +17,10 @@ def extract_urls(text: str) -> list[str]:
     urls = re.findall(r"https?://[^\s)\]]+", text)
     dedup: list[str] = []
     seen: set[str] = set()
-    for u in urls:
-        if u not in seen:
-            dedup.append(u)
-            seen.add(u)
+    for url in urls:
+        if url not in seen:
+            dedup.append(url)
+            seen.add(url)
     return dedup
 
 
@@ -28,6 +28,7 @@ _SOURCE_HEADER_RE = re.compile(
     r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
     re.IGNORECASE,
 )
+_INLINE_CITATION_RE = re.compile(r"\[(\d{1,3})\]")
 
 
 def strip_existing_source_section(text: str) -> str:
@@ -51,10 +52,75 @@ def apply_inline_citations(text: str, ordered_urls: list[str]) -> str:
     return out
 
 
+def max_inline_citation_index(text: str) -> int:
+    maximum = 0
+    for m in _INLINE_CITATION_RE.finditer(text or ""):
+        try:
+            idx = int(m.group(1))
+        except Exception:
+            continue
+        if 1 <= idx <= 200 and idx > maximum:
+            maximum = idx
+    return maximum
+
+
+def citation_indices_in_order(text: str) -> list[int]:
+    ordered: list[int] = []
+    seen: set[int] = set()
+    for m in _INLINE_CITATION_RE.finditer(text or ""):
+        try:
+            idx = int(m.group(1))
+        except Exception:
+            continue
+        if idx < 1 or idx > 200:
+            continue
+        if idx in seen:
+            continue
+        seen.add(idx)
+        ordered.append(idx)
+    return ordered
+
+
+def remap_inline_citations(text: str, index_map: dict[int, int]) -> str:
+    if not index_map:
+        return text
+
+    def _replace(match: re.Match[str]) -> str:
+        try:
+            old = int(match.group(1))
+        except Exception:
+            return match.group(0)
+        new = index_map.get(old)
+        if new is None:
+            return match.group(0)
+        return f"[{new}]"
+
+    return _INLINE_CITATION_RE.sub(_replace, text or "")
+
+
+def compact_citations_and_urls(cited_body: str, ordered_urls: list[str]) -> tuple[str, list[str]]:
+    refs = citation_indices_in_order(cited_body)
+    if not refs:
+        return cited_body, ordered_urls
+
+    compact_urls: list[str] = []
+    index_map: dict[int, int] = {}
+    for old_idx in refs:
+        if 1 <= old_idx <= len(ordered_urls):
+            index_map[old_idx] = len(compact_urls) + 1
+            compact_urls.append(ordered_urls[old_idx - 1])
+
+    if not compact_urls:
+        return cited_body, ordered_urls
+
+    compact_body = remap_inline_citations(cited_body, index_map)
+    return compact_body, compact_urls
+
+
 def max_source_urls() -> int:
     try:
         raw = os.getenv("AGENT_MAX_SOURCE_URLS", os.getenv("BOT_MAX_CITATION_URLS", "12"))
-        return max(1, min(30, int(raw)))
+        return max(1, min(80, int(raw)))
     except Exception:
         return 12
 
@@ -84,7 +150,10 @@ def decorate_response_with_sources(
     if not urls:
         return raw, {}
 
-    ordered_urls = urls[:max_source_urls()]
+    required_urls = max_inline_citation_index(body if body else raw)
+    url_cap = max(max_source_urls(), required_urls)
+    ordered_urls = urls[:url_cap]
+
     title_map: dict[str, str] = {}
     if lookup_url_titles is not None:
         try:
@@ -95,8 +164,10 @@ def decorate_response_with_sources(
 
     render_body = body if body else raw
     cited_body = apply_inline_citations(render_body, ordered_urls)
-    source_section = build_source_section(ordered_urls, user_message)
-    merged = f"{cited_body.rstrip()}\n\n{source_section}".strip()
+    compact_body, compact_urls = compact_citations_and_urls(cited_body, ordered_urls)
+    final_urls = compact_urls if compact_urls else ordered_urls
+    source_section = build_source_section(final_urls, user_message)
+    merged = f"{compact_body.rstrip()}\n\n{source_section}".strip()
     return merged, title_map
 
 
@@ -114,6 +185,7 @@ def ensure_evidence_section(answer: str, source_output: str, user_message: str, 
         return answer
 
     header = "## 证据来源" if contains_cjk(user_message) else "## Evidence Sources"
-    lines = [f"- {u}" for u in source_urls[:max_urls]]
+    required_urls = max_inline_citation_index(answer)
+    effective_max = max(max_urls, required_urls)
+    lines = [f"- {url}" for url in source_urls[:effective_max]]
     return f"{answer.rstrip()}\n\n{header}\n" + "\n".join(lines)
-

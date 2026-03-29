@@ -447,7 +447,7 @@ class AgentRouteMetricsTests(unittest.TestCase):
             "  [Meta] #1 [TechCrunch] B | points=9 | 2026-03-21 10:00 | https://m.com/b\n"
         )
         out = agent_mod._ensure_landscape_evidence(answer, source_output, "最近两周科技格局")
-        self.assertIn("（[1], [2]）。", out)
+        self.assertIn("证据来自[1], [2]。", out)
         self.assertNotIn("[Google] #1", out)
         self.assertNotIn("[Meta] #1", out)
 
@@ -1067,6 +1067,74 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertTrue(str(out).startswith("格局结论"))
         self.assertNotIn("作为一名严格的技术情报分析师", str(out))
         self.assertIn("[1]", str(out))
+
+    def test_generate_response_normalizes_parenthesized_citations(self) -> None:
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "_generate_response_core",
+                    lambda _h, _m: (
+                        "Key points ([1]) and （[2]）。\n\n"
+                        "## Sources\n"
+                        "- https://a.com/u1\n"
+                        "- https://a.com/u2"
+                    ),
+                )
+            )
+            out = agent_mod.generate_response([], "summarize ai landscape")
+
+        self.assertIn("Key points [1] and [2]。", out)
+        self.assertNotIn("([1])", out)
+        self.assertNotIn("（[2]）", out)
+
+    def test_generate_response_keeps_sources_covering_max_citation_index(self) -> None:
+        old_max_urls = os.environ.get("AGENT_MAX_SOURCE_URLS")
+        os.environ["AGENT_MAX_SOURCE_URLS"] = "5"
+        try:
+            source_lines = ["## Sources"]
+            for i in range(1, 13):
+                source_lines.append(f"- https://a.com/u{i}")
+            payload_text = "Conclusion [12]\n\n" + "\n".join(source_lines)
+            with ExitStack() as stack:
+                stack.enter_context(
+                    patch.object(
+                        agent_mod,
+                        "_generate_response_core",
+                        lambda _h, _m: payload_text,
+                    )
+                )
+                out = agent_mod.generate_response([], "summarize ai landscape")
+        finally:
+            if old_max_urls is None:
+                os.environ.pop("AGENT_MAX_SOURCE_URLS", None)
+            else:
+                os.environ["AGENT_MAX_SOURCE_URLS"] = old_max_urls
+
+        self.assertIn("Conclusion [1]", out)
+        self.assertIn("- [1] https://a.com/u12", out)
+
+    def test_generate_response_compacts_sparse_citations_by_reference_order(self) -> None:
+        source_lines = ["## Sources"]
+        for i in range(1, 41):
+            source_lines.append(f"- https://a.com/u{i}")
+        payload_text = "Key evidence [19], [3], [39].\n\n" + "\n".join(source_lines)
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "_generate_response_core",
+                    lambda _h, _m: payload_text,
+                )
+            )
+            out = agent_mod.generate_response([], "summarize ai landscape")
+
+        self.assertIn("Key evidence [1], [2], [3].", out)
+        self.assertIn("- [1] https://a.com/u19", out)
+        self.assertIn("- [2] https://a.com/u3", out)
+        self.assertIn("- [3] https://a.com/u39", out)
+        self.assertNotIn("- [4] https://a.com/u4", out)
 
     def test_generate_response_planner_routes_compare_when_confident(self) -> None:
         old_runtime = os.environ.get("AGENT_RUNTIME")
