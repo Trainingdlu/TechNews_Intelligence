@@ -29,6 +29,10 @@ _SOURCE_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 _INLINE_CITATION_RE = re.compile(r"\[(\d{1,3})\]")
+_INLINE_CITATION_LIST_RE = re.compile(
+    r"\[\d{1,3}\](?:\s*(?:[,，、;；/]|(?:and|or|与|和))\s*\[\d{1,3}\])+",
+    re.IGNORECASE,
+)
 
 
 def strip_existing_source_section(text: str) -> str:
@@ -98,6 +102,58 @@ def remap_inline_citations(text: str, index_map: dict[int, int]) -> str:
     return _INLINE_CITATION_RE.sub(_replace, text or "")
 
 
+def dedupe_redundant_inline_citation_runs(text: str) -> str:
+    body = text or ""
+    if not body:
+        return body
+
+    def _replace(match: re.Match[str]) -> str:
+        segment = match.group(0)
+        refs: list[int] = []
+        for token in _INLINE_CITATION_RE.findall(segment):
+            try:
+                refs.append(int(token))
+            except Exception:
+                continue
+        if not refs:
+            return segment
+
+        unique: list[int] = []
+        seen: set[int] = set()
+        for idx in refs:
+            if idx in seen:
+                continue
+            seen.add(idx)
+            unique.append(idx)
+        if len(unique) == len(refs):
+            return segment
+
+        if "、" in segment:
+            sep = "、"
+        elif "，" in segment:
+            sep = "， "
+        elif "；" in segment:
+            sep = "； "
+        elif ";" in segment:
+            sep = "; "
+        elif "/" in segment:
+            sep = "/"
+        elif re.search(r"\band\b", segment, flags=re.IGNORECASE):
+            sep = " and "
+        elif re.search(r"\bor\b", segment, flags=re.IGNORECASE):
+            sep = " or "
+        elif "和" in segment:
+            sep = " 和 "
+        elif "与" in segment:
+            sep = " 与 "
+        else:
+            sep = ", "
+
+        return sep.join(f"[{idx}]" for idx in unique)
+
+    return _INLINE_CITATION_LIST_RE.sub(_replace, body)
+
+
 def compact_citations_and_urls(cited_body: str, ordered_urls: list[str]) -> tuple[str, list[str]]:
     refs = citation_indices_in_order(cited_body)
     if not refs:
@@ -114,6 +170,7 @@ def compact_citations_and_urls(cited_body: str, ordered_urls: list[str]) -> tupl
         return cited_body, ordered_urls
 
     compact_body = remap_inline_citations(cited_body, index_map)
+    compact_body = dedupe_redundant_inline_citation_runs(compact_body)
     return compact_body, compact_urls
 
 

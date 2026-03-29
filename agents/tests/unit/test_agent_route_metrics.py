@@ -1220,6 +1220,26 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertIn("- [3] https://a.com/u39", out)
         self.assertNotIn("- [4] https://a.com/u4", out)
 
+    def test_generate_response_dedupes_redundant_adjacent_citations(self) -> None:
+        source_lines = ["## Sources"]
+        for i in range(1, 21):
+            source_lines.append(f"- https://a.com/u{i}")
+        payload_text = "Engineering optimization evidence [13], [13].\n\n" + "\n".join(source_lines)
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "_generate_response_core",
+                    lambda _h, _m: payload_text,
+                )
+            )
+            out = agent_mod.generate_response([], "summarize ai landscape")
+
+        self.assertIn("Engineering optimization evidence [1].", out)
+        self.assertNotIn("[1], [1]", out)
+        self.assertIn("- [1] https://a.com/u13", out)
+
     def test_generate_response_planner_routes_compare_when_confident(self) -> None:
         old_runtime = os.environ.get("AGENT_RUNTIME")
         old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
