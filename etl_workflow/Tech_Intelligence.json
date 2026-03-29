@@ -14,10 +14,10 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
       "position": [
-        -1632,
-        -848
+        2240,
+        8176
       ],
-      "id": "584d416d-fcb6-4399-8d69-d5e3d069f4a1",
+      "id": "e87d5a90-f7e7-4556-ba69-3b97293a70ce",
       "name": "Schedule Trigger"
     },
     {
@@ -35,17 +35,17 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const sourceKey = loopNode.item.json.source_key || \"unknown\";\n    const sourceName = loopNode.item.json.source_name || \"unknown\";\n    const sourcePlatform = loopNode.item.json.source_platform || \"unknown\";\n    const signalOrigin = loopNode.item.json.signal_origin || \"unknown\";\n\n    const rawContent = $('Jina_Reader').item.json.data;\n    const sourceNameLower = String(sourceName).toLowerCase();\n    const signalOriginLower = String(signalOrigin).toLowerCase();\n\n    const isHackerNews = sourceKey === 'hackernews_frontpage' || sourceNameLower.includes('hackernews');\n    const isOfficialOrAcademic = signalOriginLower === 'official' || signalOriginLower === 'academic';\n\n    const maxContentChars = isHackerNews ? 22000 : 42000;\n\n    const content = rawContent\n      ? rawContent\n          .replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n          .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n          .replace(/\\\\/g, '/')\n          .slice(0, maxContentChars)\n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    let profile = \"MEDIA\";\n    let profileRules = [\n      \"- Focus on core facts: who did what, key product/release, measurable impact.\",\n      \"- Prefer hard numbers (benchmark/adoption/revenue/cost/latency); if missing write \\u672a\\u62ab\\u9732.\",\n      \"- Keep tone objective and concise, avoid hype.\"\n    ];\n\n    if (isHackerNews) {\n      profile = \"COMMUNITY\";\n      profileRules = [\n        \"- Treat content as community discussion signal, not official announcement.\",\n        \"- Summarize into compact structured insight: \\u6838\\u5fc3\\u8bae\\u9898 / \\u6280\\u672f\\u5206\\u6b67 / \\u53ef\\u884c\\u65b9\\u6848 (only if present).\",\n        \"- Do NOT translate user-by-user comments; synthesize consensus and disagreements.\"\n      ];\n    } else if (isOfficialOrAcademic) {\n      profile = \"OFFICIAL_OR_ACADEMIC\";\n      profileRules = [\n        \"- Use conservative factual style, no marketing wording.\",\n        \"- Sentiment default is Neutral.\",\n        \"- Upgrade to Positive ONLY with explicit measurable evidence (benchmark delta, adoption/users, revenue/ARR, GA in production, cost reduction).\"\n      ];\n    }\n\n    const promptParts = [\n      \"Task: Analyze ONE tech item and return STRICT JSON only.\",\n      \"\",\n      \"SOURCE_CONTEXT:\",\n      \"- source_key: \" + sourceKey,\n      \"- source_name: \" + sourceName,\n      \"- source_platform: \" + sourcePlatform,\n      \"- signal_origin: \" + signalOrigin,\n      \"- profile: \" + profile,\n      \"\",\n      \"OUTPUT_SCHEMA (exactly these keys):\",\n      \"{\\\"translation\\\": \\\"...\\\", \\\"summary\\\": \\\"...\\\", \\\"sentiment\\\": \\\"Positive|Neutral|Negative\\\"}\",\n      \"\",\n      \"GLOBAL_RULES:\",\n      \"- translation format: [Tag] Chinese Title\",\n      \"- allowed tags: [AI], [\\u5b89\\u5168], [\\u786c\\u4ef6], [\\u5f00\\u53d1], [\\u5546\\u4e1a], [\\u751f\\u6001]\",\n      \"- [\\u5b89\\u5168] only for concrete incidents: CVE/0day/exploit/breach/ransomware/fraud/privacy incident\",\n      \"- summary must be Chinese, <= 200 Chinese chars, complete sentence\",\n      \"- if content inaccessible/paywall/403/captcha/too short, set summary EXACTLY to: Analysis failed due to content access issues.\",\n      \"- if summary is the failure flag, sentiment must be Neutral\",\n      \"- return JSON only, no markdown, no extra keys\",\n      \"\",\n      \"PROFILE_RULES:\",\n      ...profileRules,\n      \"\",\n      \"INPUT_HEADLINE:\",\n      title,\n      \"\",\n      \"FULL_CONTENT_START\",\n      content,\n      \"FULL_CONTENT_END\"\n    ];\n\n    const userPrompt = promptParts.join(\"\\n\");\n\n    return JSON.stringify({\n      model: \"qwen3-max-2025-09-23\",\n      max_tokens: 900,\n      messages: [\n        {\n          role: \"system\",\n          content: \"You are a senior tech intelligence analyst. Output strict valid JSON only with keys translation, summary, sentiment. Never output markdown or extra fields.\"\n        },\n        {\n          role: \"user\",\n          content: userPrompt\n        }\n      ],\n      response_format: { type: \"json_object\" }\n    });\n  })()\n}}",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const sourceKey = loopNode.item.json.source_key || \"unknown\";\n    const sourceName = loopNode.item.json.source_name || \"unknown\";\n    const sourcePlatform = loopNode.item.json.source_platform || \"unknown\";\n    const signalOrigin = loopNode.item.json.signal_origin || \"unknown\";\n\n    const rawContent = $('Jina_Reader').item.json.data;\n    const cleaned = rawContent\n      ? rawContent\n          .replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n          .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n          .replace(/\\\\/g, '/')\n          .replace(/\\r/g, '')\n          .trim()\n      : \"\";\n\n    const content = cleaned ? cleaned.slice(0, 22000) : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n    const profile = \"COMMUNITY\";\n    const scenarioHint = \"Prefer scenario B when discussion signal is strong\";\n    const sourceRules = [\n    \"This source is Hacker News frontpage. Prioritize discussion signal extraction over narrative rewriting.\",\n    \"If the URL points to an external article and discussion evidence is weak, use scenario A.\",\n    \"When scenario B is used, lead directly with 核心议题 and include 技术分歧/可行方案 only when present.\",\n    \"Do not use marketing adjectives or emotional wording.\"\n];\n\n    const userPrompt = [\n      \"Analyze this tech content:\",\n      \"\",\n      'HEADLINE: \"' + title + '\"',\n      \"\",\n      \"FULL_CONTENT:\",\n      '\"\"\"',\n      content,\n      '\"\"\"',\n      \"\",\n      \"### GOAL\",\n      \"Output a JSON object with keys: 'translation', 'sentiment', 'summary'.\",\n      \"\",\n      \"### SOURCE CONTEXT\",\n      \"- source_key: \" + sourceKey,\n      \"- source_name: \" + sourceName,\n      \"- source_platform: \" + sourcePlatform,\n      \"- signal_origin: \" + signalOrigin,\n      \"- profile: \" + profile,\n      \"- scenario_hint: \" + scenarioHint,\n      \"\",\n      \"### 1. TRANSLATION RULES\",\n      \"- Format: '[Tag] Chinese Title'\",\n      \"- ALLOWED TAGS: [AI], [\\u5b89\\u5168], [\\u786c\\u4ef6], [\\u5f00\\u53d1], [\\u5546\\u4e1a], [\\u751f\\u6001].\",\n      \"- You MUST choose exactly ONE tag from the allowed list.\",\n      \"- Mapping:\",\n      \"  - [AI]: LLM/SLM models, agents, RAG, papers, datasets, benchmarks.\",\n      \"  - [\\u786c\\u4ef6]: chips, phones/devices, robots, EV, space, energy.\",\n      \"  - [\\u5546\\u4e1a]: funding, earnings, layoffs, IPO, M&A, antitrust.\",\n      \"  - [\\u5f00\\u53d1]: languages/frameworks, cloud ops, engineering tooling.\",\n      \"  - [\\u5b89\\u5168]: CVE, exploit, breach, ransomware, fraud, privacy incident.\",\n      \"  - [\\u751f\\u6001]: law/policy, career, remote work, science context.\",\n      \"- If overlap exists, resolve by core event priority: [AI] > [\\u786c\\u4ef6] > [\\u5546\\u4e1a] > [\\u5b89\\u5168] > [\\u5f00\\u53d1] > [\\u751f\\u6001].\",\n      \"- Style: professional, objective, no clickbait.\",\n      \"\",\n      \"### 2. SUMMARY RULES (Scenario-Based)\",\n      \"CRITICAL JSON FORMATTING: Do NOT use ASCII double quotes (\\\") inside generated text values. Use Chinese quotes (\\u201c\\u201d) when needed.\",\n      \"\",\n      \"SCENARIO A: Standard News (Tech blog / media)\",\n      \"- Extract hard facts only: entities, actions, dates, metrics, availability (GA/preview), and pricing if any.\",\n      \"- Style: cold objective, high information density, complete sentence ending with punctuation.\",\n      \"- Length: max 200 Chinese characters.\",\n      \"\",\n      \"SCENARIO B: Community Discussion (HN-like comments)\",\n      \"- Trigger when content is comment-thread heavy (many usernames/timestamps/replies).\",\n      \"- Synthesize consensus and disagreements; never translate user-by-user comments.\",\n      \"- Prefer in-text labels only when present: \\u6838\\u5fc3\\u8bae\\u9898\\uff1a \\u6280\\u672f\\u5206\\u6b67\\uff1a \\u53ef\\u884c\\u65b9\\u6848\\uff1a\",\n      \"- Length: max 200 Chinese characters.\",\n      \"\",\n      \"SCENARIO C: Content Missing / Paywall / Access Denied\",\n      \"- Trigger when content is too short, or contains Enable JavaScript / 403 Forbidden / Access Denied / captcha / bot-check.\",\n      \"- summary MUST be EXACT English string: Analysis failed due to content access issues.\",\n      \"- Do NOT translate this sentence.\",\n      \"\",\n      \"### 3. SENTIMENT\",\n      \"- Allowed values: Positive, Neutral, Negative.\",\n      \"- Positive: measurable growth or breakthrough; Negative: breach/bug/layoff/major regression; else Neutral.\",\n      \"- If scenario C, sentiment MUST be Neutral.\",\n      \"\",\n      \"### 4. SOURCE-SPECIFIC EXTRA RULES\",\n      ...sourceRules.map((r) => \"- \" + r),\n      \"\",\n      \"### OUTPUT FORMAT\",\n      \"Return STRICT JSON only, exactly these keys: translation, summary, sentiment.\",\n      \"No markdown, no extra keys, no explanation text.\"\n    ].join(\"\\n\");\n\n    return JSON.stringify({\n      model: \"qwen3-max\",\n      max_tokens: 1000,\n      messages: [\n        {\n          role: \"system\",\n          content: \"You are a Senior Tech Intelligence Analyst. Output strict valid JSON only with keys translation, summary, sentiment. Never output markdown or extra fields.\"\n        },\n        {\n          role: \"user\",\n          content: userPrompt\n        }\n      ],\n      response_format: { type: \"json_object\" }\n    });\n  })()\n}}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        592,
-        -1104
+        4704,
+        7696
       ],
-      "id": "83e6b22f-8355-4b9f-b155-d285111296b6",
-      "name": "AI_Processor",
+      "id": "972826b4-7d59-4449-bbfa-13e378fee8f4",
+      "name": "AI_Processor_HN",
       "onError": "continueRegularOutput"
     },
     {
@@ -132,10 +132,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        816,
-        -1104
+        5040,
+        8160
       ],
-      "id": "707ddec1-a111-4834-af46-c21191aaa5d1",
+      "id": "89615d15-ea73-4016-bf9c-8c97b93026b2",
       "name": "Edit Fields"
     },
     {
@@ -146,23 +146,25 @@
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
       "position": [
-        -1408,
-        -944
+        2544,
+        8448
       ],
-      "id": "3824930c-3e30-4ebe-be37-19007cf3e644",
+      "id": "7b3ba0af-9b76-4831-b141-92e71fbe0971",
       "name": "RSS Read",
       "retryOnFail": true,
       "maxTries": 5
     },
     {
-      "parameters": {},
+      "parameters": {
+        "numberInputs": 6
+      },
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.2,
       "position": [
-        -768,
-        -848
+        3216,
+        8096
       ],
-      "id": "43b43f90-a1b2-4834-9968-3889de963b8c",
+      "id": "d614802c-eccf-4235-acfe-b263b47654c1",
       "name": "Merge"
     },
     {
@@ -173,10 +175,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        -1408,
-        -752
+        2544,
+        8624
       ],
-      "id": "931427e3-2317-42fb-8013-0dfc5ba30288",
+      "id": "41aa8306-b4a1-4fd3-9940-f43a3bd6b070",
       "name": "HTTP Request",
       "retryOnFail": true,
       "maxTries": 5
@@ -246,10 +248,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -976,
-        -944
+        2960,
+        8448
       ],
-      "id": "c694297d-66dc-46e3-8f32-f5c7c4c13347",
+      "id": "6a549ab0-55dc-41a8-9e54-af4ee3192538",
       "name": "Edit Fields RSS"
     },
     {
@@ -260,10 +262,10 @@
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
       "position": [
-        -1408,
-        -1040
+        2544,
+        8272
       ],
-      "id": "dc511d7e-18f4-45e8-ac7a-bf21df475fa5",
+      "id": "8f9f0a5b-1a3a-4e9b-881a-87abeee59da4",
       "name": "RSS Read Google AI",
       "retryOnFail": true,
       "maxTries": 5
@@ -333,10 +335,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -976,
-        -1040
+        2960,
+        8272
       ],
-      "id": "70f6bd9e-8a47-4b20-991b-5274950ed57b",
+      "id": "7fd02772-62bd-49bc-a0a1-5c0c785c3811",
       "name": "Edit Fields RSS Google AI"
     },
     {
@@ -347,10 +349,10 @@
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
       "position": [
-        -1408,
-        -1136
+        2544,
+        8096
       ],
-      "id": "95f4e03b-5f9f-4cff-b0ec-f3aeb0abdb13",
+      "id": "65d80245-6ce7-4d43-89a2-dc9c753d0965",
       "name": "RSS Read AWS ML",
       "retryOnFail": true,
       "maxTries": 5
@@ -420,10 +422,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -976,
-        -1136
+        2960,
+        8096
       ],
-      "id": "6cb6fbca-f27e-4747-b9f3-c39d9a8bea11",
+      "id": "dd289a7e-e70c-4172-808b-5afabb74e3ff",
       "name": "Edit Fields RSS AWS ML"
     },
     {
@@ -434,10 +436,10 @@
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.2,
       "position": [
-        -1408,
-        -1232
+        2544,
+        7936
       ],
-      "id": "ce44a243-e6d7-4ecc-b464-2d4eaa9547eb",
+      "id": "38e9bf6e-8e3b-4b48-b2b4-548220ac959c",
       "name": "RSS Read Microsoft AI",
       "retryOnFail": true,
       "maxTries": 5
@@ -507,44 +509,11 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -976,
-        -1232
+        2960,
+        7936
       ],
-      "id": "5b34a5e6-64f8-4f3d-8db1-cc2f2f3eb824",
+      "id": "0067d930-9afb-4fd4-a4cc-c206c78fb9dc",
       "name": "Edit Fields RSS Microsoft AI"
-    },
-    {
-      "parameters": {},
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        -784,
-        -1032
-      ],
-      "id": "fcf1af31-a7f8-43c4-8e5d-8b7b4f3c6eb0",
-      "name": "Merge RSS Sources 1"
-    },
-    {
-      "parameters": {},
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        -592,
-        -1088
-      ],
-      "id": "5392ea6f-13ca-4d52-8596-ccf8f2aac9bc",
-      "name": "Merge RSS Sources 2"
-    },
-    {
-      "parameters": {},
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        -384,
-        -1144
-      ],
-      "id": "40321384-14f8-4b08-b30f-0c98f91fe3a2",
-      "name": "Merge RSS Sources 3"
     },
     {
       "parameters": {
@@ -600,10 +569,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -976,
-        -752
+        2960,
+        8624
       ],
-      "id": "97f93308-acea-493a-87e6-4410055e9cc4",
+      "id": "61d59eab-154a-4584-90cc-4484a71358a6",
       "name": "Edit Fields HTTP"
     },
     {
@@ -614,10 +583,10 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        -528,
-        -848
+        3424,
+        8160
       ],
-      "id": "d8024abf-86cc-4fa6-95e8-d005870394b9",
+      "id": "b321fe84-0911-484e-a310-cdc46f995a96",
       "name": "Loop Over Items"
     },
     {
@@ -645,10 +614,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        144,
-        -1328
+        4048,
+        7616
       ],
-      "id": "80a21eb2-6f6f-4972-afed-28f99fe88110",
+      "id": "bca74d61-6d05-41d0-a7e3-081b7245bfa2",
       "name": "Jina_Reader",
       "onError": "continueRegularOutput"
     },
@@ -674,7 +643,7 @@
             "points": "={{ $json.points }}",
             "title_cn": "={{ $json.title_cn }}",
             "sentiment": "={{ $json.sentiment ? $json.sentiment : 'Neutral' }}",
-            "source_id": "={{ $('Loop Over Items').item.json.id ? String($('Loop Over Items').item.json.id) : null }}",
+            "source_id": "=={{ \n  $('Loop Over Items').item.json.source_key === 'hackernews_frontpage'\n    ? String($('Loop Over Items').item.json.id || null)\n    : null\n}}\n",
             "source_key": "={{ $('Loop Over Items').item.json.source_key || null }}",
             "source_name": "={{ $('Loop Over Items').item.json.source_name || null }}",
             "source_platform": "={{ $('Loop Over Items').item.json.source_platform || null }}",
@@ -827,10 +796,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1264,
-        -832
+        5488,
+        8176
       ],
-      "id": "0cd0c7e5-9266-486e-bfcf-c7f5f95fbfd2",
+      "id": "33e2ae7b-8ec7-4849-a302-219d0a154923",
       "name": "Insert or update rows in a table",
       "credentials": {
         "postgres": {
@@ -848,10 +817,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -304,
-        -1120
+        3648,
+        7904
       ],
-      "id": "514c900e-c2a8-411f-94f3-fdc55505cbb0",
+      "id": "67d3f236-b8f6-48e8-b052-29a30415cbbd",
       "name": "Check_Existence",
       "credentials": {
         "postgres": {
@@ -869,10 +838,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1024,
-        -832
+        4112,
+        8144
       ],
-      "id": "312f2190-2f6c-43eb-92aa-2b789faead68",
+      "id": "406886b1-a171-4522-b9e0-8ff6f8b30db6",
       "name": "Update_Points_Only",
       "credentials": {
         "postgres": {
@@ -912,10 +881,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -80,
-        -1120
+        3872,
+        7904
       ],
-      "id": "ce5b222b-5715-4cec-8ec8-a46d21dc55cf",
+      "id": "ec6577d5-eba4-4dd1-8e5c-15e3789ca118",
       "name": "Check_unique"
     },
     {
@@ -946,10 +915,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        368,
-        -1328
+        4288,
+        7616
       ],
-      "id": "735ef69e-4141-4733-90b7-6cb226e521ea",
+      "id": "ff872a03-5c59-429c-b104-0ff16c231f03",
       "name": "Jina_Check"
     },
     {
@@ -975,10 +944,10 @@
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.3,
       "position": [
-        1696,
-        -1344
+        5968,
+        7200
       ],
-      "id": "37ed930a-5aac-4814-92e1-8dd15a852986",
+      "id": "9ef2aeb5-71d5-41d2-ac00-01552ba83b21",
       "name": "Call 'System_Alert_Service'",
       "onError": "continueRegularOutput"
     },
@@ -1057,10 +1026,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1024,
-        -1104
+        5248,
+        8160
       ],
-      "id": "eeb2a161-4c8e-4cc3-8bec-66a52fe2b011",
+      "id": "dc6ed765-7809-4418-89b9-b00d2ca47884",
       "name": "Data_check"
     },
     {
@@ -1153,10 +1122,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -80,
-        -864
+        3872,
+        8144
       ],
-      "id": "fad3ccde-1875-404d-95a9-b1b1dcfb8ed0",
+      "id": "22d303c2-8eb2-4278-a0af-d0d2188005eb",
       "name": "System_log",
       "executeOnce": true,
       "credentials": {
@@ -1175,10 +1144,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        816,
-        -1344
+        5024,
+        7600
       ],
-      "id": "8321601f-2920-40b8-ae82-0e8681ee76db",
+      "id": "c18b15e8-c4c4-4ea2-9dcf-6226577d25ab",
       "name": "Prepare_Jina_Error_Data"
     },
     {
@@ -1190,10 +1159,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1264,
-        -1456
+        5488,
+        7584
       ],
-      "id": "b54fe085-4483-434d-ba8d-2394fd114e83",
+      "id": "ffb693b5-2441-46df-b855-b3a9081337b7",
       "name": "Prepare_AI_Error_Data"
     },
     {
@@ -1203,10 +1172,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -304,
-        -864
+        3648,
+        8144
       ],
-      "id": "518002e2-9e7c-473f-8ca7-6e7750faaa2d",
+      "id": "280be805-f6bb-4970-9340-3b838bfbc148",
       "name": "Code in JavaScript"
     },
     {
@@ -1352,10 +1321,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        592,
-        -1488
+        4512,
+        7440
       ],
-      "id": "dd0a1660-fbdd-4264-9946-83fa9560163b",
+      "id": "01c1f9b6-7963-4e55-a702-016fc9e3aa64",
       "name": "Insert rows in failed (Jina)",
       "credentials": {
         "postgres": {
@@ -1506,10 +1475,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1264,
-        -1120
+        5488,
+        7920
       ],
-      "id": "0b92ae4c-41fe-4fb2-9757-08c32f45be79",
+      "id": "f0bd3e2b-be94-48d6-82eb-9ee4dbed4dab",
       "name": "Insert rows in failed (AI)",
       "credentials": {
         "postgres": {
@@ -1590,10 +1559,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        592,
-        -1264
+        4512,
+        7632
       ],
-      "id": "9c43f803-98ea-44e0-a1ba-b24f1296f454",
+      "id": "4c283189-8eb9-4144-b78a-152bd10cd947",
       "name": "Insert rows in Jina",
       "retryOnFail": true,
       "maxTries": 5,
@@ -1613,10 +1582,10 @@
       "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        -1200,
-        -752
+        2752,
+        8624
       ],
-      "id": "6043d304-5ad0-435c-b07a-3a010546d1c7",
+      "id": "4a7926c9-6e12-4df4-886a-bfc6c200ef47",
       "name": "Split Out"
     },
     {
@@ -1640,10 +1609,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        1488,
-        -832
+        5744,
+        8176
       ],
-      "id": "a758eb0e-430c-4563-8b15-619f535c723a",
+      "id": "fb3122f4-e37b-4b57-973c-4925e914500b",
       "name": "Jina_Embeddings",
       "onError": "continueRegularOutput"
     },
@@ -1656,18 +1625,18 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1712,
-        -832
+        5952,
+        8656
       ],
-      "id": "6c8efce8-3b5e-4318-a2dc-219237159225",
+      "id": "5fed4981-4394-4700-ab56-1d2080ab16bd",
       "name": "Upsert_Embeddings",
-      "onError": "continueRegularOutput",
       "credentials": {
         "postgres": {
           "id": "16OTc6Oi6SG8mPOF",
           "name": "Postgres account"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -1677,10 +1646,10 @@
       "type": "n8n-nodes-base.rssFeedRead",
       "typeVersion": 1.1,
       "position": [
-        -1408,
-        -1328
+        2544,
+        7776
       ],
-      "id": "e8d3335b-ea91-4932-a966-e0d43a0ec603",
+      "id": "5dc4bbfb-96a9-40e0-a6db-a52ec2a64757",
       "name": "RSS Read NVIDIA"
     },
     {
@@ -1748,22 +1717,11 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -976,
-        -1328
+        2960,
+        7776
       ],
-      "id": "4bb239c2-b67e-4010-af73-b5eb218df2f9",
+      "id": "d02d8753-2e50-4d65-97db-c92469e0f49b",
       "name": "Edit Fields RSS NVIDIA"
-    },
-    {
-      "parameters": {},
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3.2,
-      "position": [
-        -208,
-        -1200
-      ],
-      "id": "b7af70a4-3c2c-48ad-8196-37fffae31fbe",
-      "name": "Merge RSS Sources 4"
     },
     {
       "parameters": {
@@ -1772,11 +1730,194 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1184,
-        -1328
+        2752,
+        7776
       ],
-      "id": "ddfc6241-ba81-47de-a7d5-bd9c0b22d991",
+      "id": "2c1e1e1b-62f1-4c0d-9866-824b5f0ee3ee",
       "name": "Limit NVIDIA Feed"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.ALI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n                  .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n                  .replace(/\\\\/g, '/').slice(0, 100000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech content:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- **ALLOWED TAGS**: [AI], [\\u5b89\\u5168], [\\u786c\\u4ef6], [\\u5f00\\u53d1], [\\u5546\\u4e1a], [\\u751f\\u6001].\n\n- **CONSTRAINT & MAPPING**: \n  1. You MUST strictly select ONE Tag from the list above. DO NOT invent tags.\n  2. **Edge Case Mapping (Ambiguity Resolver)**:\n     - **[AI]**: LLM Models / RAG / Agents / Papers / Datasets / Benchmarks.\n     - **[\\u786c\\u4ef6]**: Phones / Chips / Robots / EV (Tesla) / Space / Energy.\n     - **[\\u5546\\u4e1a]**: Crypto Prices / Game Sales / IPO / Funding / Antitrust.\n     - **[\\u5f00\\u53d1]**: UI/UX / Design / Game Engines / Cloud Ops / Data Science Libs.\n     - **[\\u5b89\\u5168]**: Fraud / Scams / Deepfake Defense / Privacy Tools / CVE.\n     - **[\\u751f\\u6001]**: Law / Science / History / Career / Remote Work.\n\n- **TAG SELECTION LOGIC (Semantic Value Priority)**:\n  *Analyze the \"Core Event\" (What actually happened?). Use the following hierarchy to resolve overlaps, prioritizing Innovation over Context.*\n  1. **First, identify the Core Event** (e.g., Launching a model vs. Being sued).\n  2. **Then, match the most fitting category** from the list below.\n  3. **If ambiguous**, prioritize categories higher in the list (Innovation > Business > Context).\n\n  1. **[AI] (Virtual Innovation)**:\n     - **Core Definition**: New Models (LLM/SLM), Algorithms, Agents, RAG, Datasets, or Research Papers.\n     - *Tie-Breaker*: If it is software/weight-based intelligence, select [AI].\n     - *Example*: \"OpenAI releases GPT-5\", \"Google DeepMind new paper\".\n\n  2. **[\\u786c\\u4ef6] (Physical Innovation)**:\n     - **Core Definition**: Physical Chips (GPU/TPU/CPU), Consumer Devices (Phones/Headsets), Robotics, EV (Cars), Space, or Energy.\n     - *Tie-Breaker*: If it is a tangible object (even an AI chip like H100), select [\\u786c\\u4ef6].\n     - *Example*: \"Nvidia H200 launched\", \"Apple Vision Pro update\".\n\n  3. **[\\u5546\\u4e1a] (Financial Impact)**:\n     - **Core Definition**: Corporate finance events: IPO, Earnings, Layoffs, Acquisition, Funding, Antitrust lawsuits.\n     - *Constraint*: Only use this if the news is NOT primarily about a product launch.\n     - *Example*: \"Microsoft revenue up 20%\", \"Tech startup lays off 50%\".\n\n  4. **[\\u5b89\\u5168] (Critical Risk)**:\n     - **Core Definition**: Malicious attacks, Data Breaches, Ransomware, Critical CVEs, or Zero-day exploits.\n     - *Constraint*: Do NOT use for routine software updates or privacy policy changes.\n     - *Example*: \"LastPass database leaked\", \"Log4j vulnerability found\".\n\n  5. **[\\u5f00\\u53d1] (Engineering Tools)**:\n     - **Core Definition**: Updates to Programming Languages, Frameworks (React/Vue), Databases, Linux Kernel, Git, or UI/Design tools.\n     - *Scope*: Purely for developers and builders.\n\n  6. **[\\u751f\\u6001] (Macro Context)**:\n     - **Core Definition**: Policy, Legal regulations (GDPR/AI Act), Remote Work, Career advice, History, or Scientific discovery (Math/Physics/Bio).\n     - *Fallback*: If it doesn't fit 1-5, use this.\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Scenario-Based)\n\n**CRITICAL JSON FORMATTING RULE FOR ALL SCENARIOS:**\nYou MUST NOT use standard English double quotes (\") inside the generated text values, as it will break the JSON structure. Replace all double quotes with Chinese full-width quotes (\\u201c \\u201d).\n\n**SCENARIO A: Standard News (TechCrunch/Blog)**\n- Action: Extract core facts, focusing exclusively on hard data, entities, and key metrics (e.g., funding, valuation, ARR, user counts, release timeline).\n- Style Constraints:\n  1. **Cold & Objective:** Strictly NO emotional adjectives, subjective evaluations, or marketing hype (e.g., forbid words like \"\\u4ee4\\u4eba\\u77a9\\u76ee\\u7684\", \"\\u91cd\\u78c5\", \"\\u7206\\u53d1\\u5f0f\"). Let the numbers and facts speak for themselves.\n  2. **High Density:** Maximize the information-to-word ratio. Keep it highly concise but structurally complete.\n  3. **Logical Flow:** Group related metrics by theme rather than mixing unrelated data points in one sentence.\n  4. **Complete Sentences:** Your summary MUST end with a proper punctuation mark (e.g., \"\\u3002\"). Do not cut off mid-sentence.\n- Length: Max 200 Chinese characters.\n- Style: \"Claude paid consumer share rose to 22% by third-party tracking, while Anthropic expanded enterprise sales and API monetization in parallel.\"\n\n**SCENARIO B: Content Missing / Paywall / Access Denied**\n- Trigger: If content is very short, says \"Enable JavaScript\", \"403 Forbidden\", \"Access Denied\", or asks for Captcha.\n- Action: You MUST return the EXACT English string: \"Analysis failed due to content access issues.\"\n- **CRITICAL RULE**: DO NOT translate this sentence into Chinese. Treat it as a system flag and output it VERBATIM.\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n**Example (TechCrunch/Blog):**\n{\n  \"translation\": \"[\\u5546\\u4e1a] Claude\\u4ed8\\u8d39\\u7528\\u6237\\u5360\\u6bd4\\u6301\\u7eed\\u63d0\\u5347\",\n  \"summary\": \"Claude paid consumer share rose to 22% by third-party tracking, while Anthropic expanded enterprise sales and API monetization in parallel.\",\n  \"sentiment\": \"Positive\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"qwen3-max\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON. NEVER use unescaped English double quotes (\\\") or single quotes (\\') inside your JSON string values. Always use Chinese full-width quotes (\\u201c\\u201d).\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt,\n          \"max_tokens\": 10000\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4704,
+        7856
+      ],
+      "id": "c9eb0059-28e9-4bbb-8928-a06ffd0ed3fe",
+      "name": "AI_Processor_TechCrunch",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.ALI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n                  .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n                  .replace(/\\\\/g, '/').slice(0, 100000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech content:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- **ALLOWED TAGS**: [AI], [\\u5b89\\u5168], [\\u786c\\u4ef6], [\\u5f00\\u53d1], [\\u5546\\u4e1a], [\\u751f\\u6001].\n\n- **CONSTRAINT & MAPPING**: \n  1. You MUST strictly select ONE Tag from the list above. DO NOT invent tags.\n  2. **Edge Case Mapping (Ambiguity Resolver)**:\n     - **[AI]**: LLM Models / RAG / Agents / Papers / Datasets / Benchmarks.\n     - **[\\u786c\\u4ef6]**: Phones / Chips / Robots / EV (Tesla) / Space / Energy.\n     - **[\\u5546\\u4e1a]**: Crypto Prices / Game Sales / IPO / Funding / Antitrust.\n     - **[\\u5f00\\u53d1]**: UI/UX / Design / Game Engines / Cloud Ops / Data Science Libs.\n     - **[\\u5b89\\u5168]**: Fraud / Scams / Deepfake Defense / Privacy Tools / CVE.\n     - **[\\u751f\\u6001]**: Law / Science / History / Career / Remote Work.\n\n- **TAG SELECTION LOGIC (Semantic Value Priority)**:\n  *Analyze the \"Core Event\" (What actually happened?). Use the following hierarchy to resolve overlaps, prioritizing Innovation over Context.*\n  1. **First, identify the Core Event** (e.g., Launching a model vs. Being sued).\n  2. **Then, match the most fitting category** from the list below.\n  3. **If ambiguous**, prioritize categories higher in the list (Innovation > Business > Context).\n\n  1. **[AI] (Virtual Innovation)**:\n     - **Core Definition**: New Models (LLM/SLM), Algorithms, Agents, RAG, Datasets, or Research Papers.\n     - *Tie-Breaker*: If it is software/weight-based intelligence, select [AI].\n     - *Example*: \"OpenAI releases GPT-5\", \"Google DeepMind new paper\".\n\n  2. **[\\u786c\\u4ef6] (Physical Innovation)**:\n     - **Core Definition**: Physical Chips (GPU/TPU/CPU), Consumer Devices (Phones/Headsets), Robotics, EV (Cars), Space, or Energy.\n     - *Tie-Breaker*: If it is a tangible object (even an AI chip like H100), select [\\u786c\\u4ef6].\n     - *Example*: \"Nvidia H200 launched\", \"Apple Vision Pro update\".\n\n  3. **[\\u5546\\u4e1a] (Financial Impact)**:\n     - **Core Definition**: Corporate finance events: IPO, Earnings, Layoffs, Acquisition, Funding, Antitrust lawsuits.\n     - *Constraint*: Only use this if the news is NOT primarily about a product launch.\n     - *Example*: \"Microsoft revenue up 20%\", \"Tech startup lays off 50%\".\n\n  4. **[\\u5b89\\u5168] (Critical Risk)**:\n     - **Core Definition**: Malicious attacks, Data Breaches, Ransomware, Critical CVEs, or Zero-day exploits.\n     - *Constraint*: Do NOT use for routine software updates or privacy policy changes.\n     - *Example*: \"LastPass database leaked\", \"Log4j vulnerability found\".\n\n  5. **[\\u5f00\\u53d1] (Engineering Tools)**:\n     - **Core Definition**: Updates to Programming Languages, Frameworks (React/Vue), Databases, Linux Kernel, Git, or UI/Design tools.\n     - *Scope*: Purely for developers and builders.\n\n  6. **[\\u751f\\u6001] (Macro Context)**:\n     - **Core Definition**: Policy, Legal regulations (GDPR/AI Act), Remote Work, Career advice, History, or Scientific discovery (Math/Physics/Bio).\n     - *Fallback*: If it doesn't fit 1-5, use this.\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Scenario-Based)\n\n**CRITICAL JSON FORMATTING RULE FOR ALL SCENARIOS:**\nYou MUST NOT use standard English double quotes (\") inside the generated text values, as it will break the JSON structure. Replace all double quotes with Chinese full-width quotes (\\u201c \\u201d).\n\n**SCENARIO A: Official Release (Google AI Blog)**\n- Action: Extract model/version, benchmark deltas, availability status (Preview/GA), integration scope, and measurable usage or performance claims.\n- Style Constraints:\n  1. **Evidence-First:** Keep only claims with explicit data or concrete release facts.\n  2. **Metric Priority:** Prioritize benchmark changes, context length, latency/cost, modality capability, and rollout scope.\n  3. **Release Clarity:** Clearly state access surface and rollout stage.\n  4. **Complete Sentences:** Your summary MUST end with a proper punctuation mark (e.g., \"\\u3002\"). Do not cut off mid-sentence.\n- Length: Max 200 Chinese characters.\n- Style: \"Google released Gemini 3.1 Flash Live with focus on real-time voice interaction reliability and staged developer access via Gemini API.\"\n\n**SCENARIO B: Content Missing / Paywall / Access Denied**\n- Trigger: If content is very short, says \"Enable JavaScript\", \"403 Forbidden\", \"Access Denied\", or asks for Captcha.\n- Action: You MUST return the EXACT English string: \"Analysis failed due to content access issues.\"\n- **CRITICAL RULE**: DO NOT translate this sentence into Chinese. Treat it as a system flag and output it VERBATIM.\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n**Example (Google AI Blog):**\n{\n  \"translation\": \"[AI] Google\\u53d1\\u5e03Gemini 3.1 Flash Live\",\n  \"summary\": \"Google released Gemini 3.1 Flash Live with focus on real-time voice interaction reliability and staged developer access via Gemini API.\",\n  \"sentiment\": \"Positive\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"qwen3-max\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON. NEVER use unescaped English double quotes (\\\") or single quotes (\\') inside your JSON string values. Always use Chinese full-width quotes (\\u201c\\u201d).\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt,\n          \"max_tokens\": 10000\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4704,
+        8016
+      ],
+      "id": "bb8b31c5-9aa4-467e-aaa8-3a92524083e2",
+      "name": "AI_Processor_Google",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.ALI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n                  .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n                  .replace(/\\\\/g, '/').slice(0, 100000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech content:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- **ALLOWED TAGS**: [AI], [\\u5b89\\u5168], [\\u786c\\u4ef6], [\\u5f00\\u53d1], [\\u5546\\u4e1a], [\\u751f\\u6001].\n\n- **CONSTRAINT & MAPPING**: \n  1. You MUST strictly select ONE Tag from the list above. DO NOT invent tags.\n  2. **Edge Case Mapping (Ambiguity Resolver)**:\n     - **[AI]**: LLM Models / RAG / Agents / Papers / Datasets / Benchmarks.\n     - **[\\u786c\\u4ef6]**: Phones / Chips / Robots / EV (Tesla) / Space / Energy.\n     - **[\\u5546\\u4e1a]**: Crypto Prices / Game Sales / IPO / Funding / Antitrust.\n     - **[\\u5f00\\u53d1]**: UI/UX / Design / Game Engines / Cloud Ops / Data Science Libs.\n     - **[\\u5b89\\u5168]**: Fraud / Scams / Deepfake Defense / Privacy Tools / CVE.\n     - **[\\u751f\\u6001]**: Law / Science / History / Career / Remote Work.\n\n- **TAG SELECTION LOGIC (Semantic Value Priority)**:\n  *Analyze the \"Core Event\" (What actually happened?). Use the following hierarchy to resolve overlaps, prioritizing Innovation over Context.*\n  1. **First, identify the Core Event** (e.g., Launching a model vs. Being sued).\n  2. **Then, match the most fitting category** from the list below.\n  3. **If ambiguous**, prioritize categories higher in the list (Innovation > Business > Context).\n\n  1. **[AI] (Virtual Innovation)**:\n     - **Core Definition**: New Models (LLM/SLM), Algorithms, Agents, RAG, Datasets, or Research Papers.\n     - *Tie-Breaker*: If it is software/weight-based intelligence, select [AI].\n     - *Example*: \"OpenAI releases GPT-5\", \"Google DeepMind new paper\".\n\n  2. **[\\u786c\\u4ef6] (Physical Innovation)**:\n     - **Core Definition**: Physical Chips (GPU/TPU/CPU), Consumer Devices (Phones/Headsets), Robotics, EV (Cars), Space, or Energy.\n     - *Tie-Breaker*: If it is a tangible object (even an AI chip like H100), select [\\u786c\\u4ef6].\n     - *Example*: \"Nvidia H200 launched\", \"Apple Vision Pro update\".\n\n  3. **[\\u5546\\u4e1a] (Financial Impact)**:\n     - **Core Definition**: Corporate finance events: IPO, Earnings, Layoffs, Acquisition, Funding, Antitrust lawsuits.\n     - *Constraint*: Only use this if the news is NOT primarily about a product launch.\n     - *Example*: \"Microsoft revenue up 20%\", \"Tech startup lays off 50%\".\n\n  4. **[\\u5b89\\u5168] (Critical Risk)**:\n     - **Core Definition**: Malicious attacks, Data Breaches, Ransomware, Critical CVEs, or Zero-day exploits.\n     - *Constraint*: Do NOT use for routine software updates or privacy policy changes.\n     - *Example*: \"LastPass database leaked\", \"Log4j vulnerability found\".\n\n  5. **[\\u5f00\\u53d1] (Engineering Tools)**:\n     - **Core Definition**: Updates to Programming Languages, Frameworks (React/Vue), Databases, Linux Kernel, Git, or UI/Design tools.\n     - *Scope*: Purely for developers and builders.\n\n  6. **[\\u751f\\u6001] (Macro Context)**:\n     - **Core Definition**: Policy, Legal regulations (GDPR/AI Act), Remote Work, Career advice, History, or Scientific discovery (Math/Physics/Bio).\n     - *Fallback*: If it doesn't fit 1-5, use this.\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Scenario-Based)\n\n**CRITICAL JSON FORMATTING RULE FOR ALL SCENARIOS:**\nYou MUST NOT use standard English double quotes (\") inside the generated text values, as it will break the JSON structure. Replace all double quotes with Chinese full-width quotes (\\u201c \\u201d).\n\n**SCENARIO A: Official Engineering Update (AWS Machine Learning Blog)**\n- Action: Extract service names, architecture boundary, deployment path, and measurable cost/performance outcomes.\n- Style Constraints:\n  1. **Implementation-Oriented:** Focus on production changes in Bedrock/SageMaker/EKS workflows.\n  2. **Operational Metrics:** Include latency, throughput, cost, region availability, and production-readiness signals when present.\n  3. **No Tutorial Retelling:** Summarize technical intelligence, not step-by-step instructions.\n  4. **Complete Sentences:** Your summary MUST end with a proper punctuation mark (e.g., \"\\u3002\"). Do not cut off mid-sentence.\n- Length: Max 200 Chinese characters.\n- Style: \"AWS updated Bedrock and SageMaker production guidance, emphasizing observability and cost control under stable inference workloads.\"\n\n**SCENARIO B: Content Missing / Paywall / Access Denied**\n- Trigger: If content is very short, says \"Enable JavaScript\", \"403 Forbidden\", \"Access Denied\", or asks for Captcha.\n- Action: You MUST return the EXACT English string: \"Analysis failed due to content access issues.\"\n- **CRITICAL RULE**: DO NOT translate this sentence into Chinese. Treat it as a system flag and output it VERBATIM.\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n**Example (AWS Machine Learning Blog):**\n{\n  \"translation\": \"[\\u5f00\\u53d1] AWS\\u66f4\\u65b0Bedrock\\u4e0eSageMaker\\u751f\\u4ea7\\u90e8\\u7f72\\u5b9e\\u8df5\",\n  \"summary\": \"AWS updated Bedrock and SageMaker production guidance, emphasizing observability and cost control under stable inference workloads.\",\n  \"sentiment\": \"Neutral\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"qwen3-max\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON. NEVER use unescaped English double quotes (\\\") or single quotes (\\') inside your JSON string values. Always use Chinese full-width quotes (\\u201c\\u201d).\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt,\n          \"max_tokens\": 10000\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4704,
+        8160
+      ],
+      "id": "9515e16e-a232-4e17-a896-1c8e0aa4be21",
+      "name": "AI_Processor_AWS",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.ALI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n                  .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n                  .replace(/\\\\/g, '/').slice(0, 100000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech content:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- **ALLOWED TAGS**: [AI], [\\u5b89\\u5168], [\\u786c\\u4ef6], [\\u5f00\\u53d1], [\\u5546\\u4e1a], [\\u751f\\u6001].\n\n- **CONSTRAINT & MAPPING**: \n  1. You MUST strictly select ONE Tag from the list above. DO NOT invent tags.\n  2. **Edge Case Mapping (Ambiguity Resolver)**:\n     - **[AI]**: LLM Models / RAG / Agents / Papers / Datasets / Benchmarks.\n     - **[\\u786c\\u4ef6]**: Phones / Chips / Robots / EV (Tesla) / Space / Energy.\n     - **[\\u5546\\u4e1a]**: Crypto Prices / Game Sales / IPO / Funding / Antitrust.\n     - **[\\u5f00\\u53d1]**: UI/UX / Design / Game Engines / Cloud Ops / Data Science Libs.\n     - **[\\u5b89\\u5168]**: Fraud / Scams / Deepfake Defense / Privacy Tools / CVE.\n     - **[\\u751f\\u6001]**: Law / Science / History / Career / Remote Work.\n\n- **TAG SELECTION LOGIC (Semantic Value Priority)**:\n  *Analyze the \"Core Event\" (What actually happened?). Use the following hierarchy to resolve overlaps, prioritizing Innovation over Context.*\n  1. **First, identify the Core Event** (e.g., Launching a model vs. Being sued).\n  2. **Then, match the most fitting category** from the list below.\n  3. **If ambiguous**, prioritize categories higher in the list (Innovation > Business > Context).\n\n  1. **[AI] (Virtual Innovation)**:\n     - **Core Definition**: New Models (LLM/SLM), Algorithms, Agents, RAG, Datasets, or Research Papers.\n     - *Tie-Breaker*: If it is software/weight-based intelligence, select [AI].\n     - *Example*: \"OpenAI releases GPT-5\", \"Google DeepMind new paper\".\n\n  2. **[\\u786c\\u4ef6] (Physical Innovation)**:\n     - **Core Definition**: Physical Chips (GPU/TPU/CPU), Consumer Devices (Phones/Headsets), Robotics, EV (Cars), Space, or Energy.\n     - *Tie-Breaker*: If it is a tangible object (even an AI chip like H100), select [\\u786c\\u4ef6].\n     - *Example*: \"Nvidia H200 launched\", \"Apple Vision Pro update\".\n\n  3. **[\\u5546\\u4e1a] (Financial Impact)**:\n     - **Core Definition**: Corporate finance events: IPO, Earnings, Layoffs, Acquisition, Funding, Antitrust lawsuits.\n     - *Constraint*: Only use this if the news is NOT primarily about a product launch.\n     - *Example*: \"Microsoft revenue up 20%\", \"Tech startup lays off 50%\".\n\n  4. **[\\u5b89\\u5168] (Critical Risk)**:\n     - **Core Definition**: Malicious attacks, Data Breaches, Ransomware, Critical CVEs, or Zero-day exploits.\n     - *Constraint*: Do NOT use for routine software updates or privacy policy changes.\n     - *Example*: \"LastPass database leaked\", \"Log4j vulnerability found\".\n\n  5. **[\\u5f00\\u53d1] (Engineering Tools)**:\n     - **Core Definition**: Updates to Programming Languages, Frameworks (React/Vue), Databases, Linux Kernel, Git, or UI/Design tools.\n     - *Scope*: Purely for developers and builders.\n\n  6. **[\\u751f\\u6001] (Macro Context)**:\n     - **Core Definition**: Policy, Legal regulations (GDPR/AI Act), Remote Work, Career advice, History, or Scientific discovery (Math/Physics/Bio).\n     - *Fallback*: If it doesn't fit 1-5, use this.\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Scenario-Based)\n\n**CRITICAL JSON FORMATTING RULE FOR ALL SCENARIOS:**\nYou MUST NOT use standard English double quotes (\") inside the generated text values, as it will break the JSON structure. Replace all double quotes with Chinese full-width quotes (\\u201c \\u201d).\n\n**SCENARIO A: Official Enterprise AI Update (Microsoft Blog)**\n- Action: Extract product scope, enterprise integration boundary, governance/compliance controls, rollout timing, and measurable adoption impact.\n- Style Constraints:\n  1. **Enterprise Facts Only:** Prioritize governance, auditability, security controls, and rollout status.\n  2. **Adoption Evidence:** Include customer penetration, efficiency deltas, or workload impact if disclosed.\n  3. **Timeline Precision:** Clearly state announced/preview/GA status.\n  4. **Complete Sentences:** Your summary MUST end with a proper punctuation mark (e.g., \"\\u3002\"). Do not cut off mid-sentence.\n- Length: Max 200 Chinese characters.\n- Style: \"Microsoft announced Copilot-related enterprise updates with trust and governance as the primary rollout frame for large organizations.\"\n\n**SCENARIO B: Content Missing / Paywall / Access Denied**\n- Trigger: If content is very short, says \"Enable JavaScript\", \"403 Forbidden\", \"Access Denied\", or asks for Captcha.\n- Action: You MUST return the EXACT English string: \"Analysis failed due to content access issues.\"\n- **CRITICAL RULE**: DO NOT translate this sentence into Chinese. Treat it as a system flag and output it VERBATIM.\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n**Example (Microsoft Blog):**\n{\n  \"translation\": \"[\\u5546\\u4e1a] Microsoft\\u63a8\\u8fdbCopilot\\u4f01\\u4e1a\\u5316\\u4e0e\\u6cbb\\u7406\\u6574\\u5408\",\n  \"summary\": \"Microsoft announced Copilot-related enterprise updates with trust and governance as the primary rollout frame for large organizations.\",\n  \"sentiment\": \"Neutral\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"qwen3-max\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON. NEVER use unescaped English double quotes (\\\") or single quotes (\\') inside your JSON string values. Always use Chinese full-width quotes (\\u201c\\u201d).\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt,\n          \"max_tokens\": 10000\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4704,
+        8320
+      ],
+      "id": "147978d4-5784-4354-9fd5-edbec480f0be",
+      "name": "AI_Processor_Microsoft",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.ALI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items'); \n    const jinaNode = $('Jina_Reader');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const rawContent = $('Jina_Reader').item.json.data;    \n    const content = rawContent \n      ? rawContent.replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n                  .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n                  .replace(/\\\\/g, '/').slice(0, 100000) \n      : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n\n    const userPrompt = `Analyze this tech content:\n\nHEADLINE: \"${title}\"\n\nFULL_CONTENT: \n\"\"\"\n${content}\n\"\"\"\n\n### GOAL\nOutput a JSON object with keys: 'translation', 'sentiment', 'summary'.\n\n### 1. TRANSLATION RULES\n- Format: '[Tag] Chinese Title'\n- **ALLOWED TAGS**: [AI], [\\u5b89\\u5168], [\\u786c\\u4ef6], [\\u5f00\\u53d1], [\\u5546\\u4e1a], [\\u751f\\u6001].\n\n- **CONSTRAINT & MAPPING**: \n  1. You MUST strictly select ONE Tag from the list above. DO NOT invent tags.\n  2. **Edge Case Mapping (Ambiguity Resolver)**:\n     - **[AI]**: LLM Models / RAG / Agents / Papers / Datasets / Benchmarks.\n     - **[\\u786c\\u4ef6]**: Phones / Chips / Robots / EV (Tesla) / Space / Energy.\n     - **[\\u5546\\u4e1a]**: Crypto Prices / Game Sales / IPO / Funding / Antitrust.\n     - **[\\u5f00\\u53d1]**: UI/UX / Design / Game Engines / Cloud Ops / Data Science Libs.\n     - **[\\u5b89\\u5168]**: Fraud / Scams / Deepfake Defense / Privacy Tools / CVE.\n     - **[\\u751f\\u6001]**: Law / Science / History / Career / Remote Work.\n\n- **TAG SELECTION LOGIC (Semantic Value Priority)**:\n  *Analyze the \"Core Event\" (What actually happened?). Use the following hierarchy to resolve overlaps, prioritizing Innovation over Context.*\n  1. **First, identify the Core Event** (e.g., Launching a model vs. Being sued).\n  2. **Then, match the most fitting category** from the list below.\n  3. **If ambiguous**, prioritize categories higher in the list (Innovation > Business > Context).\n\n  1. **[AI] (Virtual Innovation)**:\n     - **Core Definition**: New Models (LLM/SLM), Algorithms, Agents, RAG, Datasets, or Research Papers.\n     - *Tie-Breaker*: If it is software/weight-based intelligence, select [AI].\n     - *Example*: \"OpenAI releases GPT-5\", \"Google DeepMind new paper\".\n\n  2. **[\\u786c\\u4ef6] (Physical Innovation)**:\n     - **Core Definition**: Physical Chips (GPU/TPU/CPU), Consumer Devices (Phones/Headsets), Robotics, EV (Cars), Space, or Energy.\n     - *Tie-Breaker*: If it is a tangible object (even an AI chip like H100), select [\\u786c\\u4ef6].\n     - *Example*: \"Nvidia H200 launched\", \"Apple Vision Pro update\".\n\n  3. **[\\u5546\\u4e1a] (Financial Impact)**:\n     - **Core Definition**: Corporate finance events: IPO, Earnings, Layoffs, Acquisition, Funding, Antitrust lawsuits.\n     - *Constraint*: Only use this if the news is NOT primarily about a product launch.\n     - *Example*: \"Microsoft revenue up 20%\", \"Tech startup lays off 50%\".\n\n  4. **[\\u5b89\\u5168] (Critical Risk)**:\n     - **Core Definition**: Malicious attacks, Data Breaches, Ransomware, Critical CVEs, or Zero-day exploits.\n     - *Constraint*: Do NOT use for routine software updates or privacy policy changes.\n     - *Example*: \"LastPass database leaked\", \"Log4j vulnerability found\".\n\n  5. **[\\u5f00\\u53d1] (Engineering Tools)**:\n     - **Core Definition**: Updates to Programming Languages, Frameworks (React/Vue), Databases, Linux Kernel, Git, or UI/Design tools.\n     - *Scope*: Purely for developers and builders.\n\n  6. **[\\u751f\\u6001] (Macro Context)**:\n     - **Core Definition**: Policy, Legal regulations (GDPR/AI Act), Remote Work, Career advice, History, or Scientific discovery (Math/Physics/Bio).\n     - *Fallback*: If it doesn't fit 1-5, use this.\n- Style: Professional, objective, NO clickbait.\n\n### 2. SUMMARY RULES (Scenario-Based)\n\n**CRITICAL JSON FORMATTING RULE FOR ALL SCENARIOS:**\nYou MUST NOT use standard English double quotes (\") inside the generated text values, as it will break the JSON structure. Replace all double quotes with Chinese full-width quotes (\\u201c \\u201d).\n\n**SCENARIO A: Official Stack/Performance Update (NVIDIA Developer Blog)**\n- Action: Extract hardware/software stack details (GPU/SKU/framework), benchmark setup, throughput/latency/cost metrics, and deployment targets.\n- Style Constraints:\n  1. **Benchmark Discipline:** Keep measurable results and test context; avoid vague performance claims.\n  2. **Stack Specificity:** Explicitly include GPU generation, runtime/framework, and production deployment path.\n  3. **Metric Integrity:** If key metrics are missing, state they are undisclosed instead of inferring.\n  4. **Complete Sentences:** Your summary MUST end with a proper punctuation mark (e.g., \"\\u3002\"). Do not cut off mid-sentence.\n- Length: Max 200 Chinese characters.\n- Style: \"NVIDIA outlined AI Grid orchestration across data center and edge, with emphasis on scheduling architecture and continuous deployment paths.\"\n\n**SCENARIO B: Content Missing / Paywall / Access Denied**\n- Trigger: If content is very short, says \"Enable JavaScript\", \"403 Forbidden\", \"Access Denied\", or asks for Captcha.\n- Action: You MUST return the EXACT English string: \"Analysis failed due to content access issues.\"\n- **CRITICAL RULE**: DO NOT translate this sentence into Chinese. Treat it as a system flag and output it VERBATIM.\n\n### 3. SENTIMENT\n- 'Positive' (Breakthrough/Growth), 'Negative' (Bug/Layoff), 'Neutral' (Tutorial/Opinion), If you cannot analyze the content (e.g., paywall, error), you MUST still return valid JSON with sentiment: \"Neutral\".\n\n### OUTPUT EXAMPLE\n**Example (NVIDIA Developer Blog):**\n{\n  \"translation\": \"[\\u786c\\u4ef6] NVIDIA\\u53d1\\u5e03AI Grid\\u8de8\\u7aef\\u7f16\\u6392\\u65b9\\u6848\",\n  \"summary\": \"NVIDIA outlined AI Grid orchestration across data center and edge, with emphasis on scheduling architecture and continuous deployment paths.\",\n  \"sentiment\": \"Positive\"\n}`;\n\n    return JSON.stringify({\n      \"model\": \"qwen3-max\",\n      \"messages\": [\n        {\n          \"role\": \"system\",\n          \"content\": \"You are a Senior Tech Intelligence Analyst. You output strictly valid JSON. NEVER use unescaped English double quotes (\\\") or single quotes (\\') inside your JSON string values. Always use Chinese full-width quotes (\\u201c\\u201d).\"\n        },\n        {\n          \"role\": \"user\",\n          \"content\": userPrompt,\n          \"max_tokens\": 10000\n        }\n      ],\n      \"response_format\": { \"type\": \"json_object\" }\n    });\n  })()\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4704,
+        8480
+      ],
+      "id": "3cd0acce-b076-4e77-8923-c46040edf54d",
+      "name": "AI_Processor_NVIDIA",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ \"Bearer \" + $env.ALI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{\n  (() => {\n    const loopNode = $('Loop Over Items');\n\n    const title = loopNode.item.json.title || \"No Title\";\n    const sourceKey = loopNode.item.json.source_key || \"unknown\";\n    const sourceName = loopNode.item.json.source_name || \"unknown\";\n    const sourcePlatform = loopNode.item.json.source_platform || \"unknown\";\n    const signalOrigin = loopNode.item.json.signal_origin || \"unknown\";\n\n    const rawContent = $('Jina_Reader').item.json.data;\n    const cleaned = rawContent\n      ? rawContent\n          .replace(/!\\[.*?\\]\\(.*?\\)/g, '')\n          .replace(/\\[([^\\]]+)\\]\\(http.*?\\)/g, '$1')\n          .replace(/\\\\/g, '/')\n          .replace(/\\r/g, '')\n          .trim()\n      : \"\";\n\n    const content = cleaned ? cleaned.slice(0, 36000) : \"CONTENT_UNAVAILABLE_FALLBACK_TO_TITLE\";\n    const profile = \"DEFAULT\";\n    const scenarioHint = \"Fallback to scenario A unless thread signal is explicit\";\n    const sourceRules = [\n    \"Fallback profile for unknown source keys.\",\n    \"Use conservative extraction: core event + measurable facts + neutral tone.\",\n    \"If source characteristics are unclear, avoid over-inference and keep sentiment Neutral.\"\n];\n\n    const userPrompt = [\n      \"Analyze this tech content:\",\n      \"\",\n      'HEADLINE: \"' + title + '\"',\n      \"\",\n      \"FULL_CONTENT:\",\n      '\"\"\"',\n      content,\n      '\"\"\"',\n      \"\",\n      \"### GOAL\",\n      \"Output a JSON object with keys: 'translation', 'sentiment', 'summary'.\",\n      \"\",\n      \"### SOURCE CONTEXT\",\n      \"- source_key: \" + sourceKey,\n      \"- source_name: \" + sourceName,\n      \"- source_platform: \" + sourcePlatform,\n      \"- signal_origin: \" + signalOrigin,\n      \"- profile: \" + profile,\n      \"- scenario_hint: \" + scenarioHint,\n      \"\",\n      \"### 1. TRANSLATION RULES\",\n      \"- Format: '[Tag] Chinese Title'\",\n      \"- ALLOWED TAGS: [AI], [\\u5b89\\u5168], [\\u786c\\u4ef6], [\\u5f00\\u53d1], [\\u5546\\u4e1a], [\\u751f\\u6001].\",\n      \"- You MUST choose exactly ONE tag from the allowed list.\",\n      \"- Mapping:\",\n      \"  - [AI]: LLM/SLM models, agents, RAG, papers, datasets, benchmarks.\",\n      \"  - [\\u786c\\u4ef6]: chips, phones/devices, robots, EV, space, energy.\",\n      \"  - [\\u5546\\u4e1a]: funding, earnings, layoffs, IPO, M&A, antitrust.\",\n      \"  - [\\u5f00\\u53d1]: languages/frameworks, cloud ops, engineering tooling.\",\n      \"  - [\\u5b89\\u5168]: CVE, exploit, breach, ransomware, fraud, privacy incident.\",\n      \"  - [\\u751f\\u6001]: law/policy, career, remote work, science context.\",\n      \"- If overlap exists, resolve by core event priority: [AI] > [\\u786c\\u4ef6] > [\\u5546\\u4e1a] > [\\u5b89\\u5168] > [\\u5f00\\u53d1] > [\\u751f\\u6001].\",\n      \"- Style: professional, objective, no clickbait.\",\n      \"\",\n      \"### 2. SUMMARY RULES (Scenario-Based)\",\n      \"CRITICAL JSON FORMATTING: Do NOT use ASCII double quotes (\\\") inside generated text values. Use Chinese quotes (\\u201c\\u201d) when needed.\",\n      \"\",\n      \"SCENARIO A: Standard News (Tech blog / media)\",\n      \"- Extract hard facts only: entities, actions, dates, metrics, availability (GA/preview), and pricing if any.\",\n      \"- Style: cold objective, high information density, complete sentence ending with punctuation.\",\n      \"- Length: max 200 Chinese characters.\",\n      \"\",\n      \"SCENARIO B: Community Discussion (HN-like comments)\",\n      \"- Trigger when content is comment-thread heavy (many usernames/timestamps/replies).\",\n      \"- Synthesize consensus and disagreements; never translate user-by-user comments.\",\n      \"- Prefer in-text labels only when present: \\u6838\\u5fc3\\u8bae\\u9898\\uff1a \\u6280\\u672f\\u5206\\u6b67\\uff1a \\u53ef\\u884c\\u65b9\\u6848\\uff1a\",\n      \"- Length: max 200 Chinese characters.\",\n      \"\",\n      \"SCENARIO C: Content Missing / Paywall / Access Denied\",\n      \"- Trigger when content is too short, or contains Enable JavaScript / 403 Forbidden / Access Denied / captcha / bot-check.\",\n      \"- summary MUST be EXACT English string: Analysis failed due to content access issues.\",\n      \"- Do NOT translate this sentence.\",\n      \"\",\n      \"### 3. SENTIMENT\",\n      \"- Allowed values: Positive, Neutral, Negative.\",\n      \"- Positive: measurable growth or breakthrough; Negative: breach/bug/layoff/major regression; else Neutral.\",\n      \"- If scenario C, sentiment MUST be Neutral.\",\n      \"\",\n      \"### 4. SOURCE-SPECIFIC EXTRA RULES\",\n      ...sourceRules.map((r) => \"- \" + r),\n      \"\",\n      \"### OUTPUT FORMAT\",\n      \"Return STRICT JSON only, exactly these keys: translation, summary, sentiment.\",\n      \"No markdown, no extra keys, no explanation text.\"\n    ].join(\"\\n\");\n\n    return JSON.stringify({\n      model: \"qwen3-max-2025-09-23\",\n      max_tokens: 1000,\n      messages: [\n        {\n          role: \"system\",\n          content: \"You are a Senior Tech Intelligence Analyst. Output strict valid JSON only with keys translation, summary, sentiment. Never output markdown or extra fields.\"\n        },\n        {\n          role: \"user\",\n          content: userPrompt\n        }\n      ],\n      response_format: { type: \"json_object\" }\n    });\n  })()\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4704,
+        8640
+      ],
+      "id": "ac189065-c8d7-45cb-b290-c0ddad1c3af8",
+      "name": "AI_Processor_Default",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 7,
+        "output": "={{ ({\n  hackernews_frontpage: 0,\n  techcrunch_feed: 1,\n  google_ai_blog: 2,\n  aws_ml_blog: 3,\n  microsoft_ai_blog: 4,\n  nvidia_dev_blog: 5\n})[\n  $('Loop Over Items').item.json.source_key ?? $json.source_key\n] ?? 6 }}\n"
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        4368,
+        8080
+      ],
+      "id": "6a008433-0b33-45b8-8104-75741d9f0dad",
+      "name": "Switch"
     }
   ],
   "pinData": {},
@@ -1811,17 +1952,6 @@
           },
           {
             "node": "RSS Read NVIDIA",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "AI_Processor": {
-      "main": [
-        [
-          {
-            "node": "Edit Fields",
             "type": "main",
             "index": 0
           }
@@ -1909,9 +2039,9 @@
       "main": [
         [
           {
-            "node": "Merge RSS Sources 1",
+            "node": "Merge",
             "type": "main",
-            "index": 0
+            "index": 4
           }
         ]
       ]
@@ -1920,20 +2050,9 @@
       "main": [
         [
           {
-            "node": "Merge RSS Sources 1",
+            "node": "Merge",
             "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Merge RSS Sources 1": {
-      "main": [
-        [
-          {
-            "node": "Merge RSS Sources 2",
-            "type": "main",
-            "index": 0
+            "index": 3
           }
         ]
       ]
@@ -1942,20 +2061,9 @@
       "main": [
         [
           {
-            "node": "Merge RSS Sources 2",
+            "node": "Merge",
             "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Merge RSS Sources 2": {
-      "main": [
-        [
-          {
-            "node": "Merge RSS Sources 3",
-            "type": "main",
-            "index": 0
+            "index": 2
           }
         ]
       ]
@@ -1964,20 +2072,9 @@
       "main": [
         [
           {
-            "node": "Merge RSS Sources 3",
+            "node": "Merge",
             "type": "main",
             "index": 1
-          }
-        ]
-      ]
-    },
-    "Merge RSS Sources 3": {
-      "main": [
-        [
-          {
-            "node": "Merge RSS Sources 4",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -1988,7 +2085,7 @@
           {
             "node": "Merge",
             "type": "main",
-            "index": 1
+            "index": 5
           }
         ]
       ]
@@ -2089,12 +2186,12 @@
         ],
         [
           {
-            "node": "AI_Processor",
+            "node": "Insert rows in Jina",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Insert rows in Jina",
+            "node": "Switch",
             "type": "main",
             "index": 0
           }
@@ -2216,17 +2313,6 @@
       "main": [
         [
           {
-            "node": "Merge RSS Sources 4",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Merge RSS Sources 4": {
-      "main": [
-        [
-          {
             "node": "Merge",
             "type": "main",
             "index": 0
@@ -2244,22 +2330,147 @@
           }
         ]
       ]
+    },
+    "AI_Processor_HN": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI_Processor_TechCrunch": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI_Processor_Google": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI_Processor_AWS": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI_Processor_Microsoft": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI_Processor_NVIDIA": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI_Processor_Default": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "AI_Processor_HN",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI_Processor_TechCrunch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI_Processor_Google",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI_Processor_AWS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI_Processor_Microsoft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI_Processor_NVIDIA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI_Processor_Default",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate",
-    "availableInMCP": false,
-    "timeSavedMode": "fixed",
-    "callerPolicy": "workflowsFromSameOwner",
-    "errorWorkflow": "r4mRi5yxtJsH06JOp42lk"
+    "binaryMode": "separate"
   },
-  "versionId": "93bf64bc-b08d-4979-8af7-91ec170af080",
+  "versionId": "d02d0ac3-4310-4d40-9cde-3c45da071e87",
   "meta": {
-    "templateCredsSetupCompleted": true,
     "instanceId": "cc71cb19c52277ee6a828e6a21e2dba61964271db5e597d972c12c82fd716ddf"
   },
-  "id": "OeHIublhZVdKQ6fImtr_U",
+  "id": "jR1uj7o7esaicRWl",
   "tags": []
 }

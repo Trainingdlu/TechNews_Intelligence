@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import types
+import importlib
 from unittest.mock import AsyncMock
 
 
@@ -55,10 +56,14 @@ def install_bot_import_stubs() -> None:
         sys.modules["telegram.ext"] = ext_mod
 
     if "agent" not in sys.modules:
-        agent_mod = types.ModuleType("agent")
-        agent_mod.generate_response = lambda _h, _m: "ok"
-        agent_mod.generate_response_payload = lambda _h, _m: {"text": "ok", "url_title_map": {}}
-        sys.modules["agent"] = agent_mod
+        try:
+            # Prefer real agent module when available to avoid cross-test pollution.
+            importlib.import_module("agent")
+        except Exception:
+            agent_mod = types.ModuleType("agent")
+            agent_mod.generate_response = lambda _h, _m: "ok"
+            agent_mod.generate_response_payload = lambda _h, _m: {"text": "ok", "url_title_map": {}}
+            sys.modules["agent"] = agent_mod
 
     if "db" not in sys.modules:
         db_mod = types.ModuleType("db")

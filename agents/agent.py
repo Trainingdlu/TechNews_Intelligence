@@ -10,13 +10,15 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
+import requests
 from google import genai
 from google.genai import types
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import create_react_agent
 
 try:
@@ -542,6 +544,344 @@ def _get_analysis_model():
     return _analysis_model
 
 
+def _planner_enabled(runtime: str) -> bool:
+    if runtime == "legacy":
+        return False
+    flag = os.getenv("AGENT_PLANNER_ENABLED", "true").strip().lower()
+    if flag in {"0", "false", "no", "off"}:
+        return False
+    return bool(os.getenv("DEEPSEEK_API_KEY", "").strip())
+
+
+def _planner_min_confidence() -> float:
+    try:
+        raw = float(os.getenv("AGENT_PLANNER_MIN_CONFIDENCE", "0.75"))
+        return max(0.0, min(1.0, raw))
+    except Exception:
+        return 0.75
+
+
+def _planner_timeout_sec() -> float:
+    try:
+        raw = float(os.getenv("AGENT_PLANNER_TIMEOUT_SEC", "8"))
+        return max(2.0, min(30.0, raw))
+    except Exception:
+        return 8.0
+
+
+def _planner_endpoint() -> str:
+    base = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com").strip().rstrip("/")
+    lower = base.lower()
+    if lower.endswith("/chat/completions"):
+        return base
+    if lower.endswith("/v1"):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
+
+
+def _strip_json_fence(text: str) -> str:
+    raw = (text or "").strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+        raw = re.sub(r"\s*```$", "", raw)
+    return raw.strip()
+
+
+def _parse_planner_payload(text: str) -> dict[str, Any] | None:
+    raw = _strip_json_fence(text)
+    if not raw:
+        return None
+    try:
+        obj = json.loads(raw)
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        pass
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        obj = json.loads(raw[start : end + 1])
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+def _to_str(value: Any, default: str = "") -> str:
+    text = str(value or "").strip()
+    return text if text else default
+
+
+def _to_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    try:
+        num = int(value)
+    except Exception:
+        num = default
+    return max(minimum, min(maximum, num))
+
+
+def _planner_entities(value: Any) -> list[str]:
+    if isinstance(value, list):
+        out = [str(v).strip() for v in value if str(v).strip()]
+        return out[:12]
+    text = str(value or "").strip()
+    if not text:
+        return []
+    return [s.strip() for s in re.split(r"[,\n;/|，、]+", text) if s.strip()][:12]
+
+
+def _plan_route_with_deepseek(history: list[dict], user_message: str) -> dict[str, Any] | None:
+    del history  # Planner is stateless for predictable routing decisions.
+
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if not api_key:
+        return None
+
+    model = os.getenv("DEEPSEEK_PLANNER_MODEL", "deepseek-chat").strip() or "deepseek-chat"
+    endpoint = _planner_endpoint()
+    system_prompt = (
+        "You are a routing planner for a tech-news agent.\n"
+        "Your output MUST be strict JSON only with keys: intent, confidence, params.\n"
+        "No markdown, no prose.\n"
+        "Allowed intent values:\n"
+        "- source_compare\n"
+        "- compare\n"
+        "- timeline\n"
+        "- landscape\n"
+        "- trend\n"
+        "- fulltext\n"
+        "- query\n"
+        "- runtime\n"
+        "Param schema:\n"
+        "- source_compare: {topic, days}\n"
+        "- compare: {topic_a, topic_b, days}\n"
+        "- timeline: {topic, days, limit}\n"
+        "- landscape: {topic, days, entities}\n"
+        "- trend: {topic, window}\n"
+        "- fulltext: {query, max_chars}\n"
+        "- query: {query, source, days, sort, limit}\n"
+        "- runtime: {}\n"
+        "Rules:\n"
+        "1) If uncertain, choose runtime with low confidence.\n"
+        "2) Keep confidence in [0,1].\n"
+        "3) Never fabricate URLs or facts."
+    )
+
+    body = {
+        "model": model,
+        "temperature": 0,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ],
+    }
+
+    try:
+        resp = requests.post(
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=_planner_timeout_sec(),
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        choices = payload.get("choices") or []
+        if not choices:
+            return None
+        message = choices[0].get("message") if isinstance(choices[0], dict) else None
+        content = ""
+        if isinstance(message, dict):
+            content = str(message.get("content") or "")
+        parsed = _parse_planner_payload(content)
+        return parsed
+    except Exception as exc:
+        print(f"[Warn] DeepSeek planner failed, fallback to runtime: {exc}")
+        return None
+
+
+def _dispatch_planner_route(
+    *,
+    runtime: str,
+    strict_mode: bool,
+    history: list[dict],
+    user_message: str,
+) -> str | None:
+    if not _planner_enabled(runtime):
+        return None
+
+    _metrics_inc("planner_attempts", 1)
+    plan = _plan_route_with_deepseek(history, user_message)
+    if not isinstance(plan, dict):
+        _metrics_inc("planner_empty", 1)
+        return None
+
+    intent = _to_str(plan.get("intent"), "").lower()
+    params = plan.get("params")
+    if not isinstance(params, dict):
+        params = {}
+
+    try:
+        confidence = float(plan.get("confidence", 0.0))
+    except Exception:
+        confidence = 0.0
+    if confidence < _planner_min_confidence():
+        _metrics_inc("planner_low_confidence", 1)
+        return None
+
+    if intent in {"", "runtime"}:
+        _metrics_inc("planner_runtime", 1)
+        return None
+
+    _metrics_inc("planner_routed", 1)
+
+    if intent == "source_compare":
+        _metrics_inc("source_compare_forced")
+        topic = _to_str(params.get("topic"), "AI")
+        days = _to_int(params.get("days"), 14, 1, 90)
+        return run_source_compare_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=topic,
+            days=days,
+            compare_sources_fn=compare_sources,
+            analyze_fn=_analyze_source_compare_output,
+            ensure_evidence_fn=_ensure_source_compare_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "compare":
+        topic_a = _to_str(params.get("topic_a"), "")
+        topic_b = _to_str(params.get("topic_b"), "")
+        if not topic_a or not topic_b:
+            _metrics_inc("planner_invalid_params", 1)
+            return None
+        _metrics_inc("compare_forced")
+        days = _to_int(params.get("days"), 14, 1, 90)
+        return run_compare_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic_a=topic_a,
+            topic_b=topic_b,
+            days=days,
+            compare_topics_fn=compare_topics,
+            analyze_fn=_analyze_compare_output,
+            ensure_evidence_fn=_ensure_compare_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "timeline":
+        topic = _to_str(params.get("topic"), "")
+        if not topic:
+            _metrics_inc("planner_invalid_params", 1)
+            return None
+        _metrics_inc("timeline_forced")
+        days = _to_int(params.get("days"), 30, 1, 180)
+        limit = _to_int(params.get("limit"), 12, 3, 40)
+        return run_timeline_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=topic,
+            days=days,
+            limit=limit,
+            build_timeline_fn=build_timeline,
+            count_timeline_items_fn=_count_timeline_items,
+            format_low_sample_fn=_format_low_sample_timeline_response,
+            analyze_fn=_analyze_timeline_output,
+            ensure_evidence_fn=_ensure_timeline_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "landscape":
+        _metrics_inc("landscape_forced")
+        topic = _to_str(params.get("topic"), "")
+        days = _to_int(params.get("days"), 30, 7, 180)
+        entities = _planner_entities(params.get("entities"))
+        return run_landscape_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=topic,
+            days=days,
+            entities=entities,
+            analyze_landscape_fn=analyze_landscape,
+            is_no_data_fn=_is_landscape_no_data,
+            format_no_data_fn=_format_landscape_no_data_response,
+            is_evidence_sufficient_fn=_is_landscape_evidence_sufficient,
+            metrics_inc_fn=_metrics_inc,
+            format_low_evidence_fn=_format_low_evidence_landscape_response,
+            analyze_output_fn=_analyze_landscape_output,
+            is_unstable_synthesis_fn=_is_unstable_landscape_synthesis,
+            ensure_evidence_fn=_ensure_landscape_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "trend":
+        topic = _to_str(params.get("topic"), "")
+        if not topic:
+            _metrics_inc("planner_invalid_params", 1)
+            return None
+        _metrics_inc("trend_forced")
+        window = _to_int(params.get("window"), 7, 3, 60)
+        return run_trend_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=topic,
+            window=window,
+            trend_analysis_fn=trend_analysis,
+            analyze_fn=_analyze_trend_output,
+            ensure_evidence_fn=_ensure_trend_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "fulltext":
+        request_query = _to_str(params.get("query"), "")
+        if not request_query:
+            _metrics_inc("planner_invalid_params", 1)
+            return None
+        _metrics_inc("fulltext_forced")
+        max_chars = _to_int(params.get("max_chars"), 4000, 800, 12000)
+        return run_fulltext_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            request_query=request_query,
+            max_chars=max_chars,
+            fulltext_batch_fn=fulltext_batch,
+            analyze_fn=_analyze_fulltext_output,
+            ensure_evidence_fn=_ensure_fulltext_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "query":
+        query = _to_str(params.get("query"), "")
+        if not query:
+            _metrics_inc("planner_invalid_params", 1)
+            return None
+        _metrics_inc("query_forced")
+        source = _to_str(params.get("source"), "all")
+        days = _to_int(params.get("days"), 21, 1, 365)
+        sort = _to_str(params.get("sort"), "time_desc")
+        limit = _to_int(params.get("limit"), 8, 1, 30)
+        return run_query_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            query=query,
+            source=source,
+            days=days,
+            sort=sort,
+            limit=limit,
+            query_news_fn=query_news,
+            analyze_fn=_analyze_query_output,
+            ensure_evidence_fn=_ensure_query_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    _metrics_inc("planner_unknown_intent", 1)
+    return None
+
+
 def _analyze_compare_output(
     user_message: str,
     topic_a: str,
@@ -994,11 +1334,272 @@ def _generate_langgraph(history: list[dict], user_message: str) -> str:
     return text
 
 
+def _detect_forced_route(user_message: str) -> tuple[str, dict[str, Any]] | None:
+    source_compare_req = _extract_source_compare_request(user_message)
+    if source_compare_req:
+        topic, days = source_compare_req
+        return "source_compare", {"topic": topic, "days": days}
+
+    compare_req = _extract_compare_request(user_message)
+    if compare_req:
+        topic_a, topic_b, days = compare_req
+        return "compare", {"topic_a": topic_a, "topic_b": topic_b, "days": days}
+
+    timeline_req = _extract_timeline_request(user_message)
+    if timeline_req:
+        topic, days, limit = timeline_req
+        return "timeline", {"topic": topic, "days": days, "limit": limit}
+
+    landscape_req = _extract_landscape_request(user_message)
+    if landscape_req:
+        topic, days, entities = landscape_req
+        return "landscape", {"topic": topic, "days": days, "entities": entities}
+
+    trend_req = _extract_trend_request(user_message)
+    if trend_req:
+        topic, window = trend_req
+        return "trend", {"topic": topic, "window": window}
+
+    fulltext_req = _extract_fulltext_request(user_message)
+    if fulltext_req:
+        request_query, max_chars = fulltext_req
+        return "fulltext", {"request_query": request_query, "max_chars": max_chars}
+
+    query_req = _extract_query_request(user_message)
+    if query_req:
+        query, source, days, sort, limit = query_req
+        return "query", {
+            "query": query,
+            "source": source,
+            "days": days,
+            "sort": sort,
+            "limit": limit,
+        }
+    return None
+
+
+def _run_forced_route(*, intent: str, params: dict[str, Any], strict_mode: bool, user_message: str) -> str:
+    if intent == "source_compare":
+        _metrics_inc("source_compare_forced")
+        return run_source_compare_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=str(params["topic"]),
+            days=int(params["days"]),
+            compare_sources_fn=compare_sources,
+            analyze_fn=_analyze_source_compare_output,
+            ensure_evidence_fn=_ensure_source_compare_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "compare":
+        _metrics_inc("compare_forced")
+        return run_compare_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic_a=str(params["topic_a"]),
+            topic_b=str(params["topic_b"]),
+            days=int(params["days"]),
+            compare_topics_fn=compare_topics,
+            analyze_fn=_analyze_compare_output,
+            ensure_evidence_fn=_ensure_compare_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "timeline":
+        _metrics_inc("timeline_forced")
+        return run_timeline_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=str(params["topic"]),
+            days=int(params["days"]),
+            limit=int(params["limit"]),
+            build_timeline_fn=build_timeline,
+            count_timeline_items_fn=_count_timeline_items,
+            format_low_sample_fn=_format_low_sample_timeline_response,
+            analyze_fn=_analyze_timeline_output,
+            ensure_evidence_fn=_ensure_timeline_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "landscape":
+        _metrics_inc("landscape_forced")
+        entities = params.get("entities")
+        if not isinstance(entities, list):
+            entities = []
+        return run_landscape_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=str(params["topic"]),
+            days=int(params["days"]),
+            entities=[str(x) for x in entities if str(x).strip()],
+            analyze_landscape_fn=analyze_landscape,
+            is_no_data_fn=_is_landscape_no_data,
+            format_no_data_fn=_format_landscape_no_data_response,
+            is_evidence_sufficient_fn=_is_landscape_evidence_sufficient,
+            metrics_inc_fn=_metrics_inc,
+            format_low_evidence_fn=_format_low_evidence_landscape_response,
+            analyze_output_fn=_analyze_landscape_output,
+            is_unstable_synthesis_fn=_is_unstable_landscape_synthesis,
+            ensure_evidence_fn=_ensure_landscape_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "trend":
+        _metrics_inc("trend_forced")
+        return run_trend_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            topic=str(params["topic"]),
+            window=int(params["window"]),
+            trend_analysis_fn=trend_analysis,
+            analyze_fn=_analyze_trend_output,
+            ensure_evidence_fn=_ensure_trend_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "fulltext":
+        _metrics_inc("fulltext_forced")
+        return run_fulltext_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            request_query=str(params["request_query"]),
+            max_chars=int(params["max_chars"]),
+            fulltext_batch_fn=fulltext_batch,
+            analyze_fn=_analyze_fulltext_output,
+            ensure_evidence_fn=_ensure_fulltext_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    if intent == "query":
+        _metrics_inc("query_forced")
+        return run_query_pipeline(
+            strict_mode=strict_mode,
+            user_message=user_message,
+            query=str(params["query"]),
+            source=str(params["source"]),
+            days=int(params["days"]),
+            sort=str(params["sort"]),
+            limit=int(params["limit"]),
+            query_news_fn=query_news,
+            analyze_fn=_analyze_query_output,
+            ensure_evidence_fn=_ensure_query_evidence,
+            emit_metrics_fn=_emit_route_metrics,
+        )
+
+    raise ValueError(f"Unknown forced route intent: {intent}")
+
+
+def _generate_with_graph_dispatch(
+    *,
+    history: list[dict],
+    user_message: str,
+    runtime: str,
+    strict_mode: bool,
+) -> str:
+    class _DispatchState(TypedDict, total=False):
+        history: list[dict]
+        user_message: str
+        runtime: str
+        strict_mode: bool
+        intent: str
+        params: dict[str, Any]
+        response: str
+
+    forced_intents = {"source_compare", "compare", "timeline", "landscape", "trend", "fulltext", "query"}
+
+    def _node_detect(state):
+        forced = _detect_forced_route(str(state.get("user_message", "")))
+        if forced:
+            intent, params = forced
+            return {"intent": intent, "params": params}
+        return {"intent": "planner"}
+
+    def _after_detect(state):
+        intent = str(state.get("intent", "planner"))
+        return "forced" if intent in forced_intents else "planner"
+
+    def _node_forced(state):
+        intent = str(state.get("intent", ""))
+        params = state.get("params")
+        if not isinstance(params, dict):
+            params = {}
+        text = _run_forced_route(
+            intent=intent,
+            params=params,
+            strict_mode=bool(state.get("strict_mode", False)),
+            user_message=str(state.get("user_message", "")),
+        )
+        return {"response": text}
+
+    def _node_planner(state):
+        planned = _dispatch_planner_route(
+            runtime=str(state.get("runtime", "langchain")),
+            strict_mode=bool(state.get("strict_mode", False)),
+            history=state.get("history") if isinstance(state.get("history"), list) else [],
+            user_message=str(state.get("user_message", "")),
+        )
+        if planned is not None:
+            return {"response": planned, "intent": "done"}
+        return {"intent": "runtime"}
+
+    def _after_planner(state):
+        if str(state.get("intent", "")) == "done" and str(state.get("response", "")).strip():
+            return "end"
+        return "runtime"
+
+    def _node_runtime(state):
+        text = run_runtime_pipeline(
+            strict_mode=bool(state.get("strict_mode", False)),
+            runtime=str(state.get("runtime", "langchain")),
+            history=state.get("history") if isinstance(state.get("history"), list) else [],
+            user_message=str(state.get("user_message", "")),
+            metrics_inc_fn=_metrics_inc,
+            emit_metrics_fn=_emit_route_metrics,
+            generate_legacy_fn=_generate_legacy,
+            generate_langgraph_fn=_generate_langgraph,
+        )
+        return {"response": text}
+
+    graph = StateGraph(_DispatchState)
+    graph.add_node("detect", _node_detect)
+    graph.add_node("forced", _node_forced)
+    graph.add_node("planner", _node_planner)
+    graph.add_node("runtime", _node_runtime)
+    graph.add_edge(START, "detect")
+    graph.add_conditional_edges("detect", _after_detect, {"forced": "forced", "planner": "planner"})
+    graph.add_conditional_edges("planner", _after_planner, {"runtime": "runtime", "end": END})
+    graph.add_edge("forced", END)
+    graph.add_edge("runtime", END)
+    compiled = graph.compile()
+    result = compiled.invoke(
+        {
+            "history": history,
+            "user_message": user_message,
+            "runtime": runtime,
+            "strict_mode": strict_mode,
+        }
+    )
+    text = str(result.get("response", "")).strip()
+    if not text:
+        raise RuntimeError("Graph dispatch produced empty response.")
+    return text
+
+
 def generate_response(history: list[dict], user_message: str) -> str:
     """Stateless generation entrypoint used by API/Bot."""
     runtime = os.getenv("AGENT_RUNTIME", "langchain").strip().lower()
     strict_mode = os.getenv("AGENT_RUNTIME_STRICT", "false").strip().lower() == "true"
+    dispatch_mode = os.getenv("AGENT_DISPATCH_MODE", "linear").strip().lower()
     _metrics_inc("requests_total")
+
+    if dispatch_mode == "graph":
+        return _generate_with_graph_dispatch(
+            history=history,
+            user_message=user_message,
+            runtime=runtime,
+            strict_mode=strict_mode,
+        )
 
     # Deterministic guardrail: source-comparison intent must use compare_sources tool first.
     source_compare_req = _extract_source_compare_request(user_message)
@@ -1125,6 +1726,15 @@ def generate_response(history: list[dict], user_message: str) -> str:
             ensure_evidence_fn=_ensure_query_evidence,
             emit_metrics_fn=_emit_route_metrics,
         )
+
+    planned = _dispatch_planner_route(
+        runtime=runtime,
+        strict_mode=strict_mode,
+        history=history,
+        user_message=user_message,
+    )
+    if planned is not None:
+        return planned
 
     return run_runtime_pipeline(
         strict_mode=strict_mode,

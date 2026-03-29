@@ -5,6 +5,100 @@ from __future__ import annotations
 import re
 
 
+_EN_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
+
+
+_CN_DIGITS = {
+    "零": 0,
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+}
+
+
+def _parse_cn_number(token: str) -> int | None:
+    value = (token or "").strip()
+    if not value:
+        return None
+    if value in _CN_DIGITS:
+        return _CN_DIGITS[value]
+    if value == "十":
+        return 10
+    if "十" in value:
+        left, right = value.split("十", 1)
+        if left:
+            left_num = _CN_DIGITS.get(left)
+            if left_num is None:
+                return None
+        else:
+            left_num = 1
+        if right:
+            right_num = _CN_DIGITS.get(right)
+            if right_num is None:
+                return None
+        else:
+            right_num = 0
+        return left_num * 10 + right_num
+    if "百" in value:
+        left, right = value.split("百", 1)
+        left_num = _CN_DIGITS.get(left) if left else 1
+        if left_num is None:
+            return None
+        if not right:
+            return left_num * 100
+        tail = _parse_cn_number(right)
+        if tail is None:
+            return None
+        return left_num * 100 + tail
+    return None
+
+
+def _parse_number_token(token: str) -> int | None:
+    raw = (token or "").strip().lower()
+    if not raw:
+        return None
+    if raw.isdigit():
+        return int(raw)
+    if raw in _EN_NUMBER_WORDS:
+        return _EN_NUMBER_WORDS[raw]
+    return _parse_cn_number(raw)
+
+
+def _days_from_unit(num: int, unit: str) -> int:
+    u = (unit or "").lower()
+    if u in {"day", "days", "天", "日"}:
+        return num
+    if u in {"week", "weeks", "周", "星期"}:
+        return num * 7
+    if u in {"month", "months", "月", "个月"}:
+        return num * 30
+    if u in {"year", "years", "年"}:
+        return num * 365
+    if u in {"hour", "hours", "小时"}:
+        return max(1, (num + 23) // 24)
+    return num
+
+
 def count_timeline_items(text: str) -> int:
     if not text:
         return 0
@@ -12,8 +106,20 @@ def count_timeline_items(text: str) -> int:
 
 
 def extract_days(text: str, default: int, maximum: int) -> int:
-    m = re.search(r"(?:最近|过去|last)?\s*(\d{1,3})\s*(?:天|day|days)", text, flags=re.IGNORECASE)
-    val = int(m.group(1)) if m else default
+    m = re.search(
+        r"(?:最近|过去|近|last|recent|past)?\s*"
+        r"(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|[一二两三四五六七八九十百]+)\s*"
+        r"(天|日|周|星期|个月|月|年|小时|day|days|week|weeks|month|months|year|years|hour|hours)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return max(1, min(maximum, default))
+
+    num = _parse_number_token(m.group(1))
+    if num is None:
+        return max(1, min(maximum, default))
+    val = _days_from_unit(num, m.group(2))
     return max(1, min(maximum, val))
 
 
@@ -569,7 +675,14 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
         "developments",
     ]
     has_explicit_marker = any(k in lower for k in explicit_timeline_markers)
-    has_recent_window = bool(re.search(r"(最近|过去|近|last|recent|past)\s*\d{0,3}\s*(天|day|days)?", lower))
+    has_recent_window = bool(
+        re.search(
+            r"(最近|过去|近|last|recent|past)\s*"
+            r"(?:\d{0,3}|[一二两三四五六七八九十百]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)?\s*"
+            r"(?:天|日|周|星期|个月|月|day|days|week|weeks|month|months)?",
+            lower,
+        )
+    )
     has_action_intent = any(k in lower for k in action_markers)
 
     if not (has_explicit_marker or (has_recent_window and has_action_intent)):
@@ -579,12 +692,16 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
     limit = extract_limit(text, default=12, maximum=40)
 
     topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{2,24})"
+    duration_required_pattern = (
+        r"(?:\d{1,3}|[一二两三四五六七八九十百]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*"
+        r"(?:天|日|周|星期|个月|月|day|days|week|weeks|month|months)"
+    )
     patterns = [
         rf"(?:构建|生成|给我|做|列出|整理|build|make|create|show)\s+(?P<t>{topic_pattern})",
-        rf"(?:最近|过去|近|last|recent|past)\s*\d{{0,3}}\s*(?:天|day|days)?\s*(?P<t>{topic_pattern})\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
-        rf"(?P<t>{topic_pattern})\s*(?:最近|过去|近|last|recent|past)\s*\d{{0,3}}\s*(?:天|day|days)?\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
+        rf"(?:最近|过去|近|last|recent|past)\s*{duration_required_pattern}\s*(?P<t>{topic_pattern})\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
         rf"(?:最近|过去|近|last|recent|past)\s*(?P<t>{topic_pattern})\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
-        rf"(?P<t>{topic_pattern})\s*(?:过去|最近|last)?\s*\d{{0,3}}\s*(?:天|day|days)?\s*(?:时间线|timeline)",
+        rf"(?P<t>{topic_pattern})\s*(?:最近|过去|近|last|recent|past)\s*(?:{duration_required_pattern})?\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
+        rf"(?P<t>{topic_pattern})\s*(?:过去|最近|last)?\s*(?:{duration_required_pattern})?\s*(?:时间线|timeline)",
         rf"(?:时间线|timeline)\s*(?:关于|for)?\s*(?P<t>{topic_pattern})",
     ]
 
@@ -594,6 +711,18 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
         if m:
             topic = m.group("t").strip()
             break
+
+    if not topic:
+        m = re.search(
+            r"(?:最近|过去|近|last|recent|past)?\s*"
+            r"(?P<t>[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{2,24})\s*"
+            r"(?:领域|行业|赛道)\s*(?:的)?\s*(?:重大|重要|关键)?\s*(?:产品|事件|动态)?\s*"
+            r"(?:时间线|timeline)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if m:
+            topic = m.group("t").strip()
 
     if not topic:
         stop = {
@@ -617,6 +746,14 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
             "天",
             "day",
             "days",
+            "重大",
+            "重要",
+            "关键",
+            "产品",
+            "事件",
+            "动态",
+            "什么",
+            "是什么",
         }
         candidates = re.findall(topic_pattern, text)
         for c in candidates:
@@ -629,6 +766,17 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
             break
 
     if not topic:
+        if bool(re.search(r"(?<![a-z])ai(?![a-z])", lower)) or ("人工智能" in text) or ("大模型" in text) or ("llm" in lower):
+            topic = "AI"
+        else:
+            return None
+    low_topic = topic.lower()
+    if (
+        bool(re.search(r"(?<![a-z])ai(?![a-z])", low_topic))
+        or topic in {"人工智能", "大模型", "模型", "LLM", "llm"}
+    ):
+        topic = "AI"
+    if topic.lower() in {"重大", "重要", "关键", "产品", "事件", "动态", "什么", "是什么"}:
         return None
     topic = re.sub(r"(?:的|之)$", "", topic).strip()
     topic = re.sub(r"(?:'s)$", "", topic, flags=re.IGNORECASE).strip()

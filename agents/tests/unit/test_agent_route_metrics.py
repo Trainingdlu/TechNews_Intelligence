@@ -103,9 +103,24 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertEqual(days, 30)
         self.assertEqual(limit, 12)
 
+    def test_extract_timeline_request_supports_week_window(self) -> None:
+        req = agent_mod._extract_timeline_request("最近两周谷歌的动作")
+        self.assertIsNotNone(req)
+        topic, days, _limit = req
+        self.assertEqual(topic, "谷歌")
+        self.assertEqual(days, 14)
+
     def test_extract_timeline_request_not_triggered_by_recent_news_only(self) -> None:
         req = agent_mod._extract_timeline_request("最近谷歌新闻")
         self.assertIsNone(req)
+
+    def test_extract_timeline_request_ai_domain_major_product(self) -> None:
+        req = agent_mod._extract_timeline_request("最近ai领域的重大产品时间线是什么")
+        self.assertIsNotNone(req)
+        topic, days, limit = req
+        self.assertEqual(topic, "AI")
+        self.assertEqual(days, 30)
+        self.assertEqual(limit, 12)
 
     def test_extract_landscape_request_weak_ecosystem_without_role_intent(self) -> None:
         req = agent_mod._extract_landscape_request("Please discuss Apple ecosystem accessories compatibility.")
@@ -137,6 +152,16 @@ class AgentRouteMetricsTests(unittest.TestCase):
 
     def test_extract_query_request_detects_natural_language_filter_intent(self) -> None:
         req = agent_mod._extract_query_request("OpenAI 在 TechCrunch 最近14天报道")
+        self.assertIsNotNone(req)
+        query, source, days, sort, limit = req
+        self.assertEqual(query, "OpenAI")
+        self.assertEqual(source, "TechCrunch")
+        self.assertEqual(days, 14)
+        self.assertEqual(sort, "time_desc")
+        self.assertEqual(limit, 8)
+
+    def test_extract_query_request_supports_week_window(self) -> None:
+        req = agent_mod._extract_query_request("OpenAI 在 TechCrunch 最近两周报道")
         self.assertIsNotNone(req)
         query, source, days, sort, limit = req
         self.assertEqual(query, "OpenAI")
@@ -664,3 +689,233 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertIn("[1]", str(payload["text"]))
         self.assertIn("来源", str(payload["text"]))
         self.assertEqual(payload["url_title_map"].get("https://a.com/article"), "中文标题A")
+
+    def test_generate_response_planner_routes_compare_when_confident(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        old_planner_enabled = os.environ.get("AGENT_PLANNER_ENABLED")
+        old_planner_conf = os.environ.get("AGENT_PLANNER_MIN_CONFIDENCE")
+        old_deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+        os.environ["AGENT_PLANNER_ENABLED"] = "true"
+        os.environ["AGENT_PLANNER_MIN_CONFIDENCE"] = "0.75"
+        os.environ["DEEPSEEK_API_KEY"] = "test-key"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_trend_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_fulltext_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_query_request", lambda _m: None))
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "_plan_route_with_deepseek",
+                    lambda _h, _m: {
+                        "intent": "compare",
+                        "confidence": 0.93,
+                        "params": {"topic_a": "OpenAI", "topic_b": "Anthropic", "days": 14},
+                    },
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "run_compare_pipeline",
+                    lambda **_kwargs: "planner compare ok https://a.com/evidence",
+                )
+            )
+
+            out = agent_mod.generate_response([], "请比较 OpenAI 和 Anthropic")
+            self.assertIn("planner compare ok", out)
+            self.assertIn("来源", out)
+            snapshot = agent_mod.get_route_metrics_snapshot()
+            self.assertEqual(snapshot.get("planner_routed"), 1)
+            self.assertEqual(snapshot.get("compare_forced"), 1)
+            self.assertEqual(snapshot.get("langchain_attempts"), 0)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+        if old_planner_enabled is None:
+            os.environ.pop("AGENT_PLANNER_ENABLED", None)
+        else:
+            os.environ["AGENT_PLANNER_ENABLED"] = old_planner_enabled
+
+        if old_planner_conf is None:
+            os.environ.pop("AGENT_PLANNER_MIN_CONFIDENCE", None)
+        else:
+            os.environ["AGENT_PLANNER_MIN_CONFIDENCE"] = old_planner_conf
+
+        if old_deepseek_key is None:
+            os.environ.pop("DEEPSEEK_API_KEY", None)
+        else:
+            os.environ["DEEPSEEK_API_KEY"] = old_deepseek_key
+
+    def test_generate_response_planner_low_confidence_falls_back_runtime(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        old_planner_enabled = os.environ.get("AGENT_PLANNER_ENABLED")
+        old_planner_conf = os.environ.get("AGENT_PLANNER_MIN_CONFIDENCE")
+        old_deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+        os.environ["AGENT_PLANNER_ENABLED"] = "true"
+        os.environ["AGENT_PLANNER_MIN_CONFIDENCE"] = "0.75"
+        os.environ["DEEPSEEK_API_KEY"] = "test-key"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_trend_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_fulltext_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_query_request", lambda _m: None))
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "_plan_route_with_deepseek",
+                    lambda _h, _m: {
+                        "intent": "compare",
+                        "confidence": 0.22,
+                        "params": {"topic_a": "OpenAI", "topic_b": "Anthropic", "days": 14},
+                    },
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "run_runtime_pipeline",
+                    lambda **_kwargs: "runtime fallback ok",
+                )
+            )
+            out = agent_mod.generate_response([], "请比较 OpenAI 和 Anthropic")
+            self.assertEqual(out, "runtime fallback ok")
+            snapshot = agent_mod.get_route_metrics_snapshot()
+            self.assertEqual(snapshot.get("planner_low_confidence"), 1)
+            self.assertEqual(snapshot.get("planner_routed", 0), 0)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+        if old_planner_enabled is None:
+            os.environ.pop("AGENT_PLANNER_ENABLED", None)
+        else:
+            os.environ["AGENT_PLANNER_ENABLED"] = old_planner_enabled
+
+        if old_planner_conf is None:
+            os.environ.pop("AGENT_PLANNER_MIN_CONFIDENCE", None)
+        else:
+            os.environ["AGENT_PLANNER_MIN_CONFIDENCE"] = old_planner_conf
+
+        if old_deepseek_key is None:
+            os.environ.pop("DEEPSEEK_API_KEY", None)
+        else:
+            os.environ["DEEPSEEK_API_KEY"] = old_deepseek_key
+
+    def test_generate_response_graph_dispatch_uses_forced_route(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        old_dispatch = os.environ.get("AGENT_DISPATCH_MODE")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+        os.environ["AGENT_DISPATCH_MODE"] = "graph"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: ("OpenAI", "Anthropic", 14)))
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "run_compare_pipeline",
+                    lambda **_kwargs: "graph forced compare https://a.com/evidence",
+                )
+            )
+            out = agent_mod.generate_response([], "对比 OpenAI 和 Anthropic")
+            self.assertIn("graph forced compare", out)
+            self.assertIn("来源", out)
+            snapshot = agent_mod.get_route_metrics_snapshot()
+            self.assertEqual(snapshot.get("compare_forced"), 1)
+            self.assertEqual(snapshot.get("langchain_attempts"), 0)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+        if old_dispatch is None:
+            os.environ.pop("AGENT_DISPATCH_MODE", None)
+        else:
+            os.environ["AGENT_DISPATCH_MODE"] = old_dispatch
+
+    def test_generate_response_graph_dispatch_runtime_fallback(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        old_dispatch = os.environ.get("AGENT_DISPATCH_MODE")
+        old_planner_enabled = os.environ.get("AGENT_PLANNER_ENABLED")
+        old_deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+        os.environ["AGENT_DISPATCH_MODE"] = "graph"
+        os.environ["AGENT_PLANNER_ENABLED"] = "false"
+        os.environ.pop("DEEPSEEK_API_KEY", None)
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_trend_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_fulltext_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_query_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "run_runtime_pipeline", lambda **_kwargs: "graph runtime ok"))
+            out = agent_mod.generate_response([], "你好")
+            self.assertEqual(out, "graph runtime ok")
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+        if old_dispatch is None:
+            os.environ.pop("AGENT_DISPATCH_MODE", None)
+        else:
+            os.environ["AGENT_DISPATCH_MODE"] = old_dispatch
+
+        if old_planner_enabled is None:
+            os.environ.pop("AGENT_PLANNER_ENABLED", None)
+        else:
+            os.environ["AGENT_PLANNER_ENABLED"] = old_planner_enabled
+
+        if old_deepseek_key is None:
+            os.environ.pop("DEEPSEEK_API_KEY", None)
+        else:
+            os.environ["DEEPSEEK_API_KEY"] = old_deepseek_key

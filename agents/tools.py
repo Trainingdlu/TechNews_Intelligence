@@ -160,6 +160,47 @@ LANDSCAPE_SIGNAL_LABELS = {
     "policy_security": "Policy/Security",
 }
 
+TOPIC_QUERY_EXPANSIONS = {
+    "ai": [
+        "AI",
+        "人工智能",
+        "大模型",
+        "LLM",
+        "智能体",
+        "GPT",
+        "Gemini",
+        "Claude",
+        "Copilot",
+    ],
+    "business": [
+        "business",
+        "commercial",
+        "market",
+        "finance",
+        "enterprise",
+        "商业",
+        "市场",
+        "金融",
+        "营收",
+        "盈利",
+        "IPO",
+        "并购",
+    ],
+    "security": [
+        "security",
+        "cyber",
+        "cybersecurity",
+        "vulnerability",
+        "breach",
+        "安全",
+        "网络安全",
+        "漏洞",
+        "威胁",
+        "攻防",
+        "勒索",
+    ],
+}
+
 
 def _clamp_int(value: int, minimum: int, maximum: int) -> int:
     try:
@@ -206,14 +247,91 @@ def _is_probable_url(text: str) -> bool:
 
 
 def _extract_time_window_days(text: str, default: int = 14, maximum: int = 180) -> int:
-    m = re.search(r"(?:最近|过去|last|recent|past)?\s*(\d{1,3})\s*(?:天|day|days)", text, flags=re.IGNORECASE)
+    m = re.search(
+        r"(?:最近|过去|近|last|recent|past)?\s*(\d{1,3})\s*(天|日|周|星期|月|day|days|week|weeks|month|months)",
+        text,
+        flags=re.IGNORECASE,
+    )
     if not m:
         return _clamp_int(default, 1, maximum)
-    return _clamp_int(int(m.group(1)), 1, maximum)
+    value = int(m.group(1))
+    unit = str(m.group(2)).lower()
+    if unit in {"周", "星期", "week", "weeks"}:
+        value *= 7
+    elif unit in {"月", "month", "months"}:
+        value *= 30
+    return _clamp_int(value, 1, maximum)
+
+
+def _expand_topic_terms(topic: str) -> list[str]:
+    base = (topic or "").strip()
+    if not base:
+        return []
+
+    normalized = base.lower()
+    canonical = normalized
+    if normalized in {"ai", "人工智能", "大模型", "模型", "llm", "智能体"}:
+        canonical = "ai"
+    elif normalized in {"business", "商业", "市场", "金融", "财经"}:
+        canonical = "business"
+    elif normalized in {"security", "cybersecurity", "cyber", "安全", "网络安全"}:
+        canonical = "security"
+
+    terms = [base]
+    terms.extend(TOPIC_QUERY_EXPANSIONS.get(canonical, []))
+
+    dedup: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        t = str(term).strip()
+        if not t:
+            continue
+        key = t.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(t)
+    return dedup[:12]
+
+
+def _build_topic_where_clause(topic: str, table_alias: str = "") -> tuple[str, list[Any]]:
+    terms = _expand_topic_terms(topic)
+    if not terms:
+        return "TRUE", []
+
+    prefix = f"{table_alias}." if table_alias else ""
+    clauses: list[str] = []
+    params: list[Any] = []
+    for term in terms:
+        like = f"%{term}%"
+        clauses.append(
+            f"({prefix}title ILIKE %s OR COALESCE({prefix}title_cn,'') ILIKE %s OR COALESCE({prefix}summary,'') ILIKE %s)"
+        )
+        params.extend([like, like, like])
+    return "(" + " OR ".join(clauses) + ")", params
 
 
 def _json_text(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False)
+
+
+def _is_recent_timestamp(value: Any, cutoff: Any) -> bool:
+    """Compare timestamps safely across naive/aware datetime mixes."""
+    if value is None or cutoff is None:
+        return False
+    try:
+        return value >= cutoff
+    except TypeError:
+        lhs = value
+        rhs = cutoff
+        if getattr(lhs, "tzinfo", None) is not None:
+            lhs = lhs.replace(tzinfo=None)
+        if getattr(rhs, "tzinfo", None) is not None:
+            rhs = rhs.replace(tzinfo=None)
+        try:
+            return lhs >= rhs
+        except Exception:
+            return False
 
 
 def lookup_url_titles(urls: list[str]) -> dict[str, str]:
@@ -757,18 +875,18 @@ def trend_analysis(topic: str, window: int = 7) -> str:
 
     topic = topic.strip()
     window = _clamp_int(window, 3, 60)
-    q = f"%{topic}%"
+    topic_clause, topic_params = _build_topic_where_clause(topic)
 
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             WITH matched AS (
                 SELECT created_at, points
                 FROM tech_news
                 WHERE created_at >= NOW() - (%s::int * INTERVAL '2 day')
-                  AND (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s)
+                  AND {topic_clause}
             ),
             recent AS (
                 SELECT COUNT(*) AS cnt, COALESCE(AVG(points), 0) AS avg_points
@@ -783,20 +901,20 @@ def trend_analysis(topic: str, window: int = 7) -> str:
             SELECT recent.cnt, recent.avg_points, prev.cnt, prev.avg_points
             FROM recent, prev
             """,
-            (window, q, q, q, window, window),
+            tuple([window] + topic_params + [window, window]),
         )
         recent_cnt, recent_avg, prev_cnt, prev_avg = cur.fetchone()
 
         cur.execute(
-            """
+            f"""
             SELECT DATE(created_at) AS day, COUNT(*) AS cnt, ROUND(AVG(points)::numeric, 1) AS avg_points
             FROM tech_news
             WHERE created_at >= NOW() - %s::interval
-              AND (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s)
+              AND {topic_clause}
             GROUP BY DATE(created_at)
             ORDER BY day ASC
             """,
-            (f"{window} days", q, q, q),
+            tuple([f"{window} days"] + topic_params),
         )
         daily_rows = cur.fetchall()
         cur.close()
@@ -835,12 +953,12 @@ def compare_sources(topic: str, days: int = 14) -> str:
         return "compare_sources requires topic."
 
     days = _clamp_int(days, 1, 90)
-    q = f"%{topic.strip()}%"
+    topic_clause, topic_params = _build_topic_where_clause(topic)
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             SELECT
                 source_type,
                 COUNT(*) AS cnt,
@@ -850,16 +968,16 @@ def compare_sources(topic: str, days: int = 14) -> str:
                 COUNT(*) FILTER (WHERE sentiment = 'Negative') AS neg_cnt
             FROM view_dashboard_news
             WHERE created_at >= NOW() - %s::interval
-              AND (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s)
+              AND {topic_clause}
             GROUP BY source_type
             ORDER BY source_type
             """,
-            (f"{days} days", q, q, q),
+            tuple([f"{days} days"] + topic_params),
         )
         stats_rows = cur.fetchall()
 
         cur.execute(
-            """
+            f"""
             WITH ranked AS (
                 SELECT
                     source_type,
@@ -870,14 +988,14 @@ def compare_sources(topic: str, days: int = 14) -> str:
                     ROW_NUMBER() OVER (PARTITION BY source_type ORDER BY points DESC NULLS LAST, created_at DESC) AS rn
                 FROM view_dashboard_news
                 WHERE created_at >= NOW() - %s::interval
-                  AND (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s)
+                  AND {topic_clause}
             )
             SELECT source_type, headline, url, points, created_at, rn
             FROM ranked
             WHERE rn <= 3
             ORDER BY source_type, rn
             """,
-            (f"{days} days", q, q, q),
+            tuple([f"{days} days"] + topic_params),
         )
         top_rows = cur.fetchall()
         cur.close()
@@ -1130,15 +1248,8 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
     topic_where_sql = ""
     topic_params: list[Any] = []
     if topic:
-        topic_like = f"%{topic}%"
-        topic_where_sql = (
-            "AND ("
-            "v.title ILIKE %s "
-            "OR COALESCE(v.title_cn, '') ILIKE %s "
-            "OR COALESCE(v.summary, '') ILIKE %s"
-            ")"
-        )
-        topic_params = [topic_like, topic_like, topic_like]
+        topic_clause_sql, topic_params = _build_topic_where_clause(topic, table_alias="v")
+        topic_where_sql = f"AND {topic_clause_sql}"
 
     cte = f"""
         WITH entities(canonical, pattern) AS (
@@ -1208,15 +1319,9 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
         """
         topic_scope_params: list[Any] = [f"{days} days"]
         if topic:
-            topic_like = f"%{topic}%"
-            topic_scope_sql += (
-                " AND ("
-                "v.title ILIKE %s "
-                "OR COALESCE(v.title_cn, '') ILIKE %s "
-                "OR COALESCE(v.summary, '') ILIKE %s"
-                ")"
-            )
-            topic_scope_params.extend([topic_like, topic_like, topic_like])
+            topic_clause_sql, topic_scope_topic_params = _build_topic_where_clause(topic, table_alias="v")
+            topic_scope_sql += f" AND {topic_clause_sql}"
+            topic_scope_params.extend(topic_scope_topic_params)
         cur.execute(topic_scope_sql, tuple(topic_scope_params))
         topic_articles = int(cur.fetchone()[0] or 0)
 
@@ -1285,7 +1390,7 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
             per_entity[source_type] = per_entity.get(source_type, 0) + 1
             if entity not in momentum_map:
                 momentum_map[entity] = {"recent": 0, "previous": 0}
-            if created_at and created_at >= cutoff_ts:
+            if _is_recent_timestamp(created_at, cutoff_ts):
                 momentum_map[entity]["recent"] += 1
             else:
                 momentum_map[entity]["previous"] += 1
@@ -1395,12 +1500,12 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
 
     days = _clamp_int(days, 1, 180)
     limit = _clamp_int(limit, 3, 40)
-    q = f"%{topic.strip()}%"
+    topic_clause, topic_params = _build_topic_where_clause(topic)
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            """
+            f"""
             SELECT
                 created_at,
                 source_type,
@@ -1410,11 +1515,11 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
                 url
             FROM view_dashboard_news
             WHERE created_at >= NOW() - %s::interval
-              AND (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s)
+              AND {topic_clause}
             ORDER BY created_at ASC
             LIMIT %s
             """,
-            (f"{days} days", q, q, q, limit),
+            tuple([f"{days} days"] + topic_params + [limit]),
         )
         rows = cur.fetchall()
         cur.close()

@@ -124,6 +124,12 @@ def run_timeline_pipeline(
 ) -> str:
     try:
         raw_timeline = build_timeline_fn(topic=topic, days=days, limit=limit)
+        if (raw_timeline.startswith("No timeline data")) and days < 90:
+            retry_days = min(180, max(60, days * 2))
+            retry_timeline = build_timeline_fn(topic=topic, days=retry_days, limit=limit)
+            if not (retry_timeline.startswith("build_timeline failed:") or retry_timeline.startswith("No timeline data")):
+                raw_timeline = retry_timeline
+                days = retry_days
         if raw_timeline.startswith("build_timeline failed:") or raw_timeline.startswith("No timeline data"):
             emit_metrics_fn("timeline_forced")
             return raw_timeline
@@ -193,6 +199,23 @@ def run_landscape_pipeline(
             retry_landscape = analyze_landscape_fn(topic="", days=days, entities=entities_csv, limit_per_entity=3)
             if not is_no_data_fn(retry_landscape):
                 raw_landscape = retry_landscape
+                topic = ""
+        if is_no_data_fn(raw_landscape) and days < 90:
+            retry_days = min(180, max(60, days * 2))
+            retry_landscape = analyze_landscape_fn(topic=topic, days=retry_days, entities=entities_csv, limit_per_entity=3)
+            if is_no_data_fn(retry_landscape) and topic:
+                retry_landscape_any = analyze_landscape_fn(
+                    topic="",
+                    days=retry_days,
+                    entities=entities_csv,
+                    limit_per_entity=3,
+                )
+                if not is_no_data_fn(retry_landscape_any):
+                    retry_landscape = retry_landscape_any
+                    topic = ""
+            if not is_no_data_fn(retry_landscape):
+                raw_landscape = retry_landscape
+                days = retry_days
         if is_no_data_fn(raw_landscape):
             emit_metrics_fn("landscape_forced")
             return format_no_data_fn(

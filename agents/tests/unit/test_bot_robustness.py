@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import types
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -46,6 +47,9 @@ class BotRobustnessTests(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._env)
         bot_mod.chat_request_log.clear()
+        # Prevent stubbed modules from polluting subsequent test modules.
+        for name in ("agent", "db", "telegram", "telegram.ext"):
+            sys.modules.pop(name, None)
 
     def test_extract_urls_dedup_and_strip_punctuation(self) -> None:
         text = "A https://a.com/x, B https://b.com/y. A2 https://a.com/x"

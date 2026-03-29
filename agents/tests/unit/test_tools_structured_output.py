@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 try:
@@ -40,6 +40,24 @@ class _FakeConn:
 
 
 class ToolStructuredOutputTests(unittest.TestCase):
+    def test_is_recent_timestamp_handles_naive_aware(self) -> None:
+        cutoff = datetime(2026, 3, 29, 0, 0, 0, tzinfo=timezone.utc)
+        naive_recent = datetime(2026, 3, 29, 1, 0, 0)
+        naive_old = datetime(2026, 3, 28, 1, 0, 0)
+        self.assertTrue(tools_mod._is_recent_timestamp(naive_recent, cutoff))
+        self.assertFalse(tools_mod._is_recent_timestamp(naive_old, cutoff - timedelta(hours=1)))
+
+    def test_extract_time_window_days_supports_week_and_month(self) -> None:
+        self.assertEqual(tools_mod._extract_time_window_days("最近2周相关全文", default=14), 14)
+        self.assertEqual(tools_mod._extract_time_window_days("past 1 month coverage", default=14), 30)
+
+    def test_expand_topic_terms_for_ai_domain(self) -> None:
+        terms = tools_mod._expand_topic_terms("AI")
+        lowered = {t.lower() for t in terms}
+        self.assertIn("ai", lowered)
+        self.assertIn("gpt", lowered)
+        self.assertIn("gemini", lowered)
+
     def test_query_news_json_mode_returns_structured_payload(self) -> None:
         rows = [
             (
@@ -91,4 +109,3 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(len(payload["selected"]), 2)
         self.assertEqual(len(payload["articles"]), 2)
         self.assertEqual(payload["articles"][0]["url"], "https://a.com")
-
