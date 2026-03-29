@@ -138,6 +138,135 @@ def extract_source_label(text: str) -> str:
     return "all"
 
 
+_PLACEHOLDER_TOPIC_TOKENS = {
+    "什么",
+    "有什么",
+    "有哪些",
+    "啥",
+    "有啥",
+    "哪家",
+    "哪个",
+    "哪些",
+    "最近",
+    "过去",
+    "现在",
+    "动态",
+    "动作",
+    "新闻",
+    "消息",
+    "进展",
+    "更新",
+    "事件",
+    "what",
+    "which",
+    "who",
+    "how",
+    "why",
+    "latest",
+    "recent",
+    "updates",
+    "news",
+    "did",
+    "do",
+    "does",
+    "has",
+    "have",
+    "been",
+    "情况",
+    "最近情况",
+    "怎么样",
+    "怎么了",
+    "在忙什么",
+    "都在做什么",
+    "做什么",
+    "忙什么",
+}
+
+
+def _clean_topic_candidate(token: str) -> str:
+    cleaned = re.sub(r"\s+", " ", (token or "")).strip("：:，,。.!?！？()[]{}\"'` ")
+    if not cleaned:
+        return ""
+
+    cleaned = re.sub(
+        r"^(?:那么|那|请问|请|给我|帮我|我想|我想看|我想知道|想看|想知道|"
+        r"总结下|总结一下|分析下|分析一下|说说|聊聊|看下|看一下|看|查下|查一下|查|搜下|搜一下|搜|问下|问一下|问)+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    cleaned = re.sub(r"^(?:what|how|did|do|does|has|have|been)\b\s*", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"^(?:最近|过去|近|last|recent|past)\s*", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(
+        r"(?:最近|过去|近|last|recent|past)\s*"
+        r"(?:\d{1,3}|[一二两三四五六七八九十百]+)?\s*"
+        r"(?:天|日|周|星期|个月|月|day|days|week|weeks|month|months)?\s*"
+        r"(?:情况|新闻|报道|文章|资讯|动态|消息|进展|更新|动作|动向|事件|在忙什么|都在做什么|在做什么|忙什么|怎么样|怎么了|"
+        r"news|updates?|coverage|headline|headlines|moves?|actions?)?$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+    cleaned = re.sub(
+        r"(?:情况|新闻|报道|文章|资讯|动态|消息|进展|更新|动作|动向|事件|在忙什么|都在做什么|在做什么|忙什么|怎么样|怎么了|"
+        r"news|updates?|coverage|headline|headlines|moves?|actions?)$",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    ).strip()
+    cleaned = re.sub(r"(?:有)?什么(?:(?:大|重大|主要|关键|最新)?)$", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"(?:有)?哪些$", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"(?:的)$", "", cleaned).strip()
+    return cleaned
+
+
+def _is_placeholder_topic(token: str) -> bool:
+    normalized = re.sub(r"\s+", "", _clean_topic_candidate(token)).strip("：:，,。.!?！？")
+    if len(normalized) < 2:
+        return True
+    low = normalized.lower()
+    if re.fullmatch(
+        r"(?:\d{1,3}|[一二两三四五六七八九十百]+)"
+        r"(?:天|日|周|星期|个月|月|年|小时|day|days|week|weeks|month|months|year|years|hour|hours)",
+        low,
+    ):
+        return True
+    if low in _PLACEHOLDER_TOPIC_TOKENS:
+        return True
+    if normalized in {"发生了什么", "都做了什么"}:
+        return True
+    if re.fullmatch(r"(?:有)?什么(?:(?:大|重大|主要|关键|最新)?(?:动态|动作|新闻|消息|进展|更新|事件)?)?", normalized):
+        return True
+    if re.fullmatch(r"(?:有)?哪些(?:动态|动作|新闻|消息|进展|更新|事件)?", normalized):
+        return True
+    return False
+
+
+def _extract_recent_subject(text: str) -> str:
+    topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{1,24})"
+    duration_pattern = (
+        r"(?:\d{1,3}|[一二两三四五六七八九十百]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*"
+        r"(?:天|日|周|星期|个月|月|day|days|week|weeks|month|months)"
+    )
+    recent_marker = r"(?:最近|过去|last|recent|past|(?<!最)近)"
+    source_marker = r"(?:techcrunch|tc|hackernews|hacker\s+news|hn)"
+    patterns = [
+        rf"(?P<t>{topic_pattern})\s*(?:在|on|in)\s*{source_marker}\s*{recent_marker}\s*(?:{duration_pattern})?\s*(?:都|有|有什么|有哪些|what|which|any)?\s*(?:的)?\s*(?:新闻|报道|文章|资讯|动态|消息|news|article|articles|coverage|headline|headlines|updates?)",
+        rf"(?P<t>{topic_pattern})\s*(?={recent_marker}){recent_marker}\s*(?:{duration_pattern})?\s*(?:都|有|有什么|有哪些|what|which|any)?\s*(?:的)?\s*(?:新闻|报道|文章|资讯|动态|消息|news|article|articles|coverage|headline|headlines|updates?)",
+        rf"{recent_marker}\s*(?:{duration_pattern})?\s*(?P<t>{topic_pattern})\s*(?:都|有|有什么|有哪些|what|which|any)?\s*(?:的)?\s*(?:新闻|报道|文章|资讯|动态|消息|news|article|articles|coverage|headline|headlines|updates?)",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text, flags=re.IGNORECASE)
+        if not m:
+            continue
+        candidate = _clean_topic_candidate(m.group("t"))
+        if _is_placeholder_topic(candidate):
+            continue
+        return candidate
+    return ""
+
+
 def extract_query_request(user_message: str) -> tuple[str, str, int, str, int] | None:
     text = (user_message or "").strip()
     if not text:
@@ -151,6 +280,11 @@ def extract_query_request(user_message: str) -> tuple[str, str, int, str, int] |
         "资讯",
         "动态",
         "消息",
+        "情况",
+        "怎么样",
+        "怎么了",
+        "在忙什么",
+        "都在做什么",
         "news",
         "article",
         "articles",
@@ -188,6 +322,7 @@ def extract_query_request(user_message: str) -> tuple[str, str, int, str, int] |
     if m:
         query = m.group(1).strip()
         query = re.split(r"[，,。]|(?:来源|source|最近|过去|sort|按)", query, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+        query = _clean_topic_candidate(query)
 
     if not query:
         m = re.search(
@@ -196,7 +331,7 @@ def extract_query_request(user_message: str) -> tuple[str, str, int, str, int] |
             flags=re.IGNORECASE,
         )
         if m:
-            query = m.group(1).strip()
+            query = _clean_topic_candidate(m.group(1))
 
     if not query:
         topic_pattern = r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{1,24})"
@@ -252,12 +387,27 @@ def extract_query_request(user_message: str) -> tuple[str, str, int, str, int] |
         for c in re.findall(topic_pattern, text):
             if c.lower() in stop:
                 continue
+            if _is_placeholder_topic(c):
+                continue
             if re.fullmatch(r"\d{1,3}", c):
                 continue
-            query = c
+            query = _clean_topic_candidate(c)
             break
 
+    # Prefer a concrete subject in "X 最近有什么新闻/动态" style questions.
+    if not has_explicit_query and (
+        not query
+        or _is_placeholder_topic(query)
+        or bool(re.search(r"(最近|过去|近|新闻|报道|文章|资讯|动态|消息|news|updates?)", query, flags=re.IGNORECASE))
+    ):
+        recent_subject = _extract_recent_subject(text)
+        if recent_subject:
+            query = recent_subject
+
     if not query and not has_explicit_query:
+        return None
+    query = _clean_topic_candidate(query)
+    if _is_placeholder_topic(query):
         return None
     if not has_explicit_query and query.lower() in {"什么", "有什么", "哪些", "news", "update", "updates"}:
         return None
@@ -667,12 +817,24 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
         "进展",
         "更新",
         "事件",
+        "干了什么",
+        "做了什么",
         "发生了什么",
+        "发生什么",
         "都做了什么",
         "moves",
         "actions",
         "updates",
         "developments",
+        "what happened",
+        "what did",
+        "在忙什么",
+        "忙什么",
+        "都在做什么",
+        "在做什么",
+        "怎么样",
+        "怎么了",
+        "情况",
     ]
     has_explicit_marker = any(k in lower for k in explicit_timeline_markers)
     has_recent_window = bool(
@@ -696,11 +858,17 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
         r"(?:\d{1,3}|[一二两三四五六七八九十百]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s*"
         r"(?:天|日|周|星期|个月|月|day|days|week|weeks|month|months)"
     )
+    recent_marker = r"(?:最近|过去|last|recent|past|(?<!最)近)"
+    action_tail_pattern = (
+        r"(?:(?:大|重大|主要|关键|最新)?(?:动作|动态|动向|进展|更新|事件)|"
+        r"干了什么|做了什么|发生了什么|发生什么|在忙什么|忙什么|都在做什么|在做什么|怎么样|怎么了|情况|"
+        r"moves?|actions?|updates?|developments?|what happened|what did)"
+    )
     patterns = [
         rf"(?:构建|生成|给我|做|列出|整理|build|make|create|show)\s+(?P<t>{topic_pattern})",
-        rf"(?:最近|过去|近|last|recent|past)\s*{duration_required_pattern}\s*(?P<t>{topic_pattern})\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
-        rf"(?:最近|过去|近|last|recent|past)\s*(?P<t>{topic_pattern})\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
-        rf"(?P<t>{topic_pattern})\s*(?:最近|过去|近|last|recent|past)\s*(?:{duration_required_pattern})?\s*(?:的)?\s*(?:动作|动态|动向|进展|更新|事件|moves?|actions?|updates?|developments?)",
+        rf"{recent_marker}\s*{duration_required_pattern}\s*(?P<t>{topic_pattern})\s*(?:都|有|有什么|有哪些|what|which|any)?\s*(?:的)?\s*{action_tail_pattern}",
+        rf"{recent_marker}\s*(?P<t>{topic_pattern})\s*(?:都|有|有什么|有哪些|what|which|any)?\s*(?:的)?\s*{action_tail_pattern}",
+        rf"(?P<t>{topic_pattern})\s*(?={recent_marker}){recent_marker}\s*(?:{duration_required_pattern})?\s*(?:都|有|有什么|有哪些|what|which|any)?\s*(?:的)?\s*{action_tail_pattern}",
         rf"(?P<t>{topic_pattern})\s*(?:过去|最近|last)?\s*(?:{duration_required_pattern})?\s*(?:时间线|timeline)",
         rf"(?:时间线|timeline)\s*(?:关于|for)?\s*(?P<t>{topic_pattern})",
     ]
@@ -709,7 +877,10 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
     for p in patterns:
         m = re.search(p, text, flags=re.IGNORECASE)
         if m:
-            topic = m.group("t").strip()
+            candidate = _clean_topic_candidate(m.group("t"))
+            if _is_placeholder_topic(candidate):
+                continue
+            topic = candidate
             break
 
     if not topic:
@@ -760,10 +931,14 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
             lc = c.lower()
             if lc in stop:
                 continue
+            if _is_placeholder_topic(c):
+                continue
             if re.fullmatch(r"\d{1,3}", c):
                 continue
-            topic = c
+            topic = _clean_topic_candidate(c)
             break
+
+    topic = _clean_topic_candidate(topic)
 
     if not topic:
         if bool(re.search(r"(?<![a-z])ai(?![a-z])", lower)) or ("人工智能" in text) or ("大模型" in text) or ("llm" in lower):
@@ -776,7 +951,7 @@ def extract_timeline_request(user_message: str) -> tuple[str, int, int] | None:
         or topic in {"人工智能", "大模型", "模型", "LLM", "llm"}
     ):
         topic = "AI"
-    if topic.lower() in {"重大", "重要", "关键", "产品", "事件", "动态", "什么", "是什么"}:
+    if _is_placeholder_topic(topic) or topic.lower() in {"重大", "重要", "关键", "产品", "事件", "动态", "什么", "是什么"}:
         return None
     topic = re.sub(r"(?:的|之)$", "", topic).strip()
     topic = re.sub(r"(?:'s)$", "", topic, flags=re.IGNORECASE).strip()

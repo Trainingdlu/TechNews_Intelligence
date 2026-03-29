@@ -110,6 +110,48 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertEqual(topic, "谷歌")
         self.assertEqual(days, 14)
 
+    def test_extract_timeline_request_recent_doing_question(self) -> None:
+        req = agent_mod._extract_timeline_request("那么openai最近三十天干了什么")
+        self.assertIsNotNone(req)
+        topic, days, _limit = req
+        self.assertEqual(topic.lower(), "openai")
+        self.assertEqual(days, 30)
+
+    def test_extract_timeline_request_recent_big_moves_question(self) -> None:
+        req = agent_mod._extract_timeline_request("openai最近有什么大动作")
+        self.assertIsNotNone(req)
+        topic, days, _limit = req
+        self.assertEqual(topic.lower(), "openai")
+        self.assertEqual(days, 30)
+
+    def test_extract_timeline_request_recent_colloquial_doing(self) -> None:
+        req = agent_mod._extract_timeline_request("最近openai都在做什么")
+        self.assertIsNotNone(req)
+        topic, days, _limit = req
+        self.assertEqual(topic.lower(), "openai")
+        self.assertEqual(days, 30)
+
+    def test_extract_timeline_request_english_what_did(self) -> None:
+        req = agent_mod._extract_timeline_request("What did OpenAI do in the last 30 days")
+        self.assertIsNotNone(req)
+        topic, days, _limit = req
+        self.assertEqual(topic, "OpenAI")
+        self.assertEqual(days, 30)
+
+    def test_extract_timeline_request_polite_prefix_not_part_of_topic(self) -> None:
+        req = agent_mod._extract_timeline_request("给我看openai最近动态")
+        self.assertIsNotNone(req)
+        topic, days, _limit = req
+        self.assertEqual(topic.lower(), "openai")
+        self.assertEqual(days, 30)
+
+    def test_extract_timeline_request_ignores_question_placeholder_topic(self) -> None:
+        req = agent_mod._extract_timeline_request("谷歌最近有什么动态")
+        self.assertIsNotNone(req)
+        topic, days, _limit = req
+        self.assertEqual(topic, "谷歌")
+        self.assertEqual(days, 30)
+
     def test_extract_timeline_request_not_triggered_by_recent_news_only(self) -> None:
         req = agent_mod._extract_timeline_request("最近谷歌新闻")
         self.assertIsNone(req)
@@ -167,6 +209,46 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertEqual(query, "OpenAI")
         self.assertEqual(source, "TechCrunch")
         self.assertEqual(days, 14)
+        self.assertEqual(sort, "time_desc")
+        self.assertEqual(limit, 8)
+
+    def test_extract_query_request_subject_before_recent_question_style(self) -> None:
+        req = agent_mod._extract_query_request("谷歌最近有什么新闻")
+        self.assertIsNotNone(req)
+        query, source, days, sort, limit = req
+        self.assertEqual(query, "谷歌")
+        self.assertEqual(source, "all")
+        self.assertEqual(days, 21)
+        self.assertEqual(sort, "time_desc")
+        self.assertEqual(limit, 8)
+
+    def test_extract_query_request_recent_subject_question_style(self) -> None:
+        req = agent_mod._extract_query_request("最近Google有什么动态")
+        self.assertIsNotNone(req)
+        query, source, days, sort, limit = req
+        self.assertEqual(query, "Google")
+        self.assertEqual(source, "all")
+        self.assertEqual(days, 21)
+        self.assertEqual(sort, "time_desc")
+        self.assertEqual(limit, 8)
+
+    def test_extract_query_request_recent_status_question(self) -> None:
+        req = agent_mod._extract_query_request("openai最近怎么样")
+        self.assertIsNotNone(req)
+        query, source, days, sort, limit = req
+        self.assertEqual(query.lower(), "openai")
+        self.assertEqual(source, "all")
+        self.assertEqual(days, 21)
+        self.assertEqual(sort, "time_desc")
+        self.assertEqual(limit, 8)
+
+    def test_extract_query_request_summary_recent_status(self) -> None:
+        req = agent_mod._extract_query_request("总结下openai最近情况")
+        self.assertIsNotNone(req)
+        query, source, days, sort, limit = req
+        self.assertEqual(query.lower(), "openai")
+        self.assertEqual(source, "all")
+        self.assertEqual(days, 21)
         self.assertEqual(sort, "time_desc")
         self.assertEqual(limit, 8)
 
@@ -261,6 +343,30 @@ class AgentRouteMetricsTests(unittest.TestCase):
             os.environ.pop("TIMELINE_MIN_EVENTS", None)
         else:
             os.environ["TIMELINE_MIN_EVENTS"] = old_min_events
+
+    def test_analyze_timeline_output_defaults_to_grounded_deterministic(self) -> None:
+        raw_timeline = (
+            "Timeline: OpenAI (last 30 days, max 12)\n"
+            "1. 2026-03-20 10:00 | TechCrunch | Neutral | points=10\n"
+            "   Event A\n"
+            "   https://a.com\n"
+            "2. 2026-03-22 11:00 | HackerNews | Positive | points=20\n"
+            "   Event B\n"
+            "   https://b.com\n"
+        )
+
+        with patch.object(agent_mod, "_get_analysis_model", side_effect=AssertionError("should not call model")):
+            out = agent_mod._analyze_timeline_output(
+                user_message="那么openai最近三十天干了什么",
+                topic="OpenAI",
+                days=30,
+                timeline_output=raw_timeline,
+            )
+
+        self.assertIn("仅基于数据库时间线记录生成", out)
+        self.assertIn("事件时间线", out)
+        self.assertIn("https://a.com", out)
+        self.assertIn("https://b.com", out)
 
     def test_generate_response_landscape_retries_without_topic_when_no_data(self) -> None:
         old_runtime = os.environ.get("AGENT_RUNTIME")

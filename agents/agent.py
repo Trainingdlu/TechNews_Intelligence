@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
@@ -1259,6 +1260,221 @@ def _format_low_evidence_landscape_response(
     )
 
 
+_TIMELINE_EVENT_LINE_RE = re.compile(
+    r"^\s*(?P<rank>\d+)\.\s*"
+    r"(?P<ts>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\s*\|\s*"
+    r"(?P<source>[^|]+?)\s*\|\s*(?P<sentiment>[^|]+?)\s*\|\s*"
+    r"points=(?P<points>-?\d+(?:\.\d+)?)\s*$"
+)
+
+
+def _timeline_analysis_mode() -> str:
+    raw = os.getenv("TIMELINE_ANALYSIS_MODE", "deterministic").strip().lower()
+    if raw in {"model", "llm"}:
+        return "model"
+    return "deterministic"
+
+
+def _safe_parse_datetime(ts: str) -> datetime | None:
+    try:
+        return datetime.strptime(ts, "%Y-%m-%d %H:%M")
+    except Exception:
+        return None
+
+
+def _format_points(points: float) -> str:
+    rounded = round(points)
+    if abs(points - rounded) < 1e-9:
+        return str(int(rounded))
+    return f"{points:.1f}"
+
+
+def _parse_timeline_records(timeline_output: str) -> list[dict[str, Any]]:
+    lines = (timeline_output or "").splitlines()
+    records: list[dict[str, Any]] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = _TIMELINE_EVENT_LINE_RE.match(line)
+        if not m:
+            i += 1
+            continue
+
+        rank = int(m.group("rank"))
+        ts = m.group("ts").strip()
+        source = m.group("source").strip()
+        sentiment = m.group("sentiment").strip()
+        try:
+            points = float(m.group("points"))
+        except Exception:
+            points = 0.0
+
+        block: list[str] = []
+        j = i + 1
+        while j < len(lines):
+            if _TIMELINE_EVENT_LINE_RE.match(lines[j]):
+                break
+            block.append(lines[j].strip())
+            j += 1
+
+        headline = ""
+        url = ""
+        for entry in block:
+            if not entry:
+                continue
+            if not headline and not entry.lower().startswith("http"):
+                headline = entry
+            if not url:
+                u = re.search(r"https?://[^\s)\]]+", entry)
+                if u:
+                    url = u.group(0)
+
+        records.append(
+            {
+                "rank": rank,
+                "timestamp": ts,
+                "source": source,
+                "sentiment": sentiment,
+                "points": points,
+                "headline": headline,
+                "url": url,
+                "dt": _safe_parse_datetime(ts),
+            }
+        )
+        i = j
+
+    return records
+
+
+def _is_timeline_analysis_grounded(answer: str, timeline_output: str) -> bool:
+    answer_urls = set(_extract_urls(answer))
+    source_urls = set(_extract_urls(timeline_output))
+    if answer_urls and source_urls and any(url not in source_urls for url in answer_urls):
+        return False
+
+    source_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", timeline_output or ""))
+    answer_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", answer or ""))
+    if source_dates and answer_dates and any(d not in source_dates for d in answer_dates):
+        return False
+    return True
+
+
+def _format_grounded_timeline_response(
+    user_message: str,
+    topic: str,
+    days: int,
+    timeline_output: str,
+) -> str:
+    records = _parse_timeline_records(timeline_output)
+    if not records:
+        return timeline_output
+
+    cjk = _contains_cjk(user_message)
+    total = len(records)
+    peak = max(records, key=lambda x: float(x.get("points", 0.0)))
+    peak_points = _format_points(float(peak.get("points", 0.0)))
+
+    source_counts: dict[str, int] = {}
+    sentiment_counts: dict[str, int] = {}
+    parsed_records = [r for r in records if isinstance(r.get("dt"), datetime)]
+    for rec in records:
+        source = str(rec.get("source", "")).strip() or "Unknown"
+        sentiment = str(rec.get("sentiment", "")).strip() or "Unknown"
+        source_counts[source] = source_counts.get(source, 0) + 1
+        sentiment_counts[sentiment] = sentiment_counts.get(sentiment, 0) + 1
+
+    top_source = max(source_counts.items(), key=lambda x: x[1])[0] if source_counts else ""
+    top_source_count = source_counts.get(top_source, 0) if top_source else 0
+    top_source_share = (float(top_source_count) / float(total) * 100.0) if total else 0.0
+
+    recent_line = ""
+    if parsed_records:
+        latest_dt = max(rec["dt"] for rec in parsed_records)
+        recent_days = min(7, max(1, days // 4))
+        cutoff = latest_dt - timedelta(days=recent_days)
+        recent_count = sum(1 for rec in parsed_records if rec["dt"] >= cutoff)
+        previous_count = max(0, len(parsed_records) - recent_count)
+        if previous_count == 0:
+            delta_text = "+new" if recent_count > 0 else "0.0%"
+        else:
+            delta = ((float(recent_count) - float(previous_count)) / float(previous_count)) * 100.0
+            delta_text = f"{delta:+.1f}%"
+        if cjk:
+            recent_line = f"- 节奏变化：最近{recent_days}天 {recent_count} 条，之前 {previous_count} 条（{delta_text}）。"
+        else:
+            recent_line = (
+                f"- Pace shift: recent {recent_days}d={recent_count}, "
+                f"previous={previous_count} ({delta_text})."
+            )
+
+    pos = sentiment_counts.get("Positive", 0)
+    neu = sentiment_counts.get("Neutral", 0)
+    neg = sentiment_counts.get("Negative", 0)
+
+    lines: list[str] = []
+    if cjk:
+        lines.append("以下内容仅基于数据库时间线记录生成，未使用外部知识补全。")
+        lines.append("")
+        lines.append(f"## 事件时间线（{topic}，最近 {days} 天）")
+    else:
+        lines.append("This answer is generated only from DB timeline records (no external knowledge fill-in).")
+        lines.append("")
+        lines.append(f"## Timeline Events ({topic}, last {days} days)")
+
+    for rec in records:
+        p = _format_points(float(rec.get("points", 0.0)))
+        lines.append(
+            f"{rec.get('rank')}. {rec.get('timestamp')} | {rec.get('source')} | "
+            f"{rec.get('sentiment')} | points={p}"
+        )
+        headline = str(rec.get("headline", "")).strip()
+        url = str(rec.get("url", "")).strip()
+        if headline:
+            lines.append(f"   {headline}")
+        if url:
+            lines.append(f"   {url}")
+
+    lines.append("")
+    lines.append("## 拐点" if cjk else "## Inflection Points")
+    if cjk:
+        lines.append(
+            f"- 热度峰值：{peak.get('timestamp')} | {peak.get('source')} | "
+            f"points={peak_points} | {peak.get('headline')}"
+        )
+        lines.append(
+            f"- 来源集中度：{top_source} 占比 {top_source_share:.1f}% "
+            f"（{top_source_count}/{total}）。"
+        )
+        lines.append(f"- 情绪结构：Positive/Neutral/Negative = {pos}/{neu}/{neg}。")
+        if recent_line:
+            lines.append(recent_line)
+    else:
+        lines.append(
+            f"- Peak heat: {peak.get('timestamp')} | {peak.get('source')} | "
+            f"points={peak_points} | {peak.get('headline')}"
+        )
+        lines.append(
+            f"- Source concentration: {top_source} share {top_source_share:.1f}% "
+            f"({top_source_count}/{total})."
+        )
+        lines.append(f"- Sentiment mix: Positive/Neutral/Negative = {pos}/{neu}/{neg}.")
+        if recent_line:
+            lines.append(recent_line)
+
+    lines.append("")
+    lines.append("## 后续关注" if cjk else "## What To Watch")
+    if cjk:
+        lines.append(f"- 是否出现新的高热事件（当前峰值 points={peak_points}）。")
+        lines.append("- 来源是否继续向单一渠道集中。")
+        lines.append("- 情绪结构是否从中性转向负面或正面。")
+    else:
+        lines.append(f"- Whether a new high-heat event appears (current peak points={peak_points}).")
+        lines.append("- Whether source mix keeps concentrating into a single channel.")
+        lines.append("- Whether sentiment mix shifts away from neutral.")
+
+    return "\n".join(lines).strip()
+
+
 def _analyze_timeline_output(
     user_message: str,
     topic: str,
@@ -1266,6 +1482,16 @@ def _analyze_timeline_output(
     timeline_output: str,
 ) -> str:
     """Turn DB timeline output into analyst-friendly timeline answer."""
+    deterministic = _format_grounded_timeline_response(
+        user_message=user_message,
+        topic=topic,
+        days=days,
+        timeline_output=timeline_output,
+    )
+    mode = _timeline_analysis_mode()
+    if mode != "model":
+        return deterministic
+
     model = _get_analysis_model()
     system_prompt = (
         "You are a strict tech-intelligence analyst.\n"
@@ -1292,7 +1518,13 @@ def _analyze_timeline_output(
         [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
     )
     text = _coerce_to_text(getattr(result, "content", result))
-    return text.strip()
+    cleaned = text.strip()
+    if not cleaned:
+        return deterministic
+    if not _is_timeline_analysis_grounded(cleaned, timeline_output):
+        print("[Warn] Timeline model synthesis contains out-of-DB facts; fallback to grounded timeline response.")
+        return deterministic
+    return cleaned
 
 
 def _format_low_sample_timeline_response(
