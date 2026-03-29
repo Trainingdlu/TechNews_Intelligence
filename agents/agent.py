@@ -478,6 +478,119 @@ def _format_raw_snapshot_for_user(source_output: str) -> str:
     return "\n".join(lines).strip()
 
 
+_GENERIC_ANALYSIS_LEADIN_PATTERNS = (
+    re.compile(
+        r"^(?:好(?:的)?|当然|没问题|可以)[，,\s]*"
+        r"(?:作为一名[^。:\n]*分析师[^。:\n]*"
+        r"|(?:这是|以下是|下面是)基于[^。:\n]*(?:数据|输出)[^。:\n]*(?:分析|解读|梳理)"
+        r"|(?:我们|我|让我)来看[^。:\n]*(?:分析|解读|梳理|格局)"
+        r"|(?:我|我们)来[^。:\n]*(?:分析|解读|梳理))"
+        r"[\s。!！:：]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:这是|以下是|下面是)基于[^。:\n]*(?:数据|输出)[^。:\n]*(?:分析|解读|梳理)[\s。!！:：]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:okay|sure|got it)[,\s]+(?:here(?:'s| is)|below is).*(?:analysis|summary)[\s.]*$",
+        re.IGNORECASE,
+    ),
+)
+_GENERIC_SEPARATOR_RE = re.compile(r"^\s*(?:-{3,}|_{3,}|\*{3,})\s*$")
+_ENTITY_ROW_REF_RE = re.compile(r"\[(?P<entity>[^\]\n]{1,80})\]\s*#(?P<rank>\d{1,2})")
+
+
+def _strip_generic_analysis_leadin(text: str) -> str:
+    raw = str(text or "")
+    if not raw.strip():
+        return raw.strip()
+
+    lines = raw.splitlines()
+    first_idx = 0
+    while first_idx < len(lines) and not lines[first_idx].strip():
+        first_idx += 1
+    if first_idx >= len(lines):
+        return raw.strip()
+
+    first_line = lines[first_idx].strip()
+    if not any(p.match(first_line) for p in _GENERIC_ANALYSIS_LEADIN_PATTERNS):
+        return raw.strip()
+
+    start_idx = first_idx + 1
+    while start_idx < len(lines) and not lines[start_idx].strip():
+        start_idx += 1
+    if start_idx < len(lines) and _GENERIC_SEPARATOR_RE.match(lines[start_idx].strip()):
+        start_idx += 1
+        while start_idx < len(lines) and not lines[start_idx].strip():
+            start_idx += 1
+
+    stripped = "\n".join(lines[start_idx:]).strip()
+    return stripped or raw.strip()
+
+
+def _normalize_entity_row_ref(entity: str, rank: str) -> str:
+    normalized_entity = re.sub(r"\s+", " ", str(entity or "").strip()).lower()
+    try:
+        normalized_rank = int(rank)
+    except Exception:
+        normalized_rank = 0
+    return f"{normalized_entity}#{normalized_rank}"
+
+
+def _build_entity_row_ref_url_map(source_output: str) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for line in str(source_output or "").splitlines():
+        match = _ENTITY_ROW_REF_RE.search(line)
+        if not match:
+            continue
+        urls = _extract_urls(line)
+        if not urls:
+            continue
+        key = _normalize_entity_row_ref(match.group("entity"), match.group("rank"))
+        if key and key not in mapping:
+            mapping[key] = urls[0]
+    return mapping
+
+
+def _remap_entity_row_refs_to_global_sources(answer: str, source_output: str) -> str:
+    body = str(answer or "")
+    if not body:
+        return body
+
+    ref_to_url = _build_entity_row_ref_url_map(source_output)
+    if not ref_to_url:
+        return body
+
+    ordered_urls: list[str] = []
+    seen: set[str] = set()
+    for url in _extract_urls(source_output):
+        if url in seen:
+            continue
+        seen.add(url)
+        ordered_urls.append(url)
+    if not ordered_urls:
+        return body
+
+    url_to_index = {url: idx for idx, url in enumerate(ordered_urls, 1)}
+    ref_to_index: dict[str, int] = {}
+    for ref, url in ref_to_url.items():
+        index = url_to_index.get(url)
+        if index is not None:
+            ref_to_index[ref] = index
+    if not ref_to_index:
+        return body
+
+    def _replace(match: re.Match[str]) -> str:
+        key = _normalize_entity_row_ref(match.group("entity"), match.group("rank"))
+        index = ref_to_index.get(key)
+        if index is None:
+            return match.group(0)
+        return f"[{index}]"
+
+    return _ENTITY_ROW_REF_RE.sub(_replace, body)
+
+
 def _extract_final_text(result: Any) -> str:
     if isinstance(result, dict) and "messages" in result:
         messages = result["messages"]
@@ -999,6 +1112,7 @@ def _ensure_grounded_evidence_or_fallback(
             "Detected unsupported facts not present in tool output; falling back to formatted DB/tool snapshot.\n\n"
             f"{formatted_snapshot}"
         )
+    answer = _remap_entity_row_refs_to_global_sources(answer, source_output)
     return _ensure_evidence_section(
         answer=answer,
         source_output=source_output,
@@ -2256,6 +2370,7 @@ _generate_response_core = generate_response
 def generate_response(history: list[dict], user_message: str) -> str:
     """Public generation entrypoint with agent-side response post-processing."""
     core_text = _generate_response_core(history, user_message)
+    core_text = _strip_generic_analysis_leadin(core_text)
     final_text, _ = _decorate_response_with_sources(core_text, user_message)
     return final_text
 
@@ -2263,6 +2378,7 @@ def generate_response(history: list[dict], user_message: str) -> str:
 def generate_response_payload(history: list[dict], user_message: str) -> dict[str, Any]:
     """Structured response for transport layers (e.g., Telegram bot)."""
     core_text = _generate_response_core(history, user_message)
+    core_text = _strip_generic_analysis_leadin(core_text)
     final_text, title_map = _decorate_response_with_sources(core_text, user_message)
     return {
         "text": final_text,

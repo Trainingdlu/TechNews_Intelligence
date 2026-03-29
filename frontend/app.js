@@ -99,7 +99,7 @@
             });
             const data = await res.json();
             if (res.ok) {
-                setStatus('✓ ' + data.message, 'success');
+                setStatus(data.message, 'success');
                 tokenInput.focus();
             } else {
                 setStatus(data.detail || '请求失败', 'error');

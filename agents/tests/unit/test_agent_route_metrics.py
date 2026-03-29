@@ -439,6 +439,18 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertIn("数据库事实快照（已格式化）", out)
         self.assertIn("[TechCrunch] A · points=10 · 2026-03-20 10:00 · https://a.com", out)
 
+    def test_landscape_entity_ref_remapped_to_global_source_index(self) -> None:
+        answer = "证据来自（[Google] #1, [Meta] #1）。"
+        source_output = (
+            "Evidence URLs:\n"
+            "  [Google] #1 [TechCrunch] A | points=10 | 2026-03-20 10:00 | https://g.com/a\n"
+            "  [Meta] #1 [TechCrunch] B | points=9 | 2026-03-21 10:00 | https://m.com/b\n"
+        )
+        out = agent_mod._ensure_landscape_evidence(answer, source_output, "最近两周科技格局")
+        self.assertIn("（[1], [2]）。", out)
+        self.assertNotIn("[Google] #1", out)
+        self.assertNotIn("[Meta] #1", out)
+
     def test_extract_source_compare_request_allows_single_source_hint(self) -> None:
         req = agent_mod._extract_source_compare_request("对比 OpenAI 在 HN 来源上的差异")
         self.assertIsNotNone(req)
@@ -1036,6 +1048,25 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertIn("[1]", str(payload["text"]))
         self.assertIn("来源", str(payload["text"]))
         self.assertEqual(payload["url_title_map"].get("https://a.com/article"), "中文标题A")
+
+    def test_generate_response_strips_generic_analysis_leadin(self) -> None:
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "_generate_response_core",
+                    lambda _h, _m: (
+                        "好的，作为一名严格的技术情报分析师，以下是基于提供的数据库输出的分析。\n\n"
+                        "格局结论\n"
+                        "- 关键信号见 https://a.com/article"
+                    ),
+                )
+            )
+            out = agent_mod.generate_response([], "分析最近30天ai局势")
+
+        self.assertTrue(str(out).startswith("格局结论"))
+        self.assertNotIn("作为一名严格的技术情报分析师", str(out))
+        self.assertIn("[1]", str(out))
 
     def test_generate_response_planner_routes_compare_when_confident(self) -> None:
         old_runtime = os.environ.get("AGENT_RUNTIME")
