@@ -124,6 +124,14 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertEqual(topic.lower(), "openai")
         self.assertEqual(days, 30)
 
+    def test_extract_timeline_request_supports_csharp_topic(self) -> None:
+        req = agent_mod._extract_timeline_request("帮我搜下C#最近有哪些大动作")
+        self.assertIsNotNone(req)
+        topic, days, limit = req
+        self.assertEqual(topic, "C#")
+        self.assertEqual(days, 30)
+        self.assertEqual(limit, 12)
+
     def test_extract_timeline_request_recent_colloquial_doing(self) -> None:
         req = agent_mod._extract_timeline_request("最近openai都在做什么")
         self.assertIsNotNone(req)
@@ -144,6 +152,14 @@ class AgentRouteMetricsTests(unittest.TestCase):
         topic, days, _limit = req
         self.assertEqual(topic.lower(), "openai")
         self.assertEqual(days, 30)
+
+    def test_extract_timeline_request_with_confidence_recent_status_is_lower(self) -> None:
+        req = agent_mod._extract_timeline_request_with_confidence("openai最近怎么样")
+        self.assertIsNotNone(req)
+        topic, days, _limit, confidence = req
+        self.assertEqual(topic.lower(), "openai")
+        self.assertEqual(days, 30)
+        self.assertLess(confidence, 0.72)
 
     def test_extract_timeline_request_ignores_question_placeholder_topic(self) -> None:
         req = agent_mod._extract_timeline_request("谷歌最近有什么动态")
@@ -252,6 +268,131 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertEqual(sort, "time_desc")
         self.assertEqual(limit, 8)
 
+    def test_extract_query_request_subject_only_dynamic_single_char_entity(self) -> None:
+        req = agent_mod._extract_query_request("X的动态")
+        self.assertIsNotNone(req)
+        query, source, days, sort, limit = req
+        self.assertEqual(query, "X")
+        self.assertEqual(source, "all")
+        self.assertEqual(days, 21)
+        self.assertEqual(sort, "time_desc")
+        self.assertEqual(limit, 8)
+
+    def test_generate_response_timeline_low_confidence_falls_back_to_safe_query(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        old_min_conf = os.environ.get("AGENT_ROUTE_MIN_CONFIDENCE")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+        os.environ["AGENT_ROUTE_MIN_CONFIDENCE"] = "0.8"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _m: ("OpenAI", 30, 12)))
+            stack.enter_context(
+                patch.object(agent_mod, "_extract_timeline_request_with_confidence", lambda _m: ("OpenAI", 30, 12, 0.4))
+            )
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_trend_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_fulltext_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_query_request", lambda _m: None))
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "run_query_pipeline",
+                    lambda **kwargs: f"safe query route: {kwargs.get('query')}",
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "run_timeline_pipeline",
+                    lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("timeline should not run")),
+                )
+            )
+            out = agent_mod.generate_response([], "openai最近怎么样")
+            self.assertIn("safe query route: OpenAI", out)
+            snapshot = agent_mod.get_route_metrics_snapshot()
+            self.assertEqual(snapshot.get("route_low_confidence_fallback"), 1)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+        if old_min_conf is None:
+            os.environ.pop("AGENT_ROUTE_MIN_CONFIDENCE", None)
+        else:
+            os.environ["AGENT_ROUTE_MIN_CONFIDENCE"] = old_min_conf
+
+    def test_generate_response_timeline_high_confidence_keeps_timeline_pipeline(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        old_min_conf = os.environ.get("AGENT_ROUTE_MIN_CONFIDENCE")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+        os.environ["AGENT_ROUTE_MIN_CONFIDENCE"] = "0.8"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _m: ("OpenAI", 30, 12)))
+            stack.enter_context(
+                patch.object(agent_mod, "_extract_timeline_request_with_confidence", lambda _m: ("OpenAI", 30, 12, 0.95))
+            )
+            stack.enter_context(patch.object(agent_mod, "_extract_landscape_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_trend_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_fulltext_request", lambda _m: None))
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "run_timeline_pipeline",
+                    lambda **_kwargs: "timeline route ok https://a.com",
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "run_query_pipeline",
+                    lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("query should not run")),
+                )
+            )
+            out = agent_mod.generate_response([], "openai最近三十天干了什么")
+            self.assertIn("timeline route ok", out)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+        if old_min_conf is None:
+            os.environ.pop("AGENT_ROUTE_MIN_CONFIDENCE", None)
+        else:
+            os.environ["AGENT_ROUTE_MIN_CONFIDENCE"] = old_min_conf
+
+    def test_grounding_guard_falls_back_when_answer_contains_unseen_url_or_date(self) -> None:
+        answer = (
+            "## 结论\n"
+            "- 2026-03-28 出现重大事件\n"
+            "- 证据链接 https://fake.com/x\n"
+        )
+        source_output = (
+            "1. [TechCrunch] A\n"
+            "   time=2026-03-20 10:00\n"
+            "   url=https://a.com\n"
+        )
+        out = agent_mod._ensure_query_evidence(answer, source_output, "openai最近动态")
+        self.assertIn("已回退为数据库原始结果", out)
+        self.assertIn("https://a.com", out)
+        self.assertNotIn("https://fake.com/x", out)
+
     def test_extract_source_compare_request_allows_single_source_hint(self) -> None:
         req = agent_mod._extract_source_compare_request("对比 OpenAI 在 HN 来源上的差异")
         self.assertIsNotNone(req)
@@ -264,6 +405,27 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertIsNotNone(req)
         query, max_chars = req
         self.assertEqual(query, "OpenAI Voice Engine")
+        self.assertEqual(max_chars, 4000)
+
+    def test_extract_fulltext_request_subject_before_marker(self) -> None:
+        req = agent_mod._extract_fulltext_request("OpenAI全文并总结")
+        self.assertIsNotNone(req)
+        query, max_chars = req
+        self.assertEqual(query, "OpenAI")
+        self.assertEqual(max_chars, 4000)
+
+    def test_extract_fulltext_request_strips_polite_prefix(self) -> None:
+        req = agent_mod._extract_fulltext_request("帮我看OpenAI全文")
+        self.assertIsNotNone(req)
+        query, max_chars = req
+        self.assertEqual(query, "OpenAI")
+        self.assertEqual(max_chars, 4000)
+
+    def test_extract_fulltext_request_keeps_bare_keyword(self) -> None:
+        req = agent_mod._extract_fulltext_request("全文")
+        self.assertIsNotNone(req)
+        query, max_chars = req
+        self.assertEqual(query, "全文")
         self.assertEqual(max_chars, 4000)
 
     def test_generate_response_fallback_path_increments_metrics(self) -> None:
@@ -976,6 +1138,61 @@ class AgentRouteMetricsTests(unittest.TestCase):
             os.environ.pop("AGENT_DISPATCH_MODE", None)
         else:
             os.environ["AGENT_DISPATCH_MODE"] = old_dispatch
+
+    def test_generate_response_graph_dispatch_timeline_low_confidence_falls_back_query(self) -> None:
+        old_runtime = os.environ.get("AGENT_RUNTIME")
+        old_strict = os.environ.get("AGENT_RUNTIME_STRICT")
+        old_dispatch = os.environ.get("AGENT_DISPATCH_MODE")
+        old_min_conf = os.environ.get("AGENT_ROUTE_MIN_CONFIDENCE")
+        os.environ["AGENT_RUNTIME"] = "langchain"
+        os.environ["AGENT_RUNTIME_STRICT"] = "false"
+        os.environ["AGENT_DISPATCH_MODE"] = "graph"
+        os.environ["AGENT_ROUTE_MIN_CONFIDENCE"] = "0.8"
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(agent_mod, "_extract_source_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_compare_request", lambda _m: None))
+            stack.enter_context(patch.object(agent_mod, "_extract_timeline_request", lambda _m: ("OpenAI", 30, 12)))
+            stack.enter_context(
+                patch.object(agent_mod, "_extract_timeline_request_with_confidence", lambda _m: ("OpenAI", 30, 12, 0.4))
+            )
+            stack.enter_context(patch.object(agent_mod, "_extract_query_request", lambda _m: None))
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "run_query_pipeline",
+                    lambda **kwargs: f"graph safe query: {kwargs.get('query')}",
+                )
+            )
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "run_timeline_pipeline",
+                    lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("timeline should not run")),
+                )
+            )
+            out = agent_mod.generate_response([], "openai最近怎么样")
+            self.assertIn("graph safe query: OpenAI", out)
+
+        if old_runtime is None:
+            os.environ.pop("AGENT_RUNTIME", None)
+        else:
+            os.environ["AGENT_RUNTIME"] = old_runtime
+
+        if old_strict is None:
+            os.environ.pop("AGENT_RUNTIME_STRICT", None)
+        else:
+            os.environ["AGENT_RUNTIME_STRICT"] = old_strict
+
+        if old_dispatch is None:
+            os.environ.pop("AGENT_DISPATCH_MODE", None)
+        else:
+            os.environ["AGENT_DISPATCH_MODE"] = old_dispatch
+
+        if old_min_conf is None:
+            os.environ.pop("AGENT_ROUTE_MIN_CONFIDENCE", None)
+        else:
+            os.environ["AGENT_ROUTE_MIN_CONFIDENCE"] = old_min_conf
 
     def test_generate_response_graph_dispatch_runtime_fallback(self) -> None:
         old_runtime = os.environ.get("AGENT_RUNTIME")

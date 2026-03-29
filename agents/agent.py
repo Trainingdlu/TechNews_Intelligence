@@ -43,6 +43,7 @@ try:
         extract_landscape_request as _extract_landscape_request,
         extract_query_request as _extract_query_request,
         extract_timeline_request as _extract_timeline_request,
+        extract_timeline_request_with_confidence as _extract_timeline_request_with_confidence,
         extract_trend_request as _extract_trend_request,
         extract_source_compare_request as _extract_source_compare_request,
     )
@@ -92,6 +93,7 @@ except ImportError:  # package-style import fallback
         extract_landscape_request as _extract_landscape_request,
         extract_query_request as _extract_query_request,
         extract_timeline_request as _extract_timeline_request,
+        extract_timeline_request_with_confidence as _extract_timeline_request_with_confidence,
         extract_trend_request as _extract_trend_request,
         extract_source_compare_request as _extract_source_compare_request,
     )
@@ -883,6 +885,48 @@ def _dispatch_planner_route(
     return None
 
 
+def _is_answer_grounded_in_source(answer: str, source_output: str) -> bool:
+    answer_urls = set(_extract_urls(answer))
+    source_urls = set(_extract_urls(source_output))
+    if answer_urls and source_urls and any(url not in source_urls for url in answer_urls):
+        return False
+
+    source_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", source_output or ""))
+    answer_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", answer or ""))
+    if source_dates and answer_dates and any(d not in source_dates for d in answer_dates):
+        return False
+    return True
+
+
+def _ensure_grounded_evidence_or_fallback(
+    *,
+    answer: str,
+    source_output: str,
+    user_message: str,
+    max_urls: int,
+    route_label: str,
+) -> str:
+    if not answer:
+        return answer
+    if not _is_answer_grounded_in_source(answer, source_output):
+        print(f"[Warn] {route_label} synthesis failed grounding gate; fallback to raw tool output.")
+        if _contains_cjk(user_message):
+            return (
+                "检测到回答包含未在数据库工具输出中出现的事实字段，已回退为数据库原始结果。\n\n"
+                f"{source_output}"
+            )
+        return (
+            "Detected unsupported facts not present in tool output; falling back to raw DB/tool output.\n\n"
+            f"{source_output}"
+        )
+    return _ensure_evidence_section(
+        answer=answer,
+        source_output=source_output,
+        user_message=user_message,
+        max_urls=max_urls,
+    )
+
+
 def _analyze_compare_output(
     user_message: str,
     topic_a: str,
@@ -942,32 +986,68 @@ def _analyze_compare_output(
 
 def _ensure_compare_evidence(answer: str, compare_output: str, user_message: str) -> str:
     """Ensure compare answer always includes explicit evidence URL section."""
-    return _ensure_evidence_section(answer=answer, source_output=compare_output, user_message=user_message, max_urls=6)
+    return _ensure_grounded_evidence_or_fallback(
+        answer=answer,
+        source_output=compare_output,
+        user_message=user_message,
+        max_urls=6,
+        route_label="compare",
+    )
 
 
 def _ensure_timeline_evidence(answer: str, timeline_output: str, user_message: str) -> str:
     """Ensure timeline answer always includes explicit evidence URL section."""
-    return _ensure_evidence_section(answer=answer, source_output=timeline_output, user_message=user_message, max_urls=8)
+    return _ensure_grounded_evidence_or_fallback(
+        answer=answer,
+        source_output=timeline_output,
+        user_message=user_message,
+        max_urls=8,
+        route_label="timeline",
+    )
 
 
 def _ensure_trend_evidence(answer: str, trend_output: str, user_message: str) -> str:
     """Ensure trend answer includes evidence URL section when URLs are available."""
-    return _ensure_evidence_section(answer=answer, source_output=trend_output, user_message=user_message, max_urls=6)
+    return _ensure_grounded_evidence_or_fallback(
+        answer=answer,
+        source_output=trend_output,
+        user_message=user_message,
+        max_urls=6,
+        route_label="trend",
+    )
 
 
 def _ensure_source_compare_evidence(answer: str, source_output: str, user_message: str) -> str:
     """Ensure source-compare answer includes evidence URL section."""
-    return _ensure_evidence_section(answer=answer, source_output=source_output, user_message=user_message, max_urls=8)
+    return _ensure_grounded_evidence_or_fallback(
+        answer=answer,
+        source_output=source_output,
+        user_message=user_message,
+        max_urls=8,
+        route_label="source_compare",
+    )
 
 
 def _ensure_query_evidence(answer: str, query_output: str, user_message: str) -> str:
     """Ensure query answer always includes evidence URL section."""
-    return _ensure_evidence_section(answer=answer, source_output=query_output, user_message=user_message, max_urls=10)
+    return _ensure_grounded_evidence_or_fallback(
+        answer=answer,
+        source_output=query_output,
+        user_message=user_message,
+        max_urls=10,
+        route_label="query",
+    )
 
 
 def _ensure_fulltext_evidence(answer: str, fulltext_output: str, user_message: str) -> str:
     """Ensure fulltext answer always includes evidence URL section."""
-    return _ensure_evidence_section(answer=answer, source_output=fulltext_output, user_message=user_message, max_urls=10)
+    return _ensure_grounded_evidence_or_fallback(
+        answer=answer,
+        source_output=fulltext_output,
+        user_message=user_message,
+        max_urls=10,
+        route_label="fulltext",
+    )
 
 
 def _analyze_trend_output(
@@ -1169,7 +1249,13 @@ def _analyze_landscape_output(
 
 def _ensure_landscape_evidence(answer: str, landscape_output: str, user_message: str) -> str:
     """Ensure landscape answer includes explicit evidence URL section."""
-    return _ensure_evidence_section(answer=answer, source_output=landscape_output, user_message=user_message, max_urls=10)
+    return _ensure_grounded_evidence_or_fallback(
+        answer=answer,
+        source_output=landscape_output,
+        user_message=user_message,
+        max_urls=10,
+        route_label="landscape",
+    )
 
 
 def _is_landscape_no_data(raw_landscape: str) -> bool:
@@ -1566,47 +1652,135 @@ def _generate_langgraph(history: list[dict], user_message: str) -> str:
     return text
 
 
-def _detect_forced_route(user_message: str) -> tuple[str, dict[str, Any]] | None:
-    source_compare_req = _extract_source_compare_request(user_message)
-    if source_compare_req:
-        topic, days = source_compare_req
-        return "source_compare", {"topic": topic, "days": days}
+def _forced_route_min_confidence() -> float:
+    try:
+        raw = float(os.getenv("AGENT_ROUTE_MIN_CONFIDENCE", "0.72"))
+    except Exception:
+        raw = 0.72
+    return max(0.0, min(1.0, raw))
 
-    compare_req = _extract_compare_request(user_message)
-    if compare_req:
-        topic_a, topic_b, days = compare_req
-        return "compare", {"topic_a": topic_a, "topic_b": topic_b, "days": days}
 
-    timeline_req = _extract_timeline_request(user_message)
-    if timeline_req:
-        topic, days, limit = timeline_req
-        return "timeline", {"topic": topic, "days": days, "limit": limit}
-
-    landscape_req = _extract_landscape_request(user_message)
-    if landscape_req:
-        topic, days, entities = landscape_req
-        return "landscape", {"topic": topic, "days": days, "entities": entities}
-
-    trend_req = _extract_trend_request(user_message)
-    if trend_req:
-        topic, window = trend_req
-        return "trend", {"topic": topic, "window": window}
-
-    fulltext_req = _extract_fulltext_request(user_message)
-    if fulltext_req:
-        request_query, max_chars = fulltext_req
-        return "fulltext", {"request_query": request_query, "max_chars": max_chars}
-
+def _build_safe_query_params(
+    *,
+    user_message: str,
+    fallback_query: str = "",
+    fallback_days: int = 21,
+) -> dict[str, Any]:
     query_req = _extract_query_request(user_message)
     if query_req:
         query, source, days, sort, limit = query_req
-        return "query", {
+        return {
             "query": query,
             "source": source,
             "days": days,
             "sort": sort,
             "limit": limit,
         }
+
+    query = str(fallback_query or "").strip()
+    if not query:
+        m = re.search(r"(?:[A-Za-z][A-Za-z0-9._&/-]{1,39}|[\u4e00-\u9fffA-Za-z0-9]{2,24})", user_message or "")
+        if m:
+            query = str(m.group(0)).strip()
+    if not query:
+        query = "AI"
+
+    return {
+        "query": query,
+        "source": "all",
+        "days": max(1, min(365, int(fallback_days))),
+        "sort": "time_desc",
+        "limit": 8,
+    }
+
+
+def _run_safe_query_fallback(*, strict_mode: bool, user_message: str, fallback_query: str, fallback_days: int) -> str:
+    _metrics_inc("route_low_confidence_fallback")
+    params = _build_safe_query_params(
+        user_message=user_message,
+        fallback_query=fallback_query,
+        fallback_days=fallback_days,
+    )
+    return run_query_pipeline(
+        strict_mode=strict_mode,
+        user_message=user_message,
+        query=str(params["query"]),
+        source=str(params["source"]),
+        days=int(params["days"]),
+        sort=str(params["sort"]),
+        limit=int(params["limit"]),
+        query_news_fn=query_news,
+        analyze_fn=_analyze_query_output,
+        ensure_evidence_fn=_ensure_query_evidence,
+        emit_metrics_fn=_emit_route_metrics,
+    )
+
+
+def _extract_timeline_route_request(user_message: str) -> tuple[str, int, int, float] | None:
+    base_req = _extract_timeline_request(user_message)
+    if base_req is None:
+        return None
+
+    topic, days, limit = base_req
+    conf_req = _extract_timeline_request_with_confidence(user_message)
+    if conf_req is None:
+        return topic, days, limit, 0.9
+
+    c_topic, c_days, c_limit, confidence = conf_req
+    if (
+        str(topic).strip().lower() == str(c_topic).strip().lower()
+        and int(days) == int(c_days)
+        and int(limit) == int(c_limit)
+    ):
+        return topic, days, limit, float(confidence)
+    return topic, days, limit, 0.9
+
+
+def _detect_forced_route(user_message: str) -> tuple[str, dict[str, Any], float] | None:
+    source_compare_req = _extract_source_compare_request(user_message)
+    if source_compare_req:
+        topic, days = source_compare_req
+        return "source_compare", {"topic": topic, "days": days}, 0.95
+
+    compare_req = _extract_compare_request(user_message)
+    if compare_req:
+        topic_a, topic_b, days = compare_req
+        return "compare", {"topic_a": topic_a, "topic_b": topic_b, "days": days}, 0.95
+
+    timeline_req = _extract_timeline_route_request(user_message)
+    if timeline_req:
+        topic, days, limit, confidence = timeline_req
+        return "timeline", {"topic": topic, "days": days, "limit": limit}, float(confidence)
+
+    landscape_req = _extract_landscape_request(user_message)
+    if landscape_req:
+        topic, days, entities = landscape_req
+        return "landscape", {"topic": topic, "days": days, "entities": entities}, 0.92
+
+    trend_req = _extract_trend_request(user_message)
+    if trend_req:
+        topic, window = trend_req
+        return "trend", {"topic": topic, "window": window}, 0.92
+
+    fulltext_req = _extract_fulltext_request(user_message)
+    if fulltext_req:
+        request_query, max_chars = fulltext_req
+        return "fulltext", {"request_query": request_query, "max_chars": max_chars}, 0.95
+
+    query_req = _extract_query_request(user_message)
+    if query_req:
+        query, source, days, sort, limit = query_req
+        return (
+            "query",
+            {
+                "query": query,
+                "source": source,
+                "days": days,
+                "sort": sort,
+                "limit": limit,
+            },
+            0.9,
+        )
     return None
 
 
@@ -1735,6 +1909,7 @@ def _generate_with_graph_dispatch(
         runtime: str
         strict_mode: bool
         intent: str
+        confidence: float
         params: dict[str, Any]
         response: str
 
@@ -1743,8 +1918,16 @@ def _generate_with_graph_dispatch(
     def _node_detect(state):
         forced = _detect_forced_route(str(state.get("user_message", "")))
         if forced:
-            intent, params = forced
-            return {"intent": intent, "params": params}
+            intent, params, confidence = forced
+            if intent == "timeline" and confidence < _forced_route_min_confidence():
+                _metrics_inc("route_low_confidence_fallback")
+                safe = _build_safe_query_params(
+                    user_message=str(state.get("user_message", "")),
+                    fallback_query=str(params.get("topic", "")),
+                    fallback_days=int(params.get("days", 21)),
+                )
+                return {"intent": "query", "params": safe, "confidence": confidence}
+            return {"intent": intent, "params": params, "confidence": confidence}
         return {"intent": "planner"}
 
     def _after_detect(state):
@@ -1867,10 +2050,17 @@ def generate_response(history: list[dict], user_message: str) -> str:
         )
 
     # Deterministic guardrail: timeline-style queries must use DB timeline tool.
-    timeline_req = _extract_timeline_request(user_message)
+    timeline_req = _extract_timeline_route_request(user_message)
     if timeline_req:
+        topic, days, limit, confidence = timeline_req
+        if confidence < _forced_route_min_confidence():
+            return _run_safe_query_fallback(
+                strict_mode=strict_mode,
+                user_message=user_message,
+                fallback_query=str(topic),
+                fallback_days=int(days),
+            )
         _metrics_inc("timeline_forced")
-        topic, days, limit = timeline_req
         return run_timeline_pipeline(
             strict_mode=strict_mode,
             user_message=user_message,

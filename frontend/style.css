@@ -85,6 +85,15 @@ body {
     user-select: none;
 }
 
+.agent-page {
+    background-image:
+        radial-gradient(140% 90% at -10% -20%, var(--bg-glow-1), transparent 52%),
+        radial-gradient(120% 85% at 110% -8%, var(--bg-glow-2), transparent 56%),
+        radial-gradient(95% 75% at 50% 115%, var(--bg-glow-3), transparent 58%);
+    background-size: auto, auto, auto;
+    background-repeat: no-repeat, no-repeat, no-repeat;
+}
+
 /* ===== Top Navigation ===== */
 .topbar {
     position: fixed;
@@ -1010,6 +1019,20 @@ body {
     background: var(--bg-color);
 }
 
+.agent-page #chat-view .input-bar {
+    border-top: none;
+    background: transparent;
+}
+
+.agent-page #chat-view .input-bar-inner {
+    border-color: rgba(11, 87, 208, 0.42);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.14);
+}
+
+.agent-page .msg.agent .msg-content {
+    border: none;
+}
+
 .input-bar-inner {
     display: flex;
     align-items: flex-end;
@@ -1136,6 +1159,11 @@ body {
 
     .send-btn:not(:disabled):hover {
         box-shadow: 0 8px 18px rgba(138, 180, 248, 0.28);
+    }
+
+    .agent-page #chat-view .input-bar-inner {
+        border-color: rgba(138, 180, 248, 0.55);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
     }
 }
 
