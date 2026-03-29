@@ -451,6 +451,30 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertNotIn("[Google] #1", out)
         self.assertNotIn("[Meta] #1", out)
 
+    def test_landscape_entity_ref_with_tail_rank_is_fully_remapped(self) -> None:
+        answer = "关键风险见（[Meta] #1, #3）。"
+        source_output = (
+            "Evidence URLs:\n"
+            "  [Meta] #1 [TechCrunch] A | points=10 | 2026-03-20 10:00 | https://m.com/1\n"
+            "  [Meta] #2 [TechCrunch] B | points=9 | 2026-03-21 10:00 | https://m.com/2\n"
+            "  [Meta] #3 [TechCrunch] C | points=8 | 2026-03-22 10:00 | https://m.com/3\n"
+        )
+        out = agent_mod._ensure_landscape_evidence(answer, source_output, "最近两周科技格局")
+        self.assertIn("关键风险见[1], [3]。", out)
+        self.assertNotIn("#3", out)
+
+    def test_landscape_numeric_ref_with_tail_rank_is_fully_remapped(self) -> None:
+        answer = "关键风险见（[1], #3）。"
+        source_output = (
+            "Evidence URLs:\n"
+            "  [Meta] #1 [TechCrunch] A | points=10 | 2026-03-20 10:00 | https://m.com/1\n"
+            "  [Meta] #2 [TechCrunch] B | points=9 | 2026-03-21 10:00 | https://m.com/2\n"
+            "  [Meta] #3 [TechCrunch] C | points=8 | 2026-03-22 10:00 | https://m.com/3\n"
+        )
+        out = agent_mod._ensure_landscape_evidence(answer, source_output, "最近两周科技格局")
+        self.assertIn("关键风险见[1], [3]。", out)
+        self.assertNotIn("#3", out)
+
     def test_extract_source_compare_request_allows_single_source_hint(self) -> None:
         req = agent_mod._extract_source_compare_request("对比 OpenAI 在 HN 来源上的差异")
         self.assertIsNotNone(req)

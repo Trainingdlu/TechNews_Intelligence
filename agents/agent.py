@@ -499,6 +499,17 @@ _GENERIC_ANALYSIS_LEADIN_PATTERNS = (
 )
 _GENERIC_SEPARATOR_RE = re.compile(r"^\s*(?:-{3,}|_{3,}|\*{3,})\s*$")
 _ENTITY_ROW_REF_RE = re.compile(r"\[(?P<entity>[^\]\n]{1,80})\]\s*#(?P<rank>\d{1,2})")
+_ENTITY_ROW_REF_WITH_TAILS_RE = re.compile(
+    r"\[(?P<entity>[^\]\n]{1,80})\]\s*#(?P<rank>\d{1,2})"
+    r"(?P<tails>(?:\s*(?:[,，、;/]|(?:and|or|与|和))\s*#\d{1,2})+)",
+    re.IGNORECASE,
+)
+_NUMERIC_REF_WITH_TAILS_RE = re.compile(
+    r"\[(?P<base_idx>\d{1,3})\]"
+    r"(?P<tails>(?:\s*(?:[,，、;/]|(?:and|or|与|和))\s*#\d{1,2})+)",
+    re.IGNORECASE,
+)
+_TAIL_RANK_RE = re.compile(r"#(?P<rank>\d{1,2})")
 _PARENTHESIZED_CITATIONS_RE = re.compile(
     r"[（(]\s*(?P<inner>(?:\[\d{1,3}\]\s*(?:[,，、;；]\s*)?)*)\s*[)）]"
 )
@@ -532,8 +543,12 @@ def _strip_generic_analysis_leadin(text: str) -> str:
     return stripped or raw.strip()
 
 
+def _normalize_entity_key(entity: str) -> str:
+    return re.sub(r"\s+", " ", str(entity or "").strip()).lower()
+
+
 def _normalize_entity_row_ref(entity: str, rank: str) -> str:
-    normalized_entity = re.sub(r"\s+", " ", str(entity or "").strip()).lower()
+    normalized_entity = _normalize_entity_key(entity)
     try:
         normalized_rank = int(rank)
     except Exception:
@@ -554,6 +569,67 @@ def _build_entity_row_ref_url_map(source_output: str) -> dict[str, str]:
         if key and key not in mapping:
             mapping[key] = urls[0]
     return mapping
+
+
+def _split_entity_rank_ref_key(ref_key: str) -> tuple[str, int] | None:
+    token = str(ref_key or "").strip()
+    if "#" not in token:
+        return None
+    entity, rank_text = token.rsplit("#", 1)
+    entity_norm = _normalize_entity_key(entity)
+    try:
+        rank = int(rank_text)
+    except Exception:
+        return None
+    if not entity_norm or rank < 1:
+        return None
+    return entity_norm, rank
+
+
+def _build_entity_rank_index_maps(ref_to_index: dict[str, int]) -> tuple[dict[str, dict[int, int]], dict[int, str]]:
+    entity_rank_to_idx: dict[str, dict[int, int]] = {}
+    idx_to_entity: dict[int, str] = {}
+    for ref_key, idx in ref_to_index.items():
+        parsed = _split_entity_rank_ref_key(ref_key)
+        if not parsed:
+            continue
+        entity_norm, rank = parsed
+        if idx < 1:
+            continue
+        entity_rank_to_idx.setdefault(entity_norm, {})[rank] = idx
+        idx_to_entity.setdefault(idx, entity_norm)
+    return entity_rank_to_idx, idx_to_entity
+
+
+def _extract_tail_ranks(tails: str) -> list[int]:
+    out: list[int] = []
+    for m in _TAIL_RANK_RE.finditer(str(tails or "")):
+        try:
+            rank = int(m.group("rank"))
+        except Exception:
+            continue
+        if rank < 1:
+            continue
+        out.append(rank)
+    return out
+
+
+def _mapped_indices_for_entity_ranks(
+    *,
+    entity_norm: str,
+    ranks: list[int],
+    entity_rank_to_idx: dict[str, dict[int, int]],
+) -> list[int]:
+    rank_map = entity_rank_to_idx.get(entity_norm, {})
+    out: list[int] = []
+    seen: set[int] = set()
+    for rank in ranks:
+        idx = rank_map.get(rank)
+        if idx is None or idx in seen:
+            continue
+        seen.add(idx)
+        out.append(idx)
+    return out
 
 
 def _remap_entity_row_refs_to_global_sources(answer: str, source_output: str) -> str:
@@ -584,6 +660,24 @@ def _remap_entity_row_refs_to_global_sources(answer: str, source_output: str) ->
     if not ref_to_index:
         return body
 
+    entity_rank_to_idx, idx_to_entity = _build_entity_rank_index_maps(ref_to_index)
+
+    def _render(indices: list[int], fallback: str) -> str:
+        if not indices:
+            return fallback
+        return ", ".join(f"[{idx}]" for idx in indices)
+
+    def _replace_entity_with_tails(match: re.Match[str]) -> str:
+        entity_norm = _normalize_entity_key(match.group("entity"))
+        base_rank = int(match.group("rank"))
+        ranks = [base_rank] + _extract_tail_ranks(match.group("tails"))
+        indices = _mapped_indices_for_entity_ranks(
+            entity_norm=entity_norm,
+            ranks=ranks,
+            entity_rank_to_idx=entity_rank_to_idx,
+        )
+        return _render(indices, match.group(0))
+
     def _replace(match: re.Match[str]) -> str:
         key = _normalize_entity_row_ref(match.group("entity"), match.group("rank"))
         index = ref_to_index.get(key)
@@ -591,7 +685,33 @@ def _remap_entity_row_refs_to_global_sources(answer: str, source_output: str) ->
             return match.group(0)
         return f"[{index}]"
 
-    return _ENTITY_ROW_REF_RE.sub(_replace, body)
+    def _replace_numeric_with_tails(match: re.Match[str]) -> str:
+        try:
+            base_idx = int(match.group("base_idx"))
+        except Exception:
+            return match.group(0)
+        entity_norm = idx_to_entity.get(base_idx)
+        if not entity_norm:
+            return match.group(0)
+        rank_map = entity_rank_to_idx.get(entity_norm, {})
+        base_rank = None
+        for rank, idx in rank_map.items():
+            if idx == base_idx:
+                base_rank = rank
+                break
+        ranks = ([base_rank] if base_rank is not None else []) + _extract_tail_ranks(match.group("tails"))
+        indices = _mapped_indices_for_entity_ranks(
+            entity_norm=entity_norm,
+            ranks=ranks,
+            entity_rank_to_idx=entity_rank_to_idx,
+        )
+        fallback = f"[{base_idx}]"
+        return _render(indices, fallback)
+
+    body = _ENTITY_ROW_REF_WITH_TAILS_RE.sub(_replace_entity_with_tails, body)
+    body = _ENTITY_ROW_REF_RE.sub(_replace, body)
+    body = _NUMERIC_REF_WITH_TAILS_RE.sub(_replace_numeric_with_tails, body)
+    return body
 
 
 def _normalize_citation_brackets(text: str) -> str:
