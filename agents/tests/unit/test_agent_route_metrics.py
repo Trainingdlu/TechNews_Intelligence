@@ -409,6 +409,36 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertIn("https://a.com", out)
         self.assertNotIn("https://fake.com/x", out)
 
+    def test_grounding_guard_accepts_chinese_date_equivalent_to_iso(self) -> None:
+        source_output = (
+            "1. [TechCrunch] A\n"
+            "   time=2026-03-20 10:00\n"
+            "   url=https://a.com\n"
+        )
+        self.assertTrue(
+            agent_mod._is_answer_grounded_in_source(
+                "结论：2026年03月20日出现事件，证据 https://a.com",
+                source_output,
+            )
+        )
+        self.assertFalse(
+            agent_mod._is_answer_grounded_in_source(
+                "结论：2026年03月21日出现事件，证据 https://a.com",
+                source_output,
+            )
+        )
+
+    def test_grounding_guard_fallback_formats_raw_snapshot(self) -> None:
+        answer = (
+            "## 结论\n"
+            "- 2026-03-28 出现重大事件\n"
+            "- 证据链接 https://fake.com/x\n"
+        )
+        source_output = "1. [TechCrunch] A | points=10 | 2026-03-20 10:00 | https://a.com\n"
+        out = agent_mod._ensure_query_evidence(answer, source_output, "openai最近动态")
+        self.assertIn("数据库事实快照（已格式化）", out)
+        self.assertIn("[TechCrunch] A · points=10 · 2026-03-20 10:00 · https://a.com", out)
+
     def test_extract_source_compare_request_allows_single_source_hint(self) -> None:
         req = agent_mod._extract_source_compare_request("对比 OpenAI 在 HN 来源上的差异")
         self.assertIsNotNone(req)

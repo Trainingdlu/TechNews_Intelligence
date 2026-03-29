@@ -424,6 +424,60 @@ def _format_fulltext_ground_truth(fulltext_output: str) -> str:
     return "\n".join(lines).strip()
 
 
+_DATE_TOKEN_PATTERN = re.compile(
+    r"(?<!\d)"
+    r"(?P<y>\d{4})\s*(?:-|/|\.|年)\s*"
+    r"(?P<m>\d{1,2})\s*(?:-|/|\.|月)\s*"
+    r"(?P<d>\d{1,2})"
+    r"(?:\s*日)?"
+)
+
+
+def _extract_normalized_dates(text: str) -> set[str]:
+    out: set[str] = set()
+    for m in _DATE_TOKEN_PATTERN.finditer(text or ""):
+        try:
+            y = int(m.group("y"))
+            mo = int(m.group("m"))
+            d = int(m.group("d"))
+            # Use datetime constructor for strict calendar validation.
+            datetime(y, mo, d)
+        except Exception:
+            continue
+        out.add(f"{y:04d}-{mo:02d}-{d:02d}")
+    return out
+
+
+def _format_raw_snapshot_for_user(source_output: str) -> str:
+    raw = str(source_output or "").strip()
+    if not raw:
+        return ""
+
+    payload = _parse_tool_json(raw)
+    if payload:
+        tool_name = str(payload.get("tool", "")).strip().lower()
+        if tool_name == "query_news":
+            return _format_query_ground_truth(raw)
+        if tool_name == "fulltext_batch":
+            return _format_fulltext_ground_truth(raw)
+
+    lines: list[str] = []
+    for ln in raw.splitlines():
+        stripped = str(ln).strip()
+        if not stripped:
+            if lines and lines[-1] != "":
+                lines.append("")
+            continue
+        pretty = stripped
+        if " | " in pretty and pretty.count(" | ") >= 2:
+            pretty = pretty.replace(" | ", " · ")
+        pretty = re.sub(r"(?i)\btime=", "time: ", pretty)
+        pretty = re.sub(r"(?i)\burl=", "url: ", pretty)
+        lines.append(pretty)
+
+    return "\n".join(lines).strip()
+
+
 def _extract_final_text(result: Any) -> str:
     if isinstance(result, dict) and "messages" in result:
         messages = result["messages"]
@@ -915,8 +969,8 @@ def _is_answer_grounded_in_source(answer: str, source_output: str) -> bool:
     if answer_urls and source_urls and any(url not in source_urls for url in answer_urls):
         return False
 
-    source_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", source_output or ""))
-    answer_dates = set(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", answer or ""))
+    source_dates = _extract_normalized_dates(source_output or "")
+    answer_dates = _extract_normalized_dates(answer or "")
     if source_dates and answer_dates and any(d not in source_dates for d in answer_dates):
         return False
     return True
@@ -934,14 +988,16 @@ def _ensure_grounded_evidence_or_fallback(
         return answer
     if not _is_answer_grounded_in_source(answer, source_output):
         print(f"[Warn] {route_label} synthesis failed grounding gate; fallback to raw tool output.")
+        formatted_snapshot = _format_raw_snapshot_for_user(source_output)
         if _contains_cjk(user_message):
             return (
                 "检测到回答包含未在数据库工具输出中出现的事实字段，已回退为数据库原始结果。\n\n"
-                f"{source_output}"
+                "数据库事实快照（已格式化）：\n"
+                f"{formatted_snapshot}"
             )
         return (
-            "Detected unsupported facts not present in tool output; falling back to raw DB/tool output.\n\n"
-            f"{source_output}"
+            "Detected unsupported facts not present in tool output; falling back to formatted DB/tool snapshot.\n\n"
+            f"{formatted_snapshot}"
         )
     return _ensure_evidence_section(
         answer=answer,
