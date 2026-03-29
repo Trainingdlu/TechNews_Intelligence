@@ -498,18 +498,27 @@ _GENERIC_ANALYSIS_LEADIN_PATTERNS = (
     ),
 )
 _GENERIC_SEPARATOR_RE = re.compile(r"^\s*(?:-{3,}|_{3,}|\*{3,})\s*$")
-_ENTITY_ROW_REF_RE = re.compile(r"\[(?P<entity>[^\]\n]{1,80})\]\s*#(?P<rank>\d{1,2})")
+_ENTITY_ROW_REF_RE = re.compile(r"\[(?P<entity>[^\]\n]{1,80})\]\s*[#＃](?P<rank>\d{1,2})")
 _ENTITY_ROW_REF_WITH_TAILS_RE = re.compile(
-    r"\[(?P<entity>[^\]\n]{1,80})\]\s*#(?P<rank>\d{1,2})"
-    r"(?P<tails>(?:\s*(?:[,，、;/]|(?:and|or|与|和))\s*#\d{1,2})+)",
+    r"\[(?P<entity>[^\]\n]{1,80})\]\s*[#＃](?P<rank>\d{1,2})"
+    r"(?P<tails>(?:\s*(?:[,，、;/]|(?:and|or|与|和))\s*[#＃]\d{1,2})+)",
+    re.IGNORECASE,
+)
+_BARE_ENTITY_ROW_REF_RE = re.compile(
+    r"(?<![\w/])(?P<entity>[A-Za-z][A-Za-z0-9 .&+\-]{1,48}|[\u4e00-\u9fffA-Za-z0-9]{1,24})\s*[#＃](?P<rank>\d{1,2})(?!\d)",
+    re.IGNORECASE,
+)
+_BARE_ENTITY_ROW_REF_WITH_TAILS_RE = re.compile(
+    r"(?<![\w/])(?P<entity>[A-Za-z][A-Za-z0-9 .&+\-]{1,48}|[\u4e00-\u9fffA-Za-z0-9]{1,24})\s*[#＃](?P<rank>\d{1,2})"
+    r"(?P<tails>(?:\s*(?:[,，、;/]|(?:and|or|与|和))\s*[#＃]\d{1,2})+)",
     re.IGNORECASE,
 )
 _NUMERIC_REF_WITH_TAILS_RE = re.compile(
     r"\[(?P<base_idx>\d{1,3})\]"
-    r"(?P<tails>(?:\s*(?:[,，、;/]|(?:and|or|与|和))\s*#\d{1,2})+)",
+    r"(?P<tails>(?:\s*(?:[,，、;/]|(?:and|or|与|和))\s*[#＃]\d{1,2})+)",
     re.IGNORECASE,
 )
-_TAIL_RANK_RE = re.compile(r"#(?P<rank>\d{1,2})")
+_TAIL_RANK_RE = re.compile(r"[#＃](?P<rank>\d{1,2})")
 _PARENTHESIZED_CITATIONS_RE = re.compile(
     r"[（(]\s*(?P<inner>(?:\[\d{1,3}\]\s*(?:[,，、;；]\s*)?)*)\s*[)）]"
 )
@@ -528,7 +537,12 @@ def _strip_generic_analysis_leadin(text: str) -> str:
         return raw.strip()
 
     first_line = lines[first_idx].strip()
-    if not any(p.match(first_line) for p in _GENERIC_ANALYSIS_LEADIN_PATTERNS):
+    first_line_lower = first_line.lower()
+    looks_like_db_leadin = (
+        ("基于" in first_line and "数据库输出" in first_line and any(k in first_line for k in ("分析", "解读", "梳理")))
+        or ("based on" in first_line_lower and "database output" in first_line_lower and "analysis" in first_line_lower)
+    )
+    if not any(p.match(first_line) for p in _GENERIC_ANALYSIS_LEADIN_PATTERNS) and not looks_like_db_leadin:
         return raw.strip()
 
     start_idx = first_idx + 1
@@ -544,7 +558,9 @@ def _strip_generic_analysis_leadin(text: str) -> str:
 
 
 def _normalize_entity_key(entity: str) -> str:
-    return re.sub(r"\s+", " ", str(entity or "").strip()).lower()
+    normalized = re.sub(r"\s+", " ", str(entity or "").strip())
+    normalized = normalized.strip("[]()（）{}<>:：,，;；。.、")
+    return normalized.lower()
 
 
 def _normalize_entity_row_ref(entity: str, rank: str) -> str:
@@ -632,6 +648,46 @@ def _mapped_indices_for_entity_ranks(
     return out
 
 
+def _resolve_entity_norm_for_rank_map(
+    entity_norm: str,
+    entity_rank_to_idx: dict[str, dict[int, int]],
+) -> str:
+    normalized = _normalize_entity_key(entity_norm)
+    if not normalized:
+        return ""
+    if normalized in entity_rank_to_idx:
+        return normalized
+    parts = [p for p in normalized.split(" ") if p]
+    if len(parts) <= 1:
+        return normalized
+    for start in range(1, len(parts)):
+        candidate = " ".join(parts[start:])
+        if candidate in entity_rank_to_idx:
+            return candidate
+    return normalized
+
+
+def _prefix_text_before_resolved_entity(entity_raw: str, resolved_entity_norm: str) -> str:
+    raw = str(entity_raw or "").strip()
+    resolved = _normalize_entity_key(resolved_entity_norm)
+    if not raw or not resolved:
+        return ""
+    raw_parts = [p for p in raw.split(" ") if p]
+    resolved_parts = [p for p in resolved.split(" ") if p]
+    if not raw_parts or not resolved_parts or len(raw_parts) <= len(resolved_parts):
+        return ""
+    tail_raw_parts = raw_parts[-len(resolved_parts):]
+    tail_norm_parts: list[str] = []
+    for token in tail_raw_parts:
+        token_norm = _normalize_entity_key(token)
+        if token_norm:
+            tail_norm_parts.append(token_norm)
+    if " ".join(tail_norm_parts) != resolved:
+        return ""
+    prefix = " ".join(raw_parts[:-len(resolved_parts)]).strip()
+    return (prefix + " ") if prefix else ""
+
+
 def _remap_entity_row_refs_to_global_sources(answer: str, source_output: str) -> str:
     body = str(answer or "")
     if not body:
@@ -668,7 +724,7 @@ def _remap_entity_row_refs_to_global_sources(answer: str, source_output: str) ->
         return ", ".join(f"[{idx}]" for idx in indices)
 
     def _replace_entity_with_tails(match: re.Match[str]) -> str:
-        entity_norm = _normalize_entity_key(match.group("entity"))
+        entity_norm = _resolve_entity_norm_for_rank_map(match.group("entity"), entity_rank_to_idx)
         base_rank = int(match.group("rank"))
         ranks = [base_rank] + _extract_tail_ranks(match.group("tails"))
         indices = _mapped_indices_for_entity_ranks(
@@ -678,12 +734,47 @@ def _remap_entity_row_refs_to_global_sources(answer: str, source_output: str) ->
         )
         return _render(indices, match.group(0))
 
+    def _replace_bare_entity_with_tails(match: re.Match[str]) -> str:
+        raw_entity = match.group("entity")
+        entity_norm = _resolve_entity_norm_for_rank_map(raw_entity, entity_rank_to_idx)
+        prefix = _prefix_text_before_resolved_entity(raw_entity, entity_norm)
+        try:
+            base_rank = int(match.group("rank"))
+        except Exception:
+            return match.group(0)
+        ranks = [base_rank] + _extract_tail_ranks(match.group("tails"))
+        indices = _mapped_indices_for_entity_ranks(
+            entity_norm=entity_norm,
+            ranks=ranks,
+            entity_rank_to_idx=entity_rank_to_idx,
+        )
+        if not indices:
+            return match.group(0)
+        return f"{prefix}{_render(indices, match.group(0))}".strip()
+
     def _replace(match: re.Match[str]) -> str:
         key = _normalize_entity_row_ref(match.group("entity"), match.group("rank"))
         index = ref_to_index.get(key)
         if index is None:
             return match.group(0)
         return f"[{index}]"
+
+    def _replace_bare_entity(match: re.Match[str]) -> str:
+        raw_entity = match.group("entity")
+        entity_norm = _resolve_entity_norm_for_rank_map(raw_entity, entity_rank_to_idx)
+        prefix = _prefix_text_before_resolved_entity(raw_entity, entity_norm)
+        try:
+            rank = int(match.group("rank"))
+        except Exception:
+            return match.group(0)
+        indices = _mapped_indices_for_entity_ranks(
+            entity_norm=entity_norm,
+            ranks=[rank],
+            entity_rank_to_idx=entity_rank_to_idx,
+        )
+        if not indices:
+            return match.group(0)
+        return f"{prefix}{_render(indices, match.group(0))}".strip()
 
     def _replace_numeric_with_tails(match: re.Match[str]) -> str:
         try:
@@ -710,6 +801,8 @@ def _remap_entity_row_refs_to_global_sources(answer: str, source_output: str) ->
 
     body = _ENTITY_ROW_REF_WITH_TAILS_RE.sub(_replace_entity_with_tails, body)
     body = _ENTITY_ROW_REF_RE.sub(_replace, body)
+    body = _BARE_ENTITY_ROW_REF_WITH_TAILS_RE.sub(_replace_bare_entity_with_tails, body)
+    body = _BARE_ENTITY_ROW_REF_RE.sub(_replace_bare_entity, body)
     body = _NUMERIC_REF_WITH_TAILS_RE.sub(_replace_numeric_with_tails, body)
     return body
 

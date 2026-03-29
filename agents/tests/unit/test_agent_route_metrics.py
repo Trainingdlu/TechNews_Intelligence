@@ -475,6 +475,66 @@ class AgentRouteMetricsTests(unittest.TestCase):
         self.assertIn("关键风险见[1], [3]。", out)
         self.assertNotIn("#3", out)
 
+    def test_landscape_bare_entity_ref_is_remapped(self) -> None:
+        answer = "关键证据：Google #3 与 Anthropic #1。"
+        source_output = (
+            "Evidence URLs:\n"
+            "  [Google] #1 [TechCrunch] A | points=10 | 2026-03-20 10:00 | https://g.com/1\n"
+            "  [Google] #2 [TechCrunch] B | points=9 | 2026-03-21 10:00 | https://g.com/2\n"
+            "  [Google] #3 [TechCrunch] C | points=8 | 2026-03-22 10:00 | https://g.com/3\n"
+            "  [Anthropic] #1 [TechCrunch] D | points=7 | 2026-03-23 10:00 | https://a.com/1\n"
+        )
+        out = agent_mod._ensure_landscape_evidence(answer, source_output, "最近两周科技格局")
+        self.assertIn("关键证据：[3] 与 [4]。", out)
+        self.assertNotIn("Google #3", out)
+        self.assertNotIn("Anthropic #1", out)
+
+    def test_landscape_bare_entity_ref_with_prefix_words_is_remapped(self) -> None:
+        answer = "See Google #1, #3; Meta #2."
+        source_output = (
+            "Evidence URLs:\n"
+            "  [Google] #1 [TechCrunch] A | points=10 | 2026-03-20 10:00 | https://g.com/1\n"
+            "  [Google] #2 [TechCrunch] B | points=9 | 2026-03-21 10:00 | https://g.com/2\n"
+            "  [Google] #3 [TechCrunch] C | points=8 | 2026-03-22 10:00 | https://g.com/3\n"
+            "  [Meta] #1 [TechCrunch] D | points=7 | 2026-03-23 10:00 | https://m.com/1\n"
+            "  [Meta] #2 [TechCrunch] E | points=6 | 2026-03-24 10:00 | https://m.com/2\n"
+        )
+        out = agent_mod._ensure_landscape_evidence(answer, source_output, "latest ai landscape")
+        self.assertIn("See [1], [3]; [5].", out)
+        self.assertNotIn("Google #1", out)
+        self.assertNotIn("Meta #2", out)
+
+    def test_landscape_fullwidth_hash_refs_are_remapped(self) -> None:
+        answer = "关键证据：Google ＃3、＃1；另见 [1]、＃2。"
+        source_output = (
+            "Evidence URLs:\n"
+            "  [Google] #1 [TechCrunch] A | points=10 | 2026-03-20 10:00 | https://g.com/1\n"
+            "  [Google] #2 [TechCrunch] B | points=9 | 2026-03-21 10:00 | https://g.com/2\n"
+            "  [Google] #3 [TechCrunch] C | points=8 | 2026-03-22 10:00 | https://g.com/3\n"
+        )
+        out = agent_mod._ensure_landscape_evidence(answer, source_output, "最近两周科技格局")
+        self.assertIn("关键证据：[3], [1]；另见 [1], [2]。", out)
+        self.assertNotIn("＃", out)
+
+    def test_generate_response_strips_db_leadin_with_compliance_prefix(self) -> None:
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(
+                    agent_mod,
+                    "_generate_response_core",
+                    lambda _h, _m: (
+                        "好的，遵从指示。以下是基于提供的数据库输出的AI局势分析。\n\n"
+                        "---\n\n"
+                        "格局结论\n"
+                        "- 样本见 https://a.com/article"
+                    ),
+                )
+            )
+            out = agent_mod.generate_response([], "分析最近ai局势")
+
+        self.assertTrue(str(out).startswith("格局结论"))
+        self.assertNotIn("遵从指示", str(out))
+
     def test_extract_source_compare_request_allows_single_source_hint(self) -> None:
         req = agent_mod._extract_source_compare_request("对比 OpenAI 在 HN 来源上的差异")
         self.assertIsNotNone(req)
