@@ -1,2 +1,1 @@
-"""Core orchestration helpers for agent runtime."""
-
+"""Core subpackage: metrics and evidence utilities."""

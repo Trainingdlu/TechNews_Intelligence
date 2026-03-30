@@ -61,6 +61,9 @@ def install_bot_import_stubs() -> None:
             importlib.import_module("agent")
         except Exception:
             agent_mod = types.ModuleType("agent")
+            class AgentGenerationError(Exception):
+                pass
+            agent_mod.AgentGenerationError = AgentGenerationError
             agent_mod.generate_response = lambda _h, _m: "ok"
             agent_mod.generate_response_payload = lambda _h, _m: {"text": "ok", "url_title_map": {}}
             sys.modules["agent"] = agent_mod

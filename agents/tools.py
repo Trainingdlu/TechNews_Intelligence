@@ -609,7 +609,15 @@ def _lookup_urls_by_query(query: str, days: int = 14, limit: int = 5) -> list[tu
 
 
 def get_db_stats() -> str:
-    """Get DB freshness and volume stats."""
+    """Get database freshness statistics and total article count.
+
+    Use this tool first when you need to understand how recent the data is
+    or how many articles are available before performing deeper analysis.
+
+    Returns:
+        A one-line summary: total article count and timestamp of the most
+        recent article (e.g. 'DB stats: total=12345, latest_created_at=2025-03-28 14:30').
+    """
     print("\n[Tool] get_db_stats")
     conn = get_conn()
     try:
@@ -628,7 +636,14 @@ def get_db_stats() -> str:
 
 
 def list_topics() -> str:
-    """Get article counts for recent 21 days."""
+    """Get daily article volume distribution for the most recent 21 days.
+
+    Use this tool to understand data density and recency before choosing
+    time windows for other queries.
+
+    Returns:
+        Daily date and article count, one line per day, sorted newest first.
+    """
     print("\n[Tool] list_topics")
     conn = get_conn()
     try:
@@ -660,7 +675,25 @@ def list_topics() -> str:
 
 
 def search_news(query: str, days: int = 21) -> str:
-    """Hybrid search (vector + keyword) for news retrieval."""
+    """Search related news using hybrid retrieval (semantic vector + keyword matching).
+
+    Best for exploratory, open-ended queries where you want the most relevant
+    articles regardless of source or sorting. Returns up to 5 results ranked
+    by composite relevance score.
+
+    Args:
+        query: Free-text search query (entity name, topic, keyword).
+        days: Lookback window in days. Default 21, max 365.
+
+    Returns:
+        Formatted list of matching articles with Title, URL, Summary,
+        Sentiment, Time, and relevance Score.
+        Returns 'No related news...' if nothing matches.
+
+    Retry guidance:
+        - If no results, try broadening the query or increasing days.
+        - If relevance scores are all < 0.5, results are weak matches.
+    """
     print(f"\n[Tool] search_news: query={query}, days={days}")
     days = _clamp_int(days, 1, 365)
     limit = 5
@@ -751,7 +784,17 @@ def search_news(query: str, days: int = 21) -> str:
 
 
 def read_news_content(url: str) -> str:
-    """Read full article content by URL from DB raw logs."""
+    """Read the full-text content of a single article by its URL.
+
+    Only works for URLs that exist in the database. Use URLs returned by
+    search_news, query_news, or other tools.
+
+    Args:
+        url: The exact article URL as returned by other tools.
+
+    Returns:
+        Full article text, or an error message if the URL is not found.
+    """
     print(f"\n[Tool] read_news_content: {url}")
     conn = get_conn()
     try:
@@ -788,7 +831,31 @@ def query_news(
     limit: int = 8,
     response_format: str = "text",
 ) -> str:
-    """Filterable retrieval: source/days/category/sentiment/sort/limit."""
+    """Query news with structured filters — the primary retrieval tool.
+
+    Use this tool for most news retrieval needs. It supports filtering by
+    source, time window, sentiment, and sorting by time or heat (points).
+
+    Args:
+        query: Keyword or entity name to search (e.g. 'OpenAI', 'GPU').
+        source: 'all', 'HackerNews', or 'TechCrunch'.
+        days: Lookback window in days. Default 21, max 365.
+        category: Optional category filter.
+        sentiment: Optional: 'Positive', 'Neutral', or 'Negative'.
+        sort: 'time_desc' (default), 'time_asc', 'heat_desc', 'heat_asc'.
+        limit: Max results to return. Default 8, max 30.
+        response_format: 'text' (default) or 'json'.
+
+    Returns:
+        Ranked list of articles with title, URL, summary, sentiment,
+        points, source, and timestamp.
+
+    Retry guidance:
+        - If 'No matching records', try broadening the query keyword
+          or increasing the days window.
+        - For comprehensive coverage, try sort='heat_desc' to find
+          the most discussed articles.
+    """
     print(f"\n[Tool] query_news: query={query}, source={source}, days={days}, sort={sort}")
     days = _clamp_int(days, 1, 365)
     limit = _clamp_int(limit, 1, 30)
@@ -892,7 +959,22 @@ def query_news(
 
 
 def trend_analysis(topic: str, window: int = 7) -> str:
-    """Analyze momentum in recent window vs previous window."""
+    """Analyze topic momentum by comparing recent vs previous time window.
+
+    Compares article count and average points in the recent N days vs the
+    preceding N days. Includes daily breakdown.
+
+    Args:
+        topic: Entity or keyword to track (e.g. 'OpenAI', 'cybersecurity').
+        window: Window size in days. Default 7, range 3-60.
+
+    Returns:
+        Count delta, average-points comparison, and per-day breakdown.
+
+    Retry guidance:
+        - If counts are very low (< 3), try a broader topic keyword.
+        - If 'no matched records', the topic may not be in the database.
+    """
     print(f"\n[Tool] trend_analysis: topic={topic}, window={window}")
     if not topic or not topic.strip():
         return "trend_analysis requires topic."
@@ -971,7 +1053,19 @@ def trend_analysis(topic: str, window: int = 7) -> str:
 
 
 def compare_sources(topic: str, days: int = 14) -> str:
-    """Compare HN vs TechCrunch for one topic."""
+    """Compare HackerNews vs TechCrunch coverage and sentiment for a topic.
+
+    Use this when the user wants to understand how different media sources
+    cover the same topic differently.
+
+    Args:
+        topic: Entity or keyword to compare across sources.
+        days: Lookback window. Default 14, max 90.
+
+    Returns:
+        Per-source stats (count, avg_points, sentiment breakdown) and
+        top 3 evidence articles per source with URLs.
+    """
     print(f"\n[Tool] compare_sources: topic={topic}, days={days}")
     if not topic or not topic.strip():
         return "compare_sources requires topic."
@@ -1045,7 +1139,20 @@ def compare_sources(topic: str, days: int = 14) -> str:
 
 
 def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
-    """Compare two entities/topics with DB-backed evidence only."""
+    """Compare two entities or topics side-by-side with DB evidence.
+
+    Use this for A-vs-B comparisons (e.g. 'OpenAI vs Anthropic',
+    'GPU vs TPU'). Provides metrics, momentum, source mix, and evidence.
+
+    Args:
+        topic_a: First entity/topic.
+        topic_b: Second entity/topic.
+        days: Lookback window. Default 14, max 90.
+
+    Returns:
+        Side-by-side stats, momentum delta, source mix breakdown,
+        top evidence URLs, and a confidence tag.
+    """
     print(f"\n[Tool] compare_topics: A={topic_a}, B={topic_b}, days={days}")
     if not topic_a or not topic_a.strip() or not topic_b or not topic_b.strip():
         return "compare_topics requires topic_a and topic_b."
@@ -1253,7 +1360,34 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
 
 
 def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit_per_entity: int = 3) -> str:
-    """Cross-domain landscape snapshot with entity stats and evidence URLs."""
+    """Analyze the competitive landscape for a domain with entity-level stats.
+
+    Use this for broad, structural questions like 'What does the AI landscape
+    look like?', 'Who are the key players in cybersecurity?', or company-role
+    analysis. Provides per-entity article count, sentiment, momentum, source
+    mix, signal classification, and evidence URLs.
+
+    Args:
+        topic: Domain filter (e.g. 'AI', 'security', 'business').
+               Leave empty for all-domain landscape.
+        days: Lookback window. Default 30, range 7-180.
+        entities: Comma-separated entity names to track.
+                  Leave empty for default set (OpenAI, Anthropic, Google,
+                  Microsoft, Meta, Amazon, Apple, NVIDIA, etc.).
+        limit_per_entity: Max evidence URLs per entity. Default 3, max 5.
+
+    Returns:
+        Structured landscape report with coverage stats, entity metrics,
+        variable signal counts (Compute/Cost, Algorithm/Efficiency, etc.),
+        evidence URLs, and a confidence tag.
+
+    Retry guidance:
+        - If 'No landscape data', try increasing days or removing the
+          topic filter.
+        - If confidence is 'Low', try adding more entities or widening
+          the time window.
+        - For AI-specific landscape, use topic='AI'.
+    """
     topic = (topic or "").strip()
     topic_label = topic or "all"
     print(
@@ -1514,12 +1648,33 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
 
 
 def analyze_ai_landscape(days: int = 30, entities: str = "", limit_per_entity: int = 3) -> str:
-    """Compatibility alias for AI landscape."""
+    """Analyze the AI industry landscape. Alias for analyze_landscape(topic='AI').
+
+    Deprecated: prefer using analyze_landscape(topic='AI') directly.
+    """
     return analyze_landscape(topic="AI", days=days, entities=entities, limit_per_entity=limit_per_entity)
 
 
 def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
-    """Build chronological timeline for a topic."""
+    """Build a chronological event timeline for a topic, company, or product.
+
+    Returns events sorted by time (oldest first) with timestamps, sources,
+    sentiment, engagement points, headlines, and URLs.
+
+    Args:
+        topic: Entity or keyword to track (e.g. 'OpenAI', 'GPU shortage').
+        days: Lookback window in days. Default 30, max 180.
+        limit: Max events to return. Default 12, max 40.
+
+    Returns:
+        Ranked timeline of events with metadata and URLs.
+        Returns 'No timeline data...' if no events found.
+
+    Retry guidance:
+        - If no data returned, the tool will automatically retry with a
+          wider window (up to 2x). If still empty, try broadening the topic.
+        - If fewer than 5 events, consider widening the time window.
+    """
     print(f"\n[Tool] build_timeline: topic={topic}, days={days}, limit={limit}")
     if not topic or not topic.strip():
         return "build_timeline requires topic."
@@ -1549,6 +1704,31 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
         )
         rows = cur.fetchall()
         cur.close()
+
+        # Auto-retry with wider window if empty and room to expand
+        if not rows and days < 90:
+            retry_days = min(180, max(60, days * 2))
+            print(f"[Tool] build_timeline: empty for {days}d, auto-retrying with {retry_days}d")
+            cur = conn.cursor()
+            cur.execute(
+                f"""
+                SELECT
+                    created_at, source_type,
+                    COALESCE(title_cn, title) AS headline,
+                    sentiment, points, url
+                FROM view_dashboard_news
+                WHERE created_at >= NOW() - %s::interval
+                  AND {topic_clause}
+                ORDER BY created_at ASC
+                LIMIT %s
+                """,
+                tuple([f"{retry_days} days"] + topic_params + [limit]),
+            )
+            rows = cur.fetchall()
+            cur.close()
+            if rows:
+                days = retry_days
+
         if not rows:
             return f"No timeline data for '{topic}' in {days} days."
 
@@ -1568,7 +1748,22 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
 
 
 def fulltext_batch(urls: str, max_chars_per_article: int = 4000, response_format: str = "text") -> str:
-    """Batch-read full text by URL list or keyword fallback."""
+    """Batch-read full article text by URL list or keyword auto-selection.
+
+    Can accept either direct URLs or a keyword query. When given keywords
+    instead of URLs, automatically selects the most relevant articles.
+
+    Args:
+        urls: Comma/newline separated URLs, or a keyword query string
+              for auto-selection.
+        max_chars_per_article: Max characters per article. Default 4000,
+                               range 800-12000.
+        response_format: 'text' (default) or 'json'.
+
+    Returns:
+        Full text content of each article. When auto-selecting, includes
+        a ranked candidate list before the full text.
+    """
     print("\n[Tool] fulltext_batch")
     max_chars_per_article = _clamp_int(max_chars_per_article, 800, 12000)
     as_json = response_format.strip().lower() == "json"

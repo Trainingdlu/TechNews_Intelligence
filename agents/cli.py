@@ -8,24 +8,14 @@ from dotenv import load_dotenv
 
 
 def _extract_response_text(response) -> str:
-    if isinstance(response, str):
-        return response
-
     text = getattr(response, "text", None)
     if isinstance(text, str) and text.strip():
         return text.strip()
 
-    candidates = getattr(response, "candidates", None)
-    if candidates:
-        parts = [
-            part.text
-            for part in candidates[0].content.parts
-            if hasattr(part, "text") and part.text
-        ]
-        if parts:
-            return "".join(parts)
+    if isinstance(response, str):
+        return response.strip()
 
-    return "[Error] Model returned no valid text."
+    return "[Error] Agent returned no valid text."
 
 
 def main():

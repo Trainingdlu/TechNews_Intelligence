@@ -68,11 +68,9 @@ class EvalCoreTests(unittest.TestCase):
                 "avg_error_rate": 0.01,
             },
             "route_metrics": {
-                "fallback_rate_total": 0.02,
-                "fallback_rate_langchain": 0.03,
-                "langchain_success_rate": 0.97,
-                "forced_route_rate": 0.40,
-                "landscape_low_evidence_rate": 0.10,
+                "react_success_rate": 0.97,
+                "react_error_rate": 0.03,
+                "react_recursion_limit_rate": 0.02,
             },
         }
         baseline = {
@@ -84,11 +82,9 @@ class EvalCoreTests(unittest.TestCase):
                 "avg_error_rate": 0.02,
             },
             "route_metrics": {
-                "fallback_rate_total": 0.03,
-                "fallback_rate_langchain": 0.05,
-                "langchain_success_rate": 0.95,
-                "forced_route_rate": 0.35,
-                "landscape_low_evidence_rate": 0.20,
+                "react_success_rate": 0.95,
+                "react_error_rate": 0.05,
+                "react_recursion_limit_rate": 0.03,
             },
         }
         cmp_out = build_baseline_comparison(current, baseline)
@@ -103,7 +99,7 @@ class EvalCoreTests(unittest.TestCase):
                 "avg_min_url_hit_rate": 0.90,
             },
             "route_metrics": {
-                "fallback_rate_total": 0.04,
+                "react_error_rate": 0.04,
             },
         }
         gates = [
@@ -120,8 +116,8 @@ class EvalCoreTests(unittest.TestCase):
                 "threshold": 0.80,
             },
             {
-                "name": "fallback_max",
-                "metric_path": "route_metrics.fallback_rate_total",
+                "name": "react_error_max",
+                "metric_path": "route_metrics.react_error_rate",
                 "op": "max",
                 "threshold": 0.03,
             },

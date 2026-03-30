@@ -85,21 +85,38 @@ def citation_indices_in_order(text: str) -> list[int]:
     return ordered
 
 
-def remap_inline_citations(text: str, index_map: dict[int, int]) -> str:
-    if not index_map:
+def remap_inline_citations(text: str, index_map: dict[int, int], strip_unmapped: bool = False) -> str:
+    if not index_map and not strip_unmapped:
         return text
 
-    def _replace(match: re.Match[str]) -> str:
-        try:
-            old = int(match.group(1))
-        except Exception:
-            return match.group(0)
-        new = index_map.get(old)
-        if new is None:
-            return match.group(0)
-        return f"[{new}]"
+    lines = (text or "").split("\n")
+    out_lines = []
 
-    return _INLINE_CITATION_RE.sub(_replace, text or "")
+    for line in lines:
+        if strip_unmapped:
+            matches = _INLINE_CITATION_RE.findall(line)
+            if matches:
+                has_valid = any(int(m) in index_map for m in matches if m.isdigit())
+                has_invalid = any(int(m) not in index_map for m in matches if m.isdigit())
+                
+                # If the line ONLY has invalid citations, drop the line entirely
+                if has_invalid and not has_valid:
+                    continue
+
+        def _replace(match: re.Match[str]) -> str:
+            try:
+                old = int(match.group(1))
+            except Exception:
+                return match.group(0)
+            new = index_map.get(old)
+            if new is None:
+                return "" if strip_unmapped else match.group(0)
+            return f"[{new}]"
+
+        remapped_line = _INLINE_CITATION_RE.sub(_replace, line)
+        out_lines.append(remapped_line)
+
+    return "\n".join(out_lines)
 
 
 def dedupe_redundant_inline_citation_runs(text: str) -> str:
@@ -154,7 +171,7 @@ def dedupe_redundant_inline_citation_runs(text: str) -> str:
     return _INLINE_CITATION_LIST_RE.sub(_replace, body)
 
 
-def compact_citations_and_urls(cited_body: str, ordered_urls: list[str]) -> tuple[str, list[str]]:
+def compact_citations_and_urls(cited_body: str, ordered_urls: list[str], valid_urls: set[str] | None = None) -> tuple[str, list[str]]:
     refs = citation_indices_in_order(cited_body)
     if not refs:
         return cited_body, ordered_urls
@@ -163,13 +180,13 @@ def compact_citations_and_urls(cited_body: str, ordered_urls: list[str]) -> tupl
     index_map: dict[int, int] = {}
     for old_idx in refs:
         if 1 <= old_idx <= len(ordered_urls):
+            url = ordered_urls[old_idx - 1]
+            if valid_urls is not None and url not in valid_urls:
+                continue
             index_map[old_idx] = len(compact_urls) + 1
-            compact_urls.append(ordered_urls[old_idx - 1])
+            compact_urls.append(url)
 
-    if not compact_urls:
-        return cited_body, ordered_urls
-
-    compact_body = remap_inline_citations(cited_body, index_map)
+    compact_body = remap_inline_citations(cited_body, index_map, strip_unmapped=(valid_urls is not None))
     compact_body = dedupe_redundant_inline_citation_runs(compact_body)
     return compact_body, compact_urls
 
@@ -194,6 +211,7 @@ def decorate_response_with_sources(
     text: str,
     user_message: str,
     lookup_url_titles: Callable[[list[str]], dict[str, str]] | None = None,
+    valid_urls: set[str] | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Normalize output into citation style + source section."""
     raw = (text or "").strip()
@@ -221,8 +239,15 @@ def decorate_response_with_sources(
 
     render_body = body if body else raw
     cited_body = apply_inline_citations(render_body, ordered_urls)
-    compact_body, compact_urls = compact_citations_and_urls(cited_body, ordered_urls)
+    compact_body, compact_urls = compact_citations_and_urls(cited_body, ordered_urls, valid_urls=valid_urls)
     final_urls = compact_urls if compact_urls else ordered_urls
+
+    if valid_urls is not None:
+        final_urls = [u for u in final_urls if u in valid_urls]
+
+    if not final_urls:
+        return compact_body.rstrip(), title_map
+
     source_section = build_source_section(final_urls, user_message)
     merged = f"{compact_body.rstrip()}\n\n{source_section}".strip()
     return merged, title_map

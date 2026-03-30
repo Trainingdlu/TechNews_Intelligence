@@ -1,34 +1,30 @@
 # 评测目录结构说明
 
-`agents/eval` 目录按职责分层：
+`agents/eval` 目录职责如下：
 
-- `run_eval.py`：评测执行入口（筛选、运行、报告生成）
-- `eval_core.py`：纯指标与门禁逻辑
-- `capabilities.py`：能力注册表（与 `agent.py` 能力对齐）
-- `dataset_loader.py`：题库解析、标准化、过滤
-- `datasets/`：按能力标注的 JSONL 题库目录
-  - `default.jsonl`：默认评测题库（唯一默认入口）
-  - `smoke.jsonl`：快速冒烟题库
-- `reports/`：评测输出报告目录
+- `run_eval.py`：评测入口（题库加载、执行、报告输出、门禁判定）
+- `eval_core.py`：指标计算与 baseline/gate 逻辑
+- `dataset_loader.py`：题库解析、过滤、能力字段校验
+- `capabilities.py`：能力注册表
+- `datasets/`：评测题库
+  - `default.jsonl`：默认套件
+  - `smoke.jsonl`：冒烟套件
+- `reports/`：评测报告输出目录（运行产物）
 
-快速 smoke 评测：
+常用命令：
 
 ```bash
+# 快速冒烟
 python agents/eval/run_eval.py --suite smoke --runs-per-question 1 --output agents/eval/reports/smoke.json
-```
 
-仅运行强制路由能力：
-
-```bash
+# 只跑特定能力
 python agents/eval/run_eval.py --suite default --capabilities compare_topics,timeline,landscape
-```
 
-Refresh latest baseline (recommended after route metric schema updates):
-
-```bash
+# 生成最新基线报告
 python agents/eval/run_eval.py --suite default --runs-per-question 3 --output agents/eval/reports/latest.json
 ```
 
-Notes:
-- `route_metrics_schema_version=2` now includes forced-route counters for `source_compare`, `trend`, `fulltext`, and `query`.
-- Baselines generated with older schema should be regenerated before doing regression comparisons.
+说明：
+
+- 当前 `route_metrics_schema_version=3`。
+- baseline 报告如来自旧 schema，建议重新生成后再做回归比较。

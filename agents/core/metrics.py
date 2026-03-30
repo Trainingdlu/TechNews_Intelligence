@@ -8,31 +8,11 @@ from threading import Lock
 _route_metrics_lock = Lock()
 _route_metrics: dict[str, int] = {
     "requests_total": 0,
-    "source_compare_forced": 0,
-    "compare_forced": 0,
-    "timeline_forced": 0,
-    "landscape_forced": 0,
-    "trend_forced": 0,
-    "fulltext_forced": 0,
-    "query_forced": 0,
-    "landscape_low_evidence": 0,
-    "legacy_direct": 0,
-    "langchain_attempts": 0,
-    "langchain_success": 0,
-    "langchain_fallback": 0,
+    "react_attempts": 0,
+    "react_success": 0,
+    "react_error": 0,
+    "react_recursion_limit_hit": 0,
 }
-
-
-def _forced_route_total(snapshot: dict[str, int]) -> int:
-    return (
-        snapshot.get("source_compare_forced", 0)
-        + snapshot.get("compare_forced", 0)
-        + snapshot.get("timeline_forced", 0)
-        + snapshot.get("landscape_forced", 0)
-        + snapshot.get("trend_forced", 0)
-        + snapshot.get("fulltext_forced", 0)
-        + snapshot.get("query_forced", 0)
-    )
 
 
 def metrics_enabled() -> bool:
@@ -52,6 +32,15 @@ def metrics_inc(key: str, amount: int = 1) -> None:
     with _route_metrics_lock:
         _route_metrics[key] = _route_metrics.get(key, 0) + amount
 
+    # Auto-emit on error events or every N requests
+    if key in {"react_error", "react_recursion_limit_hit"}:
+        emit_route_metrics(key, force=True)
+    elif key == "requests_total":
+        with _route_metrics_lock:
+            total = _route_metrics.get("requests_total", 0)
+        if total % metrics_log_every() == 0:
+            emit_route_metrics("periodic")
+
 
 def emit_route_metrics(route_event: str, force: bool = False) -> None:
     if not metrics_enabled():
@@ -61,50 +50,23 @@ def emit_route_metrics(route_event: str, force: bool = False) -> None:
         snapshot = dict(_route_metrics)
 
     total = max(1, snapshot.get("requests_total", 0))
-    attempts = snapshot.get("langchain_attempts", 0)
-    fallback = snapshot.get("langchain_fallback", 0)
-    success = snapshot.get("langchain_success", 0)
-    source_compare_forced = snapshot.get("source_compare_forced", 0)
-    compare_forced = snapshot.get("compare_forced", 0)
-    timeline_forced = snapshot.get("timeline_forced", 0)
-    landscape_forced = snapshot.get("landscape_forced", 0)
-    trend_forced = snapshot.get("trend_forced", 0)
-    fulltext_forced = snapshot.get("fulltext_forced", 0)
-    query_forced = snapshot.get("query_forced", 0)
-    landscape_low_evidence = snapshot.get("landscape_low_evidence", 0)
-    legacy_direct = snapshot.get("legacy_direct", 0)
-
-    should_log = force or (snapshot.get("requests_total", 0) % metrics_log_every() == 0)
-    if not should_log:
-        return
-
-    fallback_rate_total = fallback / total
-    fallback_rate_attempt = (fallback / attempts) if attempts else 0.0
-    langchain_success_rate = (success / attempts) if attempts else 0.0
-    forced_route_rate = _forced_route_total(snapshot) / total
-    landscape_low_evidence_rate = (landscape_low_evidence / landscape_forced) if landscape_forced else 0.0
+    attempts = snapshot.get("react_attempts", 0)
+    success = snapshot.get("react_success", 0)
+    errors = snapshot.get("react_error", 0)
+    recursion_hits = snapshot.get("react_recursion_limit_hit", 0)
+    success_rate = (success / attempts) if attempts else 0.0
+    error_rate = (errors / total)
 
     print(
         "[Metrics] "
         f"event={route_event} "
-        f"total={snapshot.get('requests_total', 0)} "
-        f"source_compare_forced={source_compare_forced} "
-        f"compare_forced={compare_forced} "
-        f"timeline_forced={timeline_forced} "
-        f"landscape_forced={landscape_forced} "
-        f"trend_forced={trend_forced} "
-        f"fulltext_forced={fulltext_forced} "
-        f"query_forced={query_forced} "
-        f"landscape_low_evidence={landscape_low_evidence} "
-        f"legacy_direct={legacy_direct} "
-        f"langchain_attempts={attempts} "
-        f"langchain_success={success} "
-        f"langchain_fallback={fallback} "
-        f"fallback_rate_total={fallback_rate_total:.1%} "
-        f"fallback_rate_langchain={fallback_rate_attempt:.1%} "
-        f"langchain_success_rate={langchain_success_rate:.1%} "
-        f"forced_route_rate={forced_route_rate:.1%} "
-        f"landscape_low_evidence_rate={landscape_low_evidence_rate:.1%}"
+        f"total={total} "
+        f"react_attempts={attempts} "
+        f"react_success={success} "
+        f"react_error={errors} "
+        f"react_recursion_limit_hit={recursion_hits} "
+        f"success_rate={success_rate:.1%} "
+        f"error_rate={error_rate:.1%}"
     )
 
 
@@ -121,31 +83,16 @@ def get_route_metrics_snapshot() -> dict[str, float]:
         snapshot: dict[str, float] = dict(_route_metrics)
 
     total = max(1, int(snapshot.get("requests_total", 0)))
-    attempts = int(snapshot.get("langchain_attempts", 0))
-    fallback = int(snapshot.get("langchain_fallback", 0))
-    success = int(snapshot.get("langchain_success", 0))
-    source_compare_forced = int(snapshot.get("source_compare_forced", 0))
-    compare_forced = int(snapshot.get("compare_forced", 0))
-    timeline_forced = int(snapshot.get("timeline_forced", 0))
-    landscape_forced = int(snapshot.get("landscape_forced", 0))
-    trend_forced = int(snapshot.get("trend_forced", 0))
-    fulltext_forced = int(snapshot.get("fulltext_forced", 0))
-    query_forced = int(snapshot.get("query_forced", 0))
-    landscape_low_evidence = int(snapshot.get("landscape_low_evidence", 0))
+    attempts = int(snapshot.get("react_attempts", 0))
+    success = int(snapshot.get("react_success", 0))
+    errors = int(snapshot.get("react_error", 0))
+    recursion_hits = int(snapshot.get("react_recursion_limit_hit", 0))
 
-    snapshot["fallback_rate_total"] = fallback / total
-    snapshot["fallback_rate_langchain"] = (fallback / attempts) if attempts else 0.0
-    snapshot["langchain_success_rate"] = (success / attempts) if attempts else 0.0
-    snapshot["forced_route_rate"] = (
-        source_compare_forced
-        + compare_forced
-        + timeline_forced
-        + landscape_forced
-        + trend_forced
-        + fulltext_forced
-        + query_forced
-    ) / total
-    snapshot["landscape_low_evidence_rate"] = (
-        (landscape_low_evidence / landscape_forced) if landscape_forced else 0.0
-    )
+    snapshot["success_rate"] = (success / attempts) if attempts else 0.0
+    snapshot["error_rate"] = errors / total
+    snapshot["react_success_rate"] = (success / attempts) if attempts else 0.0
+    snapshot["react_error_rate"] = (errors / attempts) if attempts else 0.0
+    snapshot["react_recursion_limit_rate"] = (
+        recursion_hits / attempts
+    ) if attempts else 0.0
     return snapshot

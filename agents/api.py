@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, EmailStr
 from psycopg2.extras import Json
 
-from agent import generate_response
+from agent import AgentGenerationError, generate_response
 from db import init_db_pool, close_db_pool, get_conn, put_conn
 from mail import (
     send_token_email,
@@ -491,7 +491,10 @@ async def chat(
 
     except HTTPException:
         raise
+    except AgentGenerationError as e:
+        logger.warning(f"[{token_info['email']}] generation blocked: {e}")
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         logger.error(f"[{token_info['email']}] 处理失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="服务暂时不可用，请稍后重试")
 

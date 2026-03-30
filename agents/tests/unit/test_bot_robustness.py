@@ -38,6 +38,18 @@ class _FakeMessage:
         return types.SimpleNamespace(message_id=len(self.calls))
 
 
+class _ThinkingMessage:
+    def __init__(self):
+        self.edits: list[str] = []
+
+    async def delete(self):
+        return None
+
+    async def edit_text(self, text: str):
+        self.edits.append(text)
+        return None
+
+
 class BotRobustnessTests(unittest.TestCase):
     def setUp(self) -> None:
         self._env = os.environ.copy()
@@ -47,6 +59,8 @@ class BotRobustnessTests(unittest.TestCase):
         os.environ.clear()
         os.environ.update(self._env)
         bot_mod.chat_request_log.clear()
+        bot_mod.conversation_histories.clear()
+        bot_mod.chat_history_limits.clear()
         # Prevent stubbed modules from polluting subsequent test modules.
         for name in ("agent", "db", "telegram", "telegram.ext"):
             sys.modules.pop(name, None)
@@ -116,3 +130,30 @@ class BotRobustnessTests(unittest.TestCase):
 
         self.assertFalse(allowed)
         self.assertGreaterEqual(retry_after, 1)
+
+    def test_handle_message_generation_error_not_pollute_history(self) -> None:
+        chat_id = 999
+        thinking = _ThinkingMessage()
+        update = types.SimpleNamespace(
+            effective_chat=types.SimpleNamespace(id=chat_id),
+            message=types.SimpleNamespace(text="分析最近30天AI局势"),
+        )
+        context = types.SimpleNamespace(bot=None)
+
+        async def _to_thread(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with (
+            patch.object(bot_mod, "_consume_chat_rate_token", return_value=(True, 0)),
+            patch.object(bot_mod, "_reply_text_with_retry", new=AsyncMock(return_value=thinking)),
+            patch.object(bot_mod.asyncio, "to_thread", new=AsyncMock(side_effect=_to_thread)),
+            patch.object(
+                bot_mod,
+                "generate_response_payload",
+                side_effect=bot_mod.AgentGenerationError("抱歉，当前模型服务暂时不可用。"),
+            ),
+        ):
+            asyncio.run(bot_mod.handle_message(update, context))
+
+        self.assertEqual(bot_mod.conversation_histories.get(chat_id, []), [])
+        self.assertEqual(thinking.edits, ["抱歉，当前模型服务暂时不可用。"])

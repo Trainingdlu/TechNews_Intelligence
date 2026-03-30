@@ -134,11 +134,9 @@ DEFAULT_BASELINE_METRIC_SPECS: list[tuple[str, str]] = [
     ("summary.avg_min_url_hit_rate", "higher_better"),
     ("summary.avg_phrase_hit_rate", "higher_better"),
     ("summary.avg_error_rate", "lower_better"),
-    ("route_metrics.fallback_rate_total", "lower_better"),
-    ("route_metrics.fallback_rate_langchain", "lower_better"),
-    ("route_metrics.langchain_success_rate", "higher_better"),
-    ("route_metrics.forced_route_rate", "higher_better"),
-    ("route_metrics.landscape_low_evidence_rate", "lower_better"),
+    ("route_metrics.react_success_rate", "higher_better"),
+    ("route_metrics.react_error_rate", "lower_better"),
+    ("route_metrics.react_recursion_limit_rate", "lower_better"),
 ]
 
 

@@ -17,7 +17,7 @@ from telegram.ext import (
     filters,
 )
 
-from agent import generate_response_payload
+from agent import AgentGenerationError, generate_response_payload
 from db import init_db_pool, close_db_pool, get_conn, put_conn
 
 load_dotenv()
@@ -410,20 +410,19 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return (
             "用法：\n"
             "/settings                    查看当前设置\n"
-            "/settings strict on|off      设置严格模式\n"
-            "/settings runtime langchain|legacy  设置运行时\n"
             "/settings history <1-100>    设置历史轮数上限"
         )
 
     arg = _extract_command_arg(update.message.text or "")
     if not arg:
-        runtime = os.getenv("AGENT_RUNTIME", "langchain").strip().lower()
-        strict_mode = os.getenv("AGENT_RUNTIME_STRICT", "false").strip().lower()
+        recursion_limit = os.getenv("AGENT_REACT_RECURSION_LIMIT", "25")
+        temperature = os.getenv("AGENT_TEMPERATURE", "0.1")
         chat_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
         await update.message.reply_text(
             "当前设置：\n"
-            f"- 运行时: {runtime}\n"
-            f"- 严格模式: {strict_mode}\n"
+            f"- 运行时: ReAct Agent\n"
+            f"- 递归上限: {recursion_limit}\n"
+            f"- Temperature: {temperature}\n"
             f"- 当前 chat 历史轮数上限: {chat_limit}\n"
             f"- 默认历史轮数上限: {MAX_HISTORY_TURNS}\n"
             "- 消息格式: HTML（仅标题/分段综述加粗）\n\n"
@@ -433,23 +432,6 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     parts = arg.split()
     key = parts[0].lower()
-    if key == "strict":
-        if len(parts) < 2 or parts[1].lower() not in {"on", "off"}:
-            await update.message.reply_text("参数错误。\n" + _usage())
-            return
-        val = "true" if parts[1].lower() == "on" else "false"
-        os.environ["AGENT_RUNTIME_STRICT"] = val
-        await update.message.reply_text(f"已更新：strict = {parts[1].lower()}（AGENT_RUNTIME_STRICT={val}）")
-        return
-
-    if key == "runtime":
-        if len(parts) < 2 or parts[1].lower() not in {"langchain", "legacy"}:
-            await update.message.reply_text("参数错误。\n" + _usage())
-            return
-        val = parts[1].lower()
-        os.environ["AGENT_RUNTIME"] = val
-        await update.message.reply_text(f"已更新：runtime = {val}")
-        return
 
     if key == "history":
         if len(parts) < 2:
@@ -546,8 +528,8 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_admin(update, "/status", private_only=True):
         return
 
-    runtime = os.getenv("AGENT_RUNTIME", "langchain").strip().lower()
-    strict_mode = os.getenv("AGENT_RUNTIME_STRICT", "false").strip().lower()
+    recursion_limit = os.getenv("AGENT_REACT_RECURSION_LIMIT", "25")
+    temperature = os.getenv("AGENT_TEMPERATURE", "0.1")
     active_sessions = sum(1 for h in conversation_histories.values() if h)
     total_sessions = len(conversation_histories)
     per_chat_override = len(chat_history_limits)
@@ -572,8 +554,9 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = [
         "系统状态：",
-        f"- runtime: {runtime}",
-        f"- strict: {strict_mode}",
+        "- runtime: ReAct Agent",
+        f"- recursion_limit: {recursion_limit}",
+        f"- temperature: {temperature}",
         f"- db: {'ok' if db_ok else 'error'}",
         f"- sessions(active/total): {active_sessions}/{total_sessions}",
         f"- chat_history_overrides: {per_chat_override}",
@@ -627,12 +610,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         await _send_reply(update.message, reply, url_title_map=title_map if isinstance(title_map, dict) else {})
 
+    except AgentGenerationError as e:
+        logger.warning(f"[chat_id={chat_id}] generation blocked: {e}")
+        friendly = str(e).strip() or "抱歉，本次分析暂时不可用，请稍后重试。"
+        try:
+            await thinking_msg.edit_text(friendly)
+        except Exception:
+            await _reply_text_with_retry(update.message, friendly)
     except Exception as e:
         logger.error(f"[chat_id={chat_id}] message handling error: {e}")
+        fallback = "抱歉，系统暂时不可用，请稍后重试。"
         try:
-            await thinking_msg.edit_text(f"出错：{str(e)}")
+            await thinking_msg.edit_text(fallback)
         except Exception:
-            await _reply_text_with_retry(update.message, f"出错：{str(e)}")
+            await _reply_text_with_retry(update.message, fallback)
 
 
 async def _post_shutdown(app) -> None:

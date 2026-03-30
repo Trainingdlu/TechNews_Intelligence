@@ -44,7 +44,7 @@ except ImportError:  # package-style import fallback
     )
 
 
-ROUTE_METRICS_SCHEMA_VERSION = 2
+ROUTE_METRICS_SCHEMA_VERSION = 3
 
 
 def _bootstrap_imports() -> tuple[Any, Any, Any]:
@@ -197,16 +197,22 @@ def _build_arg_parser(eval_dir: Path) -> argparse.ArgumentParser:
         help="Fail if summary.avg_error_rate is greater than this threshold.",
     )
     parser.add_argument(
-        "--fail-on-fallback-rate-total",
+        "--fail-on-react-error-rate",
         type=float,
         default=None,
-        help="Fail if route_metrics.fallback_rate_total is greater than this threshold.",
+        help="Fail if route_metrics.react_error_rate is greater than this threshold.",
     )
     parser.add_argument(
-        "--fail-on-fallback-rate-langchain",
+        "--fail-on-react-success-rate",
         type=float,
         default=None,
-        help="Fail if route_metrics.fallback_rate_langchain is greater than this threshold.",
+        help="Fail if route_metrics.react_success_rate is lower than this threshold.",
+    )
+    parser.add_argument(
+        "--fail-on-react-recursion-limit-rate",
+        type=float,
+        default=None,
+        help="Fail if route_metrics.react_recursion_limit_rate is greater than this threshold.",
     )
     parser.add_argument(
         "--fail-on-avg-min-url-hit-rate",
@@ -225,18 +231,6 @@ def _build_arg_parser(eval_dir: Path) -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="Fail if summary.avg_pairwise_similarity is lower than this threshold.",
-    )
-    parser.add_argument(
-        "--fail-on-langchain-success-rate",
-        type=float,
-        default=None,
-        help="Fail if route_metrics.langchain_success_rate is lower than this threshold.",
-    )
-    parser.add_argument(
-        "--fail-on-landscape-low-evidence-rate",
-        type=float,
-        default=None,
-        help="Fail if route_metrics.landscape_low_evidence_rate is greater than this threshold.",
     )
     return parser
 
@@ -257,12 +251,17 @@ def _build_gate_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
         )
 
     _add("avg_error_rate_max", "summary.avg_error_rate", "max", args.fail_on_avg_error_rate)
-    _add("fallback_rate_total_max", "route_metrics.fallback_rate_total", "max", args.fail_on_fallback_rate_total)
     _add(
-        "fallback_rate_langchain_max",
-        "route_metrics.fallback_rate_langchain",
+        "react_error_rate_max",
+        "route_metrics.react_error_rate",
         "max",
-        args.fail_on_fallback_rate_langchain,
+        args.fail_on_react_error_rate,
+    )
+    _add(
+        "react_recursion_limit_rate_max",
+        "route_metrics.react_recursion_limit_rate",
+        "max",
+        args.fail_on_react_recursion_limit_rate,
     )
     _add(
         "avg_min_url_hit_rate_min",
@@ -278,16 +277,10 @@ def _build_gate_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
         args.fail_on_avg_pairwise_similarity,
     )
     _add(
-        "langchain_success_rate_min",
-        "route_metrics.langchain_success_rate",
+        "react_success_rate_min",
+        "route_metrics.react_success_rate",
         "min",
-        args.fail_on_langchain_success_rate,
-    )
-    _add(
-        "landscape_low_evidence_rate_max",
-        "route_metrics.landscape_low_evidence_rate",
-        "max",
-        args.fail_on_landscape_low_evidence_rate,
+        args.fail_on_react_success_rate,
     )
     return specs
 
@@ -429,10 +422,13 @@ def main() -> int:
     )
     print(
         "[Eval] route: "
-        f"fallback_total={route_metrics.get('fallback_rate_total', 0.0):.2%} "
-        f"fallback_langchain={route_metrics.get('fallback_rate_langchain', 0.0):.2%} "
-        f"forced_route={route_metrics.get('forced_route_rate', 0.0):.2%} "
-        f"landscape_low_evidence={route_metrics.get('landscape_low_evidence_rate', 0.0):.2%}"
+        f"react_attempts={int(route_metrics.get('react_attempts', 0))} "
+        f"react_success={int(route_metrics.get('react_success', 0))} "
+        f"react_error={int(route_metrics.get('react_error', 0))} "
+        f"react_recursion_limit_hit={int(route_metrics.get('react_recursion_limit_hit', 0))} "
+        f"react_success_rate={route_metrics.get('react_success_rate', 0.0):.2%} "
+        f"react_error_rate={route_metrics.get('react_error_rate', 0.0):.2%} "
+        f"react_recursion_limit_rate={route_metrics.get('react_recursion_limit_rate', 0.0):.2%}"
     )
 
     if "baseline" in report:

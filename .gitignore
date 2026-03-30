@@ -18,3 +18,7 @@ news_data_readable.sql
 
 # Docker
 docker-data/
+
+# Eval reports (generated artifacts)
+agents/eval/reports/*
+!agents/eval/reports/.gitkeep
