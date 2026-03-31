@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS access_tokens (
     id          SERIAL       PRIMARY KEY,
     email       VARCHAR(255) NOT NULL,
     token       VARCHAR(64)  NOT NULL UNIQUE,
-    quota       INT          NOT NULL DEFAULT 15,
+    quota       INT          NOT NULL DEFAULT 10,
     used        INT          NOT NULL DEFAULT 0,
     status      VARCHAR(20)  NOT NULL DEFAULT 'active',   -- active / exhausted / upgraded
     notified    BOOLEAN      NOT NULL DEFAULT FALSE,

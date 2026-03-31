@@ -1,4 +1,4 @@
-"""Web API 入口：FastAPI + Token 自动发放 + 限额管理"""
+﻿"""Web API 入口：FastAPI + Token 自动发放 + 限额管理"""
 
 import os
 import secrets
@@ -34,8 +34,9 @@ logger = logging.getLogger(__name__)
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://agentapi.trainingcqy.com")
-DEFAULT_QUOTA = 15
+DEFAULT_QUOTA = 10
 UPGRADED_QUOTA = 50
+LEGACY_TRIAL_QUOTA = 15
 DEFAULT_SUBSCRIPTION_SOURCES = [
     "HackerNews",
     "TechCrunch",
@@ -66,6 +67,40 @@ def _check_rate_limit(client_ip: str):
 _bearer_scheme = HTTPBearer()
 
 
+def _repair_legacy_upgraded_usage(
+    cur,
+    record_id: int,
+    quota: int,
+    used: int,
+    status: str,
+    notified: bool,
+) -> tuple[int, bool, bool]:
+    """
+    兼容旧逻辑：
+    历史版本升级只把 quota 改为 50，未重置 used，导致升级后额度被试用阶段占用。
+    命中后仅修复一次：used 减去旧试用额度，并清除 notified 标记。
+    """
+    if (
+        status == "upgraded"
+        and quota == UPGRADED_QUOTA
+        and bool(notified)
+        and used >= LEGACY_TRIAL_QUOTA
+    ):
+        repaired_used = max(used - LEGACY_TRIAL_QUOTA, 0)
+        cur.execute(
+            "UPDATE access_tokens SET used = %s, notified = FALSE WHERE id = %s",
+            (repaired_used, record_id),
+        )
+        logger.info(
+            "quota compatibility repaired for record_id=%s: used %s -> %s",
+            record_id,
+            used,
+            repaired_used,
+        )
+        return repaired_used, False, True
+    return used, bool(notified), False
+
+
 def _verify_token(credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme)) -> dict:
     """校验 Bearer Token 并返回 token 记录"""
     token = credentials.credentials
@@ -73,16 +108,33 @@ def _verify_token(credentials: HTTPAuthorizationCredentials = Depends(_bearer_sc
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id, email, quota, used, status FROM access_tokens WHERE token = %s",
+            "SELECT id, email, quota, used, status, notified FROM access_tokens WHERE token = %s",
             (token,),
         )
         row = cur.fetchone()
-        cur.close()
         if not row:
+            cur.close()
             raise HTTPException(status_code=401, detail="无效的 Token")
+
+        token_id, email, quota, used, status, notified = row
+        used, _, repaired = _repair_legacy_upgraded_usage(
+            cur=cur,
+            record_id=int(token_id),
+            quota=int(quota),
+            used=int(used),
+            status=str(status or ""),
+            notified=bool(notified),
+        )
+        if repaired:
+            conn.commit()
+        cur.close()
         return {
-            "id": row[0], "email": row[1], "token": token,
-            "quota": row[2], "used": row[3], "status": row[4],
+            "id": int(token_id),
+            "email": email,
+            "token": token,
+            "quota": int(quota),
+            "used": int(used),
+            "status": str(status or ""),
         }
     finally:
         put_conn(conn)
@@ -128,6 +180,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     remaining: int
+    quota: int
 
 
 class QuotaResponse(BaseModel):
@@ -343,12 +396,28 @@ def request_access(body: AccessRequest):
         cur = conn.cursor()
         # 检查该邮箱是否已有活跃 Token
         cur.execute(
-            "SELECT token, quota, used, status FROM access_tokens WHERE email = %s ORDER BY created_at DESC LIMIT 1",
+            """
+            SELECT id, token, quota, used, status, notified
+            FROM access_tokens
+            WHERE email = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
             (body.email,),
         )
         existing = cur.fetchone()
         if existing:
-            ex_token, ex_quota, ex_used, ex_status = existing
+            ex_id, ex_token, ex_quota, ex_used, ex_status, ex_notified = existing
+            ex_used, _, repaired = _repair_legacy_upgraded_usage(
+                cur=cur,
+                record_id=int(ex_id),
+                quota=int(ex_quota),
+                used=int(ex_used),
+                status=str(ex_status or ""),
+                notified=bool(ex_notified),
+            )
+            if repaired:
+                conn.commit()
             if ex_status in ("active", "upgraded") and ex_used < ex_quota:
                 cur.close()
                 # 重新发送已有 Token

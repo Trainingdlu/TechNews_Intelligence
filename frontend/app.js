@@ -256,7 +256,9 @@
             history.push({ role: 'model', parts: [{ text: data.reply }] });
 
             appendMessage('agent', data.reply);
-            updateQuotaUI(data.remaining, remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 15, data.remaining > 0 ? 'active' : 'exhausted');
+            const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
+            const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
+            updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
         } catch {
             removeTyping(typingEl);
             appendMessage('agent', '网络错误，请检查连接后重试。');
@@ -358,4 +360,3 @@
         showAuth();
     });
 })();
-
