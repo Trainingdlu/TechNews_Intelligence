@@ -107,8 +107,8 @@ def send_quota_upgraded(to: str, new_quota: int):
         "TechNews Agent - 额度已提升",
         f"""
         <div style="font-family:sans-serif; max-width:480px; margin:auto; padding:20px;">
-            <h2>审批已通过 ✓</h2>
-            <p>您的对话额度已提升至 <b>{new_quota} 次</b>，可以继续使用。</p>
+            <h2>额度已提升</h2>
+            <p>对话额度已提升至 <b>{new_quota} 次</b>。</p>
         </div>
         """,
     )

@@ -119,7 +119,7 @@
                 data.frequencies.forEach((freq) => {
                     const option = document.createElement("option");
                     option.value = freq;
-                    option.textContent = freq === "daily" ? "每天推送（当前可用）" : freq;
+                    option.textContent = freq === "daily" ? "每天推送" : freq;
                     if (freq === current) option.selected = true;
                     frequencySelect.appendChild(option);
                 });
