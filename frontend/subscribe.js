@@ -14,14 +14,48 @@
     const loadBtn = document.getElementById("load-btn");
     const unsubscribeBtn = document.getElementById("unsubscribe-btn");
     const statusText = document.getElementById("status-text");
+    const STATUS_AUTO_HIDE_MS = 3200;
+    const STATUS_FADE_MS = 260;
+    let statusHideTimer = null;
+    let statusFadeTimer = null;
 
     const defaultEmailPlaceholder =
         emailInput.getAttribute("placeholder") || "输入邮箱地址订阅日报";
 
+    function clearStatusTimers() {
+        if (statusHideTimer) {
+            clearTimeout(statusHideTimer);
+            statusHideTimer = null;
+        }
+        if (statusFadeTimer) {
+            clearTimeout(statusFadeTimer);
+            statusFadeTimer = null;
+        }
+    }
+
+    function scheduleStatusAutoHide() {
+        clearStatusTimers();
+
+        statusHideTimer = setTimeout(() => {
+            statusText.classList.add("is-fading");
+
+            statusFadeTimer = setTimeout(() => {
+                statusText.textContent = "";
+                statusText.className = "status-msg";
+            }, STATUS_FADE_MS);
+        }, STATUS_AUTO_HIDE_MS);
+    }
+
     function setStatus(text, type) {
         const level = type || "info";
+        clearStatusTimers();
         statusText.textContent = text;
         statusText.className = "status-msg " + level;
+        statusText.classList.remove("is-fading");
+
+        if (text && type) {
+            scheduleStatusAutoHide();
+        }
     }
 
     function setBusy(isBusy) {

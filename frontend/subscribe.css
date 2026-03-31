@@ -231,6 +231,24 @@
     font-variation-settings: "FILL" 1, "wght" 560, "GRAD" 0, "opsz" 18;
 }
 
+.subscribe-card .status-msg {
+    text-align: center;
+    margin-top: 12px;
+    color: var(--primary-blue);
+    font-weight: 500;
+    opacity: 1;
+}
+
+.subscribe-card .status-msg.success,
+.subscribe-card .status-msg.error,
+.subscribe-card .status-msg.info {
+    color: var(--primary-blue);
+}
+
+.subscribe-card .status-msg.is-fading {
+    opacity: 0;
+}
+
 .subscribe-card .status-msg:empty {
     display: none;
 }
