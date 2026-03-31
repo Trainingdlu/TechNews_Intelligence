@@ -426,10 +426,20 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
     try:
         _metrics_inc("react_attempts")
         result, valid_urls = _generate_react(history, user_message)
+        
+        if not valid_urls:
+            raise AgentGenerationError(
+                "抱歉，针对该问题，系统未能检索到相关的新闻。",
+                code="react_empty_evidence_blocked"
+            )
+            
         _metrics_inc("react_success")
         return result, valid_urls
     except Exception as exc:
         _metrics_inc("react_error")
+        if isinstance(exc, AgentGenerationError):
+            raise exc
+            
         exc_name = type(exc).__name__.lower()
         exc_str = str(exc).lower()
         recursion_hit = (
@@ -442,7 +452,7 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
             print(f"[Agent][Warn] recursion limit hit: {type(exc).__name__}: {exc}")
             raise AgentGenerationError(
                 "抱歉，由于问题跨度较大，本次分析在多次检索后超时。"
-                "请尝试缩小时间范围或换一个更具体的关键词再试。",
+                "请尝试缩小时间范围或换一个更具体的关键词。",
                 code="react_recursion_limit_hit",
             )
 
@@ -461,13 +471,13 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
             print(f"[Agent][Warn] upstream/transient error: {type(exc).__name__}: {exc}")
             raise AgentGenerationError(
                 "抱歉，当前模型或数据服务暂时不可用。"
-                "请稍后重试，或先缩小问题范围后再试。",
+                "请稍后重试，或先缩小问题范围重试。",
                 code="react_upstream_unavailable",
             )
 
         print(f"[Agent][Error] unexpected runtime failure: {type(exc).__name__}: {exc}")
         raise AgentGenerationError(
-            "抱歉，本次分析未能稳定完成。请尝试更换关键词或缩小时间范围后重试。",
+            "抱歉，本次分析未能完成。请尝试更换关键词或缩小时间范围。",
             code="react_unexpected_runtime_error",
         )
 

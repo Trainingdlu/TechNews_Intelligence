@@ -420,9 +420,9 @@ def approve(record_id: int):
         cur.close()
 
         send_quota_upgraded(email, UPGRADED_QUOTA)
-        logger.info(f"审批通过: {email} 额度提升至 {UPGRADED_QUOTA}")
+        logger.info(f"{email} 额度已提升至")
         return HTMLResponse(
-            f"<h2>已批准 ✓</h2><p>{email} 的额度已提升至 {UPGRADED_QUOTA} 次，通知邮件已发送。</p>"
+            f"<h2>{email}</h2><p>额度已提升至 {UPGRADED_QUOTA} 次，通知邮件已发送。</p>"
         )
     except Exception as e:
         conn.rollback()

@@ -160,6 +160,8 @@ import html as html_mod
 
 
 _URL_PATTERN = re.compile(r"https?://[^\s<>\]\)}`]+")
+_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^\s<>\]\)\}`]+)\)|(https?://[^\s<>\]\)\}`]+)")
+
 
 
 def _extract_urls(text: str) -> list[str]:
@@ -200,15 +202,22 @@ def _escape_and_linkify(text: str, url_title_map: dict[str, str]) -> str:
         return ""
     out: list[str] = []
     cursor = 0
-    for m in _URL_PATTERN.finditer(text):
-        matched = (m.group(0) or "").strip()
-        raw = matched.rstrip(".,;:!?")
-        if not raw:
-            continue
-        suffix = matched[len(raw):]
+    for m in _LINK_PATTERN.finditer(text):
         start, end = m.span()
         out.append(html_mod.escape(text[cursor:start]))
-        title = (url_title_map.get(raw) or "").strip() or _fallback_title_from_url(raw)
+        
+        if m.group(1) is not None:
+            title = m.group(1).strip()
+            raw = m.group(2).strip()
+            suffix = ""
+        else:
+            matched = (m.group(3) or "").strip()
+            raw = matched.rstrip(".,;:!?")
+            if not raw:
+                continue
+            suffix = matched[len(raw):]
+            title = (url_title_map.get(raw) or "").strip() or _fallback_title_from_url(raw)
+            
         safe_url = html_mod.escape(raw, quote=True)
         safe_title = html_mod.escape(title)
         out.append(f'<a href="{safe_url}">{safe_title}</a>')

@@ -199,11 +199,15 @@ def max_source_urls() -> int:
         return 12
 
 
-def build_source_section(ordered_urls: list[str], user_message: str) -> str:
+def build_source_section(ordered_urls: list[str], user_message: str, title_map: dict[str, str] | None = None) -> str:
     header = "## 来源" if contains_cjk(user_message) else "## Sources"
     lines = [header]
     for idx, url in enumerate(ordered_urls, 1):
-        lines.append(f"- [{idx}] {url}")
+        if title_map and url in title_map:
+            title = title_map[url]
+            lines.append(f"- [{idx}] [{title}]({url})")
+        else:
+            lines.append(f"- [{idx}] {url}")
     return "\n".join(lines)
 
 
@@ -222,6 +226,10 @@ def decorate_response_with_sources(
     urls = extract_urls(body) if body else []
     if not urls:
         urls = extract_urls(raw)
+        
+    if not urls and valid_urls:
+        urls = sorted(list(valid_urls))
+
     if not urls:
         return raw, {}
 
@@ -248,7 +256,7 @@ def decorate_response_with_sources(
     if not final_urls:
         return compact_body.rstrip(), title_map
 
-    source_section = build_source_section(final_urls, user_message)
+    source_section = build_source_section(final_urls, user_message, title_map=title_map)
     merged = f"{compact_body.rstrip()}\n\n{source_section}".strip()
     return merged, title_map
 
@@ -266,8 +274,8 @@ def ensure_evidence_section(answer: str, source_output: str, user_message: str, 
     if has_section and answer_urls:
         return answer
 
-    header = "## 证据来源" if contains_cjk(user_message) else "## Evidence Sources"
+    header = "## 来源" if contains_cjk(user_message) else "## Sources"
     required_urls = max_inline_citation_index(answer)
     effective_max = max(max_urls, required_urls)
-    lines = [f"- {url}" for url in source_urls[:effective_max]]
+    lines = [f"{url}" for url in source_urls[:effective_max]]
     return f"{answer.rstrip()}\n\n{header}\n" + "\n".join(lines)

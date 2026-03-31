@@ -5,13 +5,13 @@
     // API 后端地址（通过 Cloudflare Tunnel 暴露）
     const API_BASE = 'https://agentapi.trainingcqy.com';
 
-    // ── State ──
+    // == State ==
     let token = localStorage.getItem('agent_token') || '';
     let history = [];
     let isLoading = false;
     let remaining = null;
 
-    // ── DOM refs ──
+    // == DOM refs ==
     const authView = document.getElementById('auth-view');
     const chatView = document.getElementById('chat-view');
     const emailForm = document.getElementById('email-form');
@@ -27,8 +27,11 @@
     const logoutBtn = document.getElementById('logout-btn');
     const quotaDisplay = document.getElementById('quota-display');
     const quotaOverlay = document.getElementById('quota-overlay');
+    const inputBarInner = document.querySelector('.input-bar-inner');
+    const defaultChatPlaceholder = chatInput.placeholder || '输入你的问题...';
+    const exhaustedChatPlaceholder = '额度已耗尽，请求邮件已发送，通过后将通过邮件告知';
 
-    // ── Marked.js: 链接在新标签页打开 ──
+    // == Marked.js: 链接在新标签页打开 ==
     const renderer = new marked.Renderer();
     renderer.link = function ({ href, title, text }) {
         const titleAttr = title ? ` title="${title}"` : '';
@@ -36,13 +39,13 @@
     };
     marked.setOptions({ renderer });
 
-    // ── Init ──
+    // == Init ==
     if (token) {
         showChat();
         fetchQuota();
     }
 
-    // ── View Switching ──
+    // == View Switching ==
     function showAuth() {
         chatView.classList.remove('active');
         // small delay so CSS transition runs
@@ -59,7 +62,7 @@
         });
     }
 
-    // ── Status Messages ──
+    // == Status Messages ==
     function setStatus(msg, type) {
         emailStatus.textContent = msg;
         emailStatus.className = 'status-msg ' + type;
@@ -72,7 +75,7 @@
         btn.classList.remove('btn-pressing');
     }
 
-    // ── API Helpers ──
+    // == API Helpers ==
     async function apiFetch(path, options = {}) {
         const url = API_BASE + path;
         const headers = { 'Content-Type': 'application/json', ...options.headers };
@@ -81,7 +84,7 @@
         return res;
     }
 
-    // ── Email Form ──
+    // == Email Form ==
     emailForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const email = emailInput.value.trim();
@@ -112,7 +115,7 @@
         }
     });
 
-    // ── Token Form ──
+    // == Token Form ==
     tokenForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const t = tokenInput.value.trim();
@@ -125,7 +128,7 @@
         fetchQuota();
     });
 
-    // ── Quota ──
+    // == Quota ==
     async function fetchQuota() {
         try {
             const res = await apiFetch('/quota/' + encodeURIComponent(token));
@@ -146,27 +149,42 @@
         if (status === 'exhausted' && rem <= 0) {
             showQuotaExhausted();
         } else {
-            quotaOverlay.classList.remove('visible');
-            chatInput.disabled = false;
-            updateSendBtn();
+            setQuotaInputLocked(false);
         }
     }
 
     function showQuotaExhausted() {
-        quotaOverlay.classList.add('visible');
-        chatInput.disabled = true;
-        sendBtn.disabled = true;
+        setQuotaInputLocked(true);
+    }
+
+    function setQuotaInputLocked(locked) {
+        quotaOverlay.classList.remove('visible');
+
+        if (inputBarInner) {
+            inputBarInner.classList.toggle('quota-locked', locked);
+        }
+
+        chatInput.disabled = locked;
+        chatInput.placeholder = locked ? exhaustedChatPlaceholder : defaultChatPlaceholder;
+
+        if (locked) {
+            chatInput.value = '';
+            chatInput.style.height = 'auto';
+        }
+
+        updateSendBtn();
     }
 
     function handleInvalidToken() {
         token = '';
         localStorage.removeItem('agent_token');
         history = [];
+        setQuotaInputLocked(false);
         showAuth();
         setStatus('Token 无效或已过期，请重新获取', 'error');
     }
 
-    // ── Chat Input ──
+    // == Chat Input ==
     chatInput.addEventListener('input', () => {
         // Auto-resize textarea
         chatInput.style.height = 'auto';
@@ -184,10 +202,10 @@
     sendBtn.addEventListener('click', sendMessage);
 
     function updateSendBtn() {
-        sendBtn.disabled = !chatInput.value.trim() || isLoading;
+        sendBtn.disabled = chatInput.disabled || !chatInput.value.trim() || isLoading;
     }
 
-    // ── Send Message ──
+    // == Send Message ==
     async function sendMessage() {
         const text = chatInput.value.trim();
         if (!text || isLoading) return;
@@ -249,7 +267,7 @@
         }
     }
 
-    // ── Message Rendering ──
+    // == Message Rendering ==
     function appendMessage(role, text) {
         const msg = document.createElement('div');
         msg.className = 'msg ' + role;
@@ -282,7 +300,7 @@
         });
     }
 
-    // ── Typing Indicator ──
+    // == Typing Indicator ==
     function showTyping() {
         const el = document.createElement('div');
         el.className = 'msg agent';
@@ -318,7 +336,7 @@
         }
     }
 
-    // ── Clear / Logout ──
+    // == Clear / Logout ==
     clearBtn.addEventListener('click', () => {
         history = [];
         messagesEl.innerHTML = '';
@@ -336,8 +354,8 @@
         localStorage.removeItem('agent_token');
         history = [];
         messagesEl.innerHTML = '';
-        quotaOverlay.classList.remove('visible');
-        chatInput.disabled = false;
+        setQuotaInputLocked(false);
         showAuth();
     });
 })();
+
