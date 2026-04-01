@@ -15,7 +15,7 @@ INSERT INTO public.source_registry (
 VALUES
     (
         'google_ai_blog',
-        'Google AI Blog',
+        'Google Blog',
         'DirectRSS',
         'Official',
         'rss',
@@ -31,7 +31,7 @@ VALUES
     ),
     (
         'aws_ml_blog',
-        'AWS Machine Learning Blog',
+        'AWS ML Learning',
         'DirectRSS',
         'Official',
         'rss',
@@ -46,7 +46,7 @@ VALUES
     ),
     (
         'microsoft_ai_blog',
-        'Microsoft AI Blog',
+        'Microsoft Blog',
         'DirectRSS',
         'Official',
         'rss',
