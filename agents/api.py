@@ -556,7 +556,7 @@ async def chat(
         finally:
             put_conn(conn)
 
-        return ChatResponse(reply=reply, remaining=max(remaining, 0))
+        return ChatResponse(reply=reply, remaining=max(remaining, 0), quota=int(quota))
 
     except HTTPException:
         raise
