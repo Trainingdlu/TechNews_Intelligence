@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from agents.core.role_policy import assert_skill_allowed
 from agents.core.skill_registry import SkillRegistry
 from agents.core.tool_hooks import ToolHookRunner
+from agents.prompts import get_role_system_instruction
 
 
 class _DummyInput(BaseModel):
@@ -53,3 +54,8 @@ def test_tool_hook_runner_denies_invalid_window() -> None:
     decision = hooks.pre_tool_use("trend_analysis", {"topic": "OpenAI", "window": 999})
     assert decision.action == "deny"
     assert "between 3 and 60" in str(decision.reason)
+
+
+def test_role_prompt_lookup() -> None:
+    text = get_role_system_instruction("miner")
+    assert "Miner subagent" in text
