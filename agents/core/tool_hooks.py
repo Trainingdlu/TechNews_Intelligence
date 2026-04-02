@@ -74,7 +74,15 @@ class ToolHookRunner:
     @staticmethod
     def _pre_time_window_guard(tool_name: str, payload: dict[str, Any]) -> HookDecision:
         if tool_name == "query_news":
-            days = int(payload.get("days", 21))
+            raw_days = payload.get("days", 21)
+            try:
+                days = int(raw_days)
+            except (TypeError, ValueError):
+                return HookDecision(
+                    action="deny",
+                    reason="query_news.days must be an integer",
+                    diagnostics={"days": raw_days, "error": "invalid_integer"},
+                )
             if days < 1 or days > 365:
                 return HookDecision(
                     action="deny",
@@ -83,7 +91,15 @@ class ToolHookRunner:
                 )
 
         if tool_name == "trend_analysis":
-            window = int(payload.get("window", 7))
+            raw_window = payload.get("window", 7)
+            try:
+                window = int(raw_window)
+            except (TypeError, ValueError):
+                return HookDecision(
+                    action="deny",
+                    reason="trend_analysis.window must be an integer",
+                    diagnostics={"window": raw_window, "error": "invalid_integer"},
+                )
             if window < 3 or window > 60:
                 return HookDecision(
                     action="deny",

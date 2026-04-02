@@ -28,6 +28,10 @@ class SkillRegistry:
     def __init__(self) -> None:
         self._specs: dict[str, SkillSpec] = {}
 
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        return str(name).strip()
+
     def register(
         self,
         name: str,
@@ -35,7 +39,7 @@ class SkillRegistry:
         handler: SkillHandler,
         description: str = "",
     ) -> None:
-        normalized_name = str(name).strip()
+        normalized_name = self._normalize_name(name)
         if not normalized_name:
             raise ValueError("Skill name must not be empty")
         if normalized_name in self._specs:
@@ -48,12 +52,16 @@ class SkillRegistry:
         )
 
     def has(self, name: str) -> bool:
-        return name in self._specs
+        normalized_name = self._normalize_name(name)
+        if not normalized_name:
+            return False
+        return normalized_name in self._specs
 
     def get(self, name: str) -> SkillSpec:
-        if name not in self._specs:
+        normalized_name = self._normalize_name(name)
+        if normalized_name not in self._specs:
             raise KeyError(f"Unknown skill: {name}")
-        return self._specs[name]
+        return self._specs[normalized_name]
 
     def list_skills(self) -> list[str]:
         return sorted(self._specs.keys())
@@ -63,21 +71,22 @@ class SkillRegistry:
 
     def execute(self, name: str, payload: dict[str, Any] | None = None) -> SkillEnvelope:
         request_payload = payload or {}
-        if name not in self._specs:
+        normalized_name = self._normalize_name(name)
+        if normalized_name not in self._specs:
             return build_error_envelope(
-                tool=name,
+                tool=normalized_name or str(name),
                 request=request_payload,
                 error="unknown_skill",
                 diagnostics={"available_skills": self.list_skills()},
             )
 
-        spec = self._specs[name]
+        spec = self._specs[normalized_name]
 
         try:
             parsed_input = spec.input_model.model_validate(request_payload)
         except ValidationError as exc:
             return build_error_envelope(
-                tool=name,
+                tool=normalized_name,
                 request=request_payload,
                 error="input_validation_failed",
                 diagnostics={"validation_errors": exc.errors()},
@@ -87,7 +96,7 @@ class SkillRegistry:
             raw_output = spec.handler(parsed_input)
         except Exception as exc:  # noqa: BLE001
             return build_error_envelope(
-                tool=name,
+                tool=normalized_name,
                 request=parsed_input.model_dump(mode="python"),
                 error="skill_execution_failed",
                 diagnostics={
@@ -103,14 +112,14 @@ class SkillRegistry:
                 envelope = SkillEnvelope.model_validate(raw_output)
         except ValidationError as exc:
             return build_error_envelope(
-                tool=name,
+                tool=normalized_name,
                 request=parsed_input.model_dump(mode="python"),
                 error="output_validation_failed",
                 diagnostics={"validation_errors": exc.errors()},
             )
 
-        if envelope.tool != name:
-            envelope.tool = name
+        if envelope.tool != normalized_name:
+            envelope.tool = normalized_name
         if not envelope.request:
             envelope.request = parsed_input.model_dump(mode="python")
         return envelope
