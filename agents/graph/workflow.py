@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, TypedDict
 
 try:
+    from mcp.client import build_default_mcp_client
+    from prompts import get_role_system_instruction
     from core.role_policy import assert_skill_allowed
     from core.skill_contracts import SkillEnvelope, build_error_envelope
     from core.skill_registry import SkillRegistry
@@ -17,6 +20,8 @@ try:
         trend_analysis_skill,
     )
 except ImportError:  # package-style import fallback
+    from ..mcp.client import build_default_mcp_client
+    from ..prompts import get_role_system_instruction
     from ..core.role_policy import assert_skill_allowed
     from ..core.skill_contracts import SkillEnvelope, build_error_envelope
     from ..core.skill_registry import SkillRegistry
@@ -34,6 +39,8 @@ class WorkflowState(TypedDict, total=False):
     history: list[dict[str, Any]]
     intent: str
     selected_skill: str
+    miner_transport: str
+    role_prompts: dict[str, str]
     miner_payload: dict[str, Any]
     miner_result: SkillEnvelope
     analyst_result: dict[str, Any]
@@ -42,6 +49,10 @@ class WorkflowState(TypedDict, total=False):
 
 
 _DEFAULT_REGISTRY: SkillRegistry | None = None
+MCP_SKILL_MAP: dict[str, str] = {
+    "query_news": "mcp__newsdb__query_news_vector",
+    "trend_analysis": "mcp__newsdb__trend_analysis",
+}
 
 
 def build_default_registry() -> SkillRegistry:
@@ -122,6 +133,36 @@ def _extract_urls(envelope: SkillEnvelope) -> list[str]:
     return urls
 
 
+def _resolve_miner_transport(miner_transport: str | None = None) -> str:
+    raw = (miner_transport or os.getenv("AGENT_MINER_TRANSPORT", "local")).strip().lower()
+    if raw in {"mcp", "mcp_stdio", "remote_mcp"}:
+        return "mcp"
+    return "local"
+
+
+def _execute_miner_skill(
+    selected_skill: str,
+    payload: dict[str, Any],
+    skill_registry: SkillRegistry,
+    miner_transport: str,
+    mcp_client: Any | None = None,
+) -> SkillEnvelope:
+    if miner_transport != "mcp":
+        result = skill_registry.execute(selected_skill, payload)
+        result.diagnostics["miner_transport"] = "local"
+        return result
+
+    client = mcp_client or build_default_mcp_client()
+    qualified_name = MCP_SKILL_MAP.get(selected_skill, f"mcp__newsdb__{selected_skill}")
+    result = client.call_tool(qualified_name, payload)
+    if result.tool != selected_skill:
+        result.diagnostics["upstream_tool"] = result.tool
+        result.tool = selected_skill
+    result.diagnostics["miner_transport"] = "mcp"
+    result.diagnostics["mcp_qualified_name"] = qualified_name
+    return result
+
+
 def _analyst_summarize(envelope: SkillEnvelope, user_message: str) -> dict[str, Any]:
     if envelope.status == "error":
         return {
@@ -183,16 +224,26 @@ def run_workflow(
     history: list[dict[str, Any]] | None = None,
     registry: SkillRegistry | None = None,
     hook_runner: ToolHookRunner | None = None,
+    miner_transport: str | None = None,
+    mcp_client: Any | None = None,
 ) -> WorkflowState:
     """Run Router -> Miner -> Analyst -> Formatter pipeline."""
 
     state: WorkflowState = {
         "user_message": user_message,
         "history": history or [],
+        "role_prompts": {
+            "router": get_role_system_instruction("router"),
+            "miner": get_role_system_instruction("miner"),
+            "analyst": get_role_system_instruction("analyst"),
+            "formatter": get_role_system_instruction("formatter"),
+        },
     }
 
     skill_registry = registry or build_default_registry()
     hooks = hook_runner or ToolHookRunner()
+    resolved_transport = _resolve_miner_transport(miner_transport)
+    state["miner_transport"] = resolved_transport
 
     intent, selected_skill = _route_intent(user_message)
     state["intent"] = intent
@@ -232,7 +283,13 @@ def run_workflow(
         return state
 
     effective_payload = pre.updated_payload or payload
-    miner_result = skill_registry.execute(selected_skill, effective_payload)
+    miner_result = _execute_miner_skill(
+        selected_skill=selected_skill,
+        payload=effective_payload,
+        skill_registry=skill_registry,
+        miner_transport=resolved_transport,
+        mcp_client=mcp_client,
+    )
 
     post = hooks.post_tool_use(selected_skill, effective_payload, miner_result)
     if post.diagnostics:

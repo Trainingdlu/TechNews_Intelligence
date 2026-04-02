@@ -110,3 +110,49 @@ def test_run_workflow_trend_path() -> None:
     assert state["selected_skill"] == "trend_analysis"
     assert "Trend summary:" in state["final_text"]
     assert state["evidence_urls"] == ["https://example.com/trend"]
+
+
+def test_run_workflow_mcp_transport_with_fake_client() -> None:
+    class _FakeMCPClient:
+        @staticmethod
+        def call_tool(_qualified_name: str, _payload: dict) -> SkillEnvelope:
+            return SkillEnvelope(
+                tool="query_news_vector",
+                status="ok",
+                request={"query": "OpenAI"},
+                data={
+                    "count": 1,
+                    "records": [
+                        {
+                            "rank": 1,
+                            "source": "TechCrunch",
+                            "title": "OpenAI from MCP",
+                            "title_cn": "",
+                            "url": "https://example.com/mcp",
+                            "summary": "summary",
+                            "sentiment": "Positive",
+                            "points": 20,
+                            "created_at": "2026-04-01T10:00:00",
+                        }
+                    ],
+                },
+                evidence=[
+                    {
+                        "url": "https://example.com/mcp",
+                        "title": "OpenAI from MCP",
+                        "source": "TechCrunch",
+                    }
+                ],
+            )
+
+    state = run_workflow(
+        user_message="OpenAI latest updates",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+        miner_transport="mcp",
+        mcp_client=_FakeMCPClient(),
+    )
+    assert state["miner_transport"] == "mcp"
+    assert state["selected_skill"] == "query_news"
+    assert "Retrieval summary:" in state["final_text"]
+    assert state["evidence_urls"] == ["https://example.com/mcp"]
