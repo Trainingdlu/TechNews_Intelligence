@@ -85,6 +85,18 @@ class BotRobustnessTests(unittest.TestCase):
         html = bot_mod._format_for_telegram(text, {})  # pylint: disable=protected-access
         self.assertIn("my post name", html)
 
+    def test_format_for_telegram_source_bullet_with_bracketed_title(self) -> None:
+        text = "## 来源\n- [1] [[安全] 测试标题](https://a.com/news-1)"
+        html = bot_mod._format_for_telegram(text, {})  # pylint: disable=protected-access
+        self.assertIn('<a href="https://a.com/news-1">[安全] 测试标题</a>', html)
+        self.assertNotIn("](<a href=", html)
+
+    def test_render_source_bullet_markdown_link_returns_none_for_non_source(self) -> None:
+        rendered = bot_mod._render_source_bullet_markdown_link(  # pylint: disable=protected-access
+            "普通文本 [标题](https://a.com/x)"
+        )
+        self.assertIsNone(rendered)
+
     def test_reply_text_with_retry_succeeds_after_transient_failures(self) -> None:
         os.environ["BOT_SEND_RETRY_ATTEMPTS"] = "3"
         os.environ["BOT_SEND_RETRY_BASE_SEC"] = "0.1"

@@ -197,6 +197,50 @@ def _fallback_title_from_url(url: str) -> str:
         return url
 
 
+def _unescape_markdown_link_text(text: str) -> str:
+    """Unescape minimal markdown escapes inside link titles."""
+    if not text:
+        return ""
+    out = text
+    out = out.replace(r"\[", "[")
+    out = out.replace(r"\]", "]")
+    out = out.replace(r"\(", "(")
+    out = out.replace(r"\)", ")")
+    out = out.replace(r"\\", "\\")
+    return out
+
+
+def _render_source_bullet_markdown_link(line: str) -> str | None:
+    """Render source bullet lines like '- [1] [title](https://...)' safely.
+
+    This parser intentionally handles titles that may contain '[' and ']'
+    by splitting on the last '](' token instead of a simple regex group.
+    """
+    m = re.match(r"^(\s*-\s*\[\d{1,3}\]\s+)(.+?)\s*$", line)
+    if not m:
+        return None
+
+    prefix = m.group(1)
+    token = m.group(2).strip()
+    if not (token.startswith("[") and token.endswith(")") and "](" in token):
+        return None
+
+    sep = token.rfind("](")
+    if sep <= 0:
+        return None
+
+    title = token[1:sep]
+    url = token[sep + 2 : -1].strip()
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return None
+
+    title = _unescape_markdown_link_text(title.strip())
+    safe_prefix = html_mod.escape(prefix)
+    safe_url = html_mod.escape(url, quote=True)
+    safe_title = html_mod.escape(title)
+    return f'{safe_prefix}<a href="{safe_url}">{safe_title}</a>'
+
+
 def _escape_and_linkify(text: str, url_title_map: dict[str, str]) -> str:
     if not text:
         return ""
@@ -250,6 +294,11 @@ def _render_limited_bold_line(line: str, url_title_map: dict[str, str]) -> str:
         if rest:
             return f"{prefix} {_escape_and_linkify(rest, url_title_map)}"
         return prefix
+
+    # Case 3: source line with markdown link title may include nested [].
+    rendered_source_line = _render_source_bullet_markdown_link(line)
+    if rendered_source_line is not None:
+        return rendered_source_line
 
     # Other lines: strip markdown bold markers and keep plain text.
     plain = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
