@@ -1,4 +1,4 @@
-﻿"""Graph workflow package."""
+"""Graph workflow package."""
 
 from .workflow import build_default_registry, run_workflow, run_workflow_text
 

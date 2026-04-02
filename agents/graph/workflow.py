@@ -1,4 +1,4 @@
-﻿"""LangGraph-style workflow skeleton for Router/Miner/Analyst orchestration."""
+"""LangGraph-style workflow skeleton for Router/Miner/Analyst orchestration."""
 
 from __future__ import annotations
 
@@ -111,7 +111,7 @@ def _route_intent(user_message: str) -> tuple[str, str]:
 def _build_payload(intent: str, user_message: str) -> dict[str, Any]:
     if intent == "trend_analysis":
         return {
-            "topic": user_message.strip(),
+            "topic": _extract_trend_topic(user_message),
             "window": max(3, min(60, _extract_days(user_message, default=7, maximum=60))),
         }
 
@@ -122,6 +122,35 @@ def _build_payload(intent: str, user_message: str) -> dict[str, Any]:
         "sort": "time_desc",
         "limit": 8,
     }
+
+
+def _extract_trend_topic(user_message: str) -> str:
+    """Extract likely topic/entity phrase from trend-style user prompts."""
+
+    raw = (user_message or "").strip()
+    if not raw:
+        return raw
+
+    text = raw
+    # Remove explicit time window phrases first.
+    text = re.sub(
+        r"(?i)\b(?:in\s+)?(?:the\s+)?(?:last|past|recent)\s+\d{1,3}\s*(?:day|days|week|weeks|month|months)\b",
+        " ",
+        text,
+    )
+    text = re.sub(r"\d{1,3}\s*(?:天|日|周|个月|月)", " ", text, flags=re.IGNORECASE)
+
+    # Remove intent and glue words.
+    text = re.sub(
+        r"(?i)\b(?:trend|momentum|analysis|analyze|analyse|compare|changes?)\b",
+        " ",
+        text,
+    )
+    text = re.sub(r"(趋势|变化|分析|对比|最近|过去|近)", " ", text)
+    text = re.sub(r"(?i)\b(?:of|for|about|on|in|the|please)\b", " ", text)
+
+    text = re.sub(r"[\s,，。:：;；!?！？]+", " ", text).strip()
+    return text or raw
 
 
 def _extract_urls(envelope: SkillEnvelope) -> list[str]:
@@ -292,6 +321,23 @@ def run_workflow(
     )
 
     post = hooks.post_tool_use(selected_skill, effective_payload, miner_result)
+    if post.action == "deny":
+        denied = build_error_envelope(
+            tool=selected_skill,
+            request=effective_payload,
+            error="post_hook_denied",
+            diagnostics={
+                "reason": post.reason,
+                **post.diagnostics,
+            },
+        )
+        state["miner_result"] = denied
+        analyst = _analyst_summarize(denied, user_message)
+        state["analyst_result"] = analyst
+        state["final_text"] = analyst["final"]
+        state["evidence_urls"] = []
+        return state
+
     if post.diagnostics:
         miner_result.diagnostics.update(post.diagnostics)
     if post.action == "warn" and post.reason:

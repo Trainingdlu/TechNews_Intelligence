@@ -1,4 +1,4 @@
-﻿"""Role-level skill allowlist policy for multi-agent orchestration."""
+"""Role-level skill allowlist policy for multi-agent orchestration."""
 
 from __future__ import annotations
 

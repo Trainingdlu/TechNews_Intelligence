@@ -1,4 +1,4 @@
-﻿"""Pre/Post hooks for structured skill execution auditing."""
+"""Pre/Post hooks for structured skill execution auditing."""
 
 from __future__ import annotations
 
