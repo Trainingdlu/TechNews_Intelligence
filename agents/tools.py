@@ -9,11 +9,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import requests
+from pydantic import BaseModel, Field
 
 try:
     from db import get_conn, put_conn
+    from core.skill_contracts import SkillEnvelope, build_error_envelope
 except ImportError:  # package-style import fallback
     from .db import get_conn, put_conn
+    from .core.skill_contracts import SkillEnvelope, build_error_envelope
 
 
 JINA_EMBED_URL = "https://api.jina.ai/v1/embeddings"
@@ -608,6 +611,25 @@ def _lookup_urls_by_query(query: str, days: int = 14, limit: int = 5) -> list[tu
         put_conn(conn)
 
 
+class QueryNewsSkillInput(BaseModel):
+    """Typed input contract for structured query_news skill."""
+
+    query: str = ""
+    source: str = "all"
+    days: int = Field(default=21, ge=1, le=365)
+    category: str = ""
+    sentiment: str = ""
+    sort: str = "time_desc"
+    limit: int = Field(default=8, ge=1, le=30)
+
+
+class TrendAnalysisSkillInput(BaseModel):
+    """Typed input contract for structured trend_analysis skill."""
+
+    topic: str = Field(min_length=1)
+    window: int = Field(default=7, ge=3, le=60)
+
+
 def get_db_stats() -> str:
     """Get database freshness statistics and total article count.
 
@@ -958,7 +980,7 @@ def query_news(
         put_conn(conn)
 
 
-def trend_analysis(topic: str, window: int = 7) -> str:
+def trend_analysis(topic: str, window: int = 7, response_format: str = "text") -> str:
     """Analyze topic momentum by comparing recent vs previous time window.
 
     Compares article count and average points in the recent N days vs the
@@ -967,16 +989,25 @@ def trend_analysis(topic: str, window: int = 7) -> str:
     Args:
         topic: Entity or keyword to track (e.g. 'OpenAI', 'cybersecurity').
         window: Window size in days. Default 7, range 3-60.
+        response_format: 'text' (default) or 'json'.
 
     Returns:
         Count delta, average-points comparison, and per-day breakdown.
-
-    Retry guidance:
-        - If counts are very low (< 3), try a broader topic keyword.
-        - If 'no matched records', the topic may not be in the database.
     """
     print(f"\n[Tool] trend_analysis: topic={topic}, window={window}")
+    as_json = response_format.strip().lower() == "json"
+
     if not topic or not topic.strip():
+        if as_json:
+            return _json_text(
+                {
+                    "tool": "trend_analysis",
+                    "status": "error",
+                    "request": {"topic": topic, "window": window},
+                    "data": None,
+                    "error": "trend_analysis requires topic.",
+                }
+            )
         return "trend_analysis requires topic."
 
     topic = topic.strip()
@@ -1025,18 +1056,52 @@ def trend_analysis(topic: str, window: int = 7) -> str:
         daily_rows = cur.fetchall()
         cur.close()
 
-        change_cnt = recent_cnt - prev_cnt
-        if prev_cnt > 0:
-            pct = (change_cnt / prev_cnt) * 100
-            delta = f"{change_cnt:+d} ({pct:+.1f}%)"
+        recent_cnt_i = int(recent_cnt or 0)
+        prev_cnt_i = int(prev_cnt or 0)
+        recent_avg_f = float(recent_avg or 0.0)
+        prev_avg_f = float(prev_avg or 0.0)
+
+        change_cnt = recent_cnt_i - prev_cnt_i
+        change_pct = ((change_cnt / prev_cnt_i) * 100.0) if prev_cnt_i > 0 else None
+        if prev_cnt_i > 0:
+            delta = f"{change_cnt:+d} ({change_pct:+.1f}%)"
         else:
             delta = f"{change_cnt:+d} (no previous baseline)"
+
+        daily_records = [
+            {
+                "day": day.strftime("%Y-%m-%d"),
+                "count": int(cnt or 0),
+                "avg_points": float(avg_points or 0.0),
+            }
+            for day, cnt, avg_points in daily_rows
+        ]
+
+        if as_json:
+            return _json_text(
+                {
+                    "tool": "trend_analysis",
+                    "status": "ok" if (recent_cnt_i > 0 or prev_cnt_i > 0 or daily_records) else "empty",
+                    "request": {"topic": topic, "window": window},
+                    "data": {
+                        "topic": topic,
+                        "window": window,
+                        "recent_count": recent_cnt_i,
+                        "previous_count": prev_cnt_i,
+                        "count_delta": change_cnt,
+                        "count_delta_pct": change_pct,
+                        "avg_points_recent": recent_avg_f,
+                        "avg_points_previous": prev_avg_f,
+                        "daily": daily_records,
+                    },
+                }
+            )
 
         lines = [
             f"Trend for topic: {topic}",
             f"Window: recent {window} days vs previous {window} days",
-            f"Article count: {recent_cnt} vs {prev_cnt} -> {delta}",
-            f"Avg points: {recent_avg:.1f} vs {prev_avg:.1f}",
+            f"Article count: {recent_cnt_i} vs {prev_cnt_i} -> {delta}",
+            f"Avg points: {recent_avg_f:.1f} vs {prev_avg_f:.1f}",
             "Daily breakdown:",
         ]
         if daily_rows:
@@ -1047,9 +1112,196 @@ def trend_analysis(topic: str, window: int = 7) -> str:
         return "\n".join(lines)
     except Exception as e:
         print(f"[Error] trend_analysis failed: {e}")
+        if as_json:
+            return _json_text(
+                {
+                    "tool": "trend_analysis",
+                    "status": "error",
+                    "request": {"topic": topic, "window": window},
+                    "data": None,
+                    "error": f"trend_analysis failed: {e}",
+                }
+            )
         return f"trend_analysis failed: {e}"
     finally:
         put_conn(conn)
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _evidence_from_records(records: list[dict[str, Any]], max_items: int = 8) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for row in records:
+        url = str(row.get("url") or "").strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        title = row.get("title_cn") or row.get("title")
+        evidence.append(
+            {
+                "url": url,
+                "title": str(title).strip() if title else None,
+                "source": str(row.get("source") or "").strip() or None,
+                "created_at": str(row.get("created_at") or "").strip() or None,
+                "score": _safe_float(row.get("score", row.get("points"))),
+            }
+        )
+        if len(evidence) >= max_items:
+            break
+    return evidence
+
+
+def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
+    """Structured skill adapter for query_news with strong output contract."""
+
+    request = payload.model_dump(mode="python")
+    raw_output = query_news(
+        query=request.get("query", ""),
+        source=request.get("source", "all"),
+        days=int(request.get("days", 21)),
+        category=request.get("category", ""),
+        sentiment=request.get("sentiment", ""),
+        sort=request.get("sort", "time_desc"),
+        limit=int(request.get("limit", 8)),
+        response_format="json",
+    )
+
+    try:
+        parsed = json.loads(raw_output)
+    except Exception as exc:
+        return build_error_envelope(
+            tool="query_news",
+            request=request,
+            error="query_news_json_parse_failed",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+                "raw_preview": str(raw_output)[:500],
+            },
+        )
+
+    status = str(parsed.get("status", "error")).lower()
+    if status not in {"ok", "empty", "error"}:
+        return build_error_envelope(
+            tool="query_news",
+            request=request,
+            error="query_news_invalid_status",
+            diagnostics={"status": parsed.get("status"), "raw_output": parsed},
+        )
+
+    if status == "error":
+        return build_error_envelope(
+            tool="query_news",
+            request=request,
+            error=str(parsed.get("error") or "query_news_failed"),
+            diagnostics={"raw_output": parsed},
+        )
+
+    records_raw = parsed.get("records")
+    records = records_raw if isinstance(records_raw, list) else []
+    evidence = _evidence_from_records(records, max_items=request.get("limit", 8))
+
+    return SkillEnvelope(
+        tool="query_news",
+        status=status,
+        request=request,
+        data={
+            "count": int(parsed.get("count", len(records))),
+            "records": records,
+        },
+        evidence=evidence,
+        diagnostics={
+            "source": request.get("source", "all"),
+            "sort": request.get("sort", "time_desc"),
+        },
+    )
+
+
+def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
+    """Structured skill adapter for trend_analysis with evidence backfill."""
+
+    request = payload.model_dump(mode="python")
+    raw_output = trend_analysis(
+        topic=request.get("topic", ""),
+        window=int(request.get("window", 7)),
+        response_format="json",
+    )
+
+    try:
+        parsed = json.loads(raw_output)
+    except Exception as exc:
+        return build_error_envelope(
+            tool="trend_analysis",
+            request=request,
+            error="trend_analysis_json_parse_failed",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+                "raw_preview": str(raw_output)[:500],
+            },
+        )
+
+    status = str(parsed.get("status", "error")).lower()
+    if status not in {"ok", "empty", "error"}:
+        return build_error_envelope(
+            tool="trend_analysis",
+            request=request,
+            error="trend_analysis_invalid_status",
+            diagnostics={"status": parsed.get("status"), "raw_output": parsed},
+        )
+
+    if status == "error":
+        return build_error_envelope(
+            tool="trend_analysis",
+            request=request,
+            error=str(parsed.get("error") or "trend_analysis_failed"),
+            diagnostics={"raw_output": parsed},
+        )
+
+    data = parsed.get("data") if isinstance(parsed.get("data"), dict) else {}
+
+    # Trend stats alone have no URLs; backfill top topic evidence to support
+    # downstream citation checks and keep analyst output auditable.
+    evidence_records: list[dict[str, Any]] = []
+    if status == "ok" and str(request.get("topic", "")).strip():
+        evidence_limit = min(6, max(3, int(request.get("window", 7))))
+        query_raw = query_news(
+            query=str(request["topic"]),
+            days=max(3, int(request.get("window", 7)) * 2),
+            limit=evidence_limit,
+            sort="heat_desc",
+            response_format="json",
+        )
+        try:
+            query_parsed = json.loads(query_raw)
+            if isinstance(query_parsed, dict):
+                records = query_parsed.get("records")
+                if isinstance(records, list):
+                    evidence_records = records
+        except Exception:
+            evidence_records = []
+
+    evidence = _evidence_from_records(evidence_records, max_items=6)
+
+    return SkillEnvelope(
+        tool="trend_analysis",
+        status=status,
+        request=request,
+        data=data,
+        evidence=evidence,
+        diagnostics={
+            "evidence_backfill_count": len(evidence),
+            "window": request.get("window"),
+        },
+    )
 
 
 def compare_sources(topic: str, days: int = 14) -> str:

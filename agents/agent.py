@@ -18,6 +18,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 
 try:
+    from graph.workflow import run_workflow_text
     from prompts import SYSTEM_INSTRUCTION
     from core.evidence import (
         decorate_response_with_sources as _decorate_response_with_sources_core,
@@ -42,6 +43,7 @@ try:
         trend_analysis,
     )
 except ImportError:  # package-style import fallback
+    from .graph.workflow import run_workflow_text
     from .prompts import SYSTEM_INSTRUCTION
     from .core.evidence import (
         decorate_response_with_sources as _decorate_response_with_sources_core,
@@ -323,6 +325,13 @@ def _get_react_agent():
     return _react_agent
 
 
+def _get_workflow_mode() -> str:
+    mode = os.getenv("AGENT_WORKFLOW", "v1").strip().lower()
+    if mode in {"v2", "graph", "skills", "subagents"}:
+        return "v2"
+    return "v1"
+
+
 # ---------------------------------------------------------------------------
 # Message conversion utilities
 # ---------------------------------------------------------------------------
@@ -475,13 +484,24 @@ def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[st
     return text, valid_urls
 
 
+def _generate_workflow_v2(history: list[dict], user_message: str) -> tuple[str, set[str]]:
+    """Run structured Router->Miner->Analyst workflow."""
+
+    text, valid_urls = run_workflow_text(user_message=user_message, history=history)
+    if not text:
+        raise RuntimeError("Workflow v2 returned empty response.")
+    return text, set(valid_urls or set())
+
+
 def _generate_response_core(history: list[dict], user_message: str) -> tuple[str, set[str]]:
     """Core generation: invoke ReAct agent with metrics tracking."""
     _metrics_inc("requests_total")
+    workflow_mode = _get_workflow_mode()
+    generator = _generate_react if workflow_mode == "v1" else _generate_workflow_v2
 
     try:
         _metrics_inc("react_attempts")
-        result, valid_urls = _generate_react(history, user_message)
+        result, valid_urls = generator(history, user_message)
         
         if not valid_urls:
             raise AgentGenerationError(
@@ -536,6 +556,15 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
             "抱歉，本次分析未能完成。请尝试更换关键词或缩小时间范围。",
             code="react_unexpected_runtime_error",
         )
+
+
+def generate_response_v2(history: list[dict], user_message: str) -> str:
+    """Direct entrypoint for the v2 structured workflow path."""
+
+    core_text, valid_urls = _generate_workflow_v2(history, user_message)
+    core_text = _strip_generic_analysis_leadin(core_text)
+    final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+    return final_text
 
 
 def generate_response(history: list[dict], user_message: str) -> str:
