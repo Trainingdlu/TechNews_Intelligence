@@ -120,3 +120,92 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(len(payload["selected"]), 2)
         self.assertEqual(len(payload["articles"]), 2)
         self.assertEqual(payload["articles"][0]["url"], "https://a.com")
+
+    def test_query_news_skill_returns_envelope_with_evidence(self) -> None:
+        query_payload = {
+            "tool": "query_news",
+            "status": "ok",
+            "request": {
+                "query": "OpenAI",
+                "source": "all",
+                "days": 7,
+                "category": "",
+                "sentiment": "",
+                "sort": "time_desc",
+                "limit": 3,
+            },
+            "count": 1,
+            "records": [
+                {
+                    "rank": 1,
+                    "source": "TechCrunch",
+                    "title": "OpenAI launches model",
+                    "title_cn": "[AI] OpenAI 发新模型",
+                    "url": "https://example.com/a",
+                    "summary": "summary",
+                    "sentiment": "Positive",
+                    "points": 99,
+                    "created_at": "2026-03-28T10:30:00",
+                }
+            ],
+        }
+        with patch.object(tools_mod, "query_news", lambda **_kwargs: json.dumps(query_payload)):
+            envelope = tools_mod.query_news_skill(
+                tools_mod.QueryNewsSkillInput(query="OpenAI", days=7, limit=3)
+            )
+
+        self.assertEqual(envelope.tool, "query_news")
+        self.assertEqual(envelope.status, "ok")
+        self.assertEqual(envelope.data["count"], 1)
+        self.assertEqual(len(envelope.evidence), 1)
+        self.assertEqual(envelope.evidence[0].url, "https://example.com/a")
+
+    def test_trend_analysis_skill_backfills_evidence(self) -> None:
+        trend_payload = {
+            "tool": "trend_analysis",
+            "status": "ok",
+            "request": {"topic": "OpenAI", "window": 7},
+            "data": {
+                "topic": "OpenAI",
+                "window": 7,
+                "recent_count": 8,
+                "previous_count": 5,
+                "count_delta": 3,
+                "count_delta_pct": 60.0,
+                "avg_points_recent": 50.0,
+                "avg_points_previous": 41.0,
+                "daily": [],
+            },
+        }
+        evidence_payload = {
+            "tool": "query_news",
+            "status": "ok",
+            "request": {"query": "OpenAI"},
+            "count": 1,
+            "records": [
+                {
+                    "rank": 1,
+                    "source": "HackerNews",
+                    "title": "OpenAI topic article",
+                    "title_cn": "",
+                    "url": "https://example.com/evidence",
+                    "summary": "evidence summary",
+                    "sentiment": "Neutral",
+                    "points": 42,
+                    "created_at": "2026-03-28T08:00:00",
+                }
+            ],
+        }
+        with (
+            patch.object(tools_mod, "trend_analysis", lambda **_kwargs: json.dumps(trend_payload)),
+            patch.object(tools_mod, "query_news", lambda **_kwargs: json.dumps(evidence_payload)),
+        ):
+            envelope = tools_mod.trend_analysis_skill(
+                tools_mod.TrendAnalysisSkillInput(topic="OpenAI", window=7)
+            )
+
+        self.assertEqual(envelope.tool, "trend_analysis")
+        self.assertEqual(envelope.status, "ok")
+        self.assertEqual(envelope.data["recent_count"], 8)
+        self.assertEqual(len(envelope.evidence), 1)
+        self.assertEqual(envelope.evidence[0].url, "https://example.com/evidence")

@@ -1,0 +1,55 @@
+"""Unit tests for v2 skill runtime building blocks."""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+from agents.core.role_policy import assert_skill_allowed
+from agents.core.skill_registry import SkillRegistry
+from agents.core.tool_hooks import ToolHookRunner
+
+
+class _DummyInput(BaseModel):
+    value: int = Field(ge=1)
+
+
+def _dummy_handler(payload: _DummyInput) -> dict:
+    return {
+        "tool": "dummy_skill",
+        "status": "ok",
+        "request": payload.model_dump(mode="python"),
+        "data": {"double": payload.value * 2},
+        "evidence": [],
+    }
+
+
+def test_skill_registry_executes_valid_payload() -> None:
+    registry = SkillRegistry()
+    registry.register("dummy_skill", _DummyInput, _dummy_handler, "test skill")
+
+    envelope = registry.execute("dummy_skill", {"value": 3})
+    assert envelope.status == "ok"
+    assert envelope.tool == "dummy_skill"
+    assert envelope.data["double"] == 6
+
+
+def test_skill_registry_rejects_invalid_payload() -> None:
+    registry = SkillRegistry()
+    registry.register("dummy_skill", _DummyInput, _dummy_handler, "test skill")
+
+    envelope = registry.execute("dummy_skill", {"value": 0})
+    assert envelope.status == "error"
+    assert envelope.error == "input_validation_failed"
+
+
+def test_role_policy_denies_unknown_role() -> None:
+    allowed, reason = assert_skill_allowed("unknown_role", "query_news")
+    assert not allowed
+    assert reason == "unknown_role:unknown_role"
+
+
+def test_tool_hook_runner_denies_invalid_window() -> None:
+    hooks = ToolHookRunner()
+    decision = hooks.pre_tool_use("trend_analysis", {"topic": "OpenAI", "window": 999})
+    assert decision.action == "deny"
+    assert "between 3 and 60" in str(decision.reason)
