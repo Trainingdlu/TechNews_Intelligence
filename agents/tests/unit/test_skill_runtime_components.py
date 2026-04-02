@@ -52,6 +52,17 @@ def test_skill_registry_rejects_empty_name() -> None:
         assert "must not be empty" in str(exc)
 
 
+def test_skill_registry_normalizes_lookup_names() -> None:
+    registry = SkillRegistry()
+    registry.register("dummy_skill", _DummyInput, _dummy_handler, "test skill")
+
+    assert registry.has("  dummy_skill  ")
+    assert registry.get("  dummy_skill  ").name == "dummy_skill"
+    envelope = registry.execute("  dummy_skill  ", {"value": 2})
+    assert envelope.status == "ok"
+    assert envelope.tool == "dummy_skill"
+
+
 def test_role_policy_denies_unknown_role() -> None:
     allowed, reason = assert_skill_allowed("unknown_role", "query_news")
     assert not allowed
@@ -63,6 +74,16 @@ def test_tool_hook_runner_denies_invalid_window() -> None:
     decision = hooks.pre_tool_use("trend_analysis", {"topic": "OpenAI", "window": 999})
     assert decision.action == "deny"
     assert "between 3 and 60" in str(decision.reason)
+
+
+def test_tool_hook_runner_denies_invalid_integer_payload() -> None:
+    hooks = ToolHookRunner()
+    decision_days = hooks.pre_tool_use("query_news", {"query": "OpenAI", "days": "NaN"})
+    decision_window = hooks.pre_tool_use("trend_analysis", {"topic": "OpenAI", "window": "bad"})
+    assert decision_days.action == "deny"
+    assert "integer" in str(decision_days.reason)
+    assert decision_window.action == "deny"
+    assert "integer" in str(decision_window.reason)
 
 
 def test_role_prompt_lookup() -> None:

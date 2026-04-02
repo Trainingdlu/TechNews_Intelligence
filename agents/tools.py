@@ -1145,13 +1145,16 @@ def _evidence_from_records(records: list[dict[str, Any]], max_items: int = 8) ->
             continue
         seen_urls.add(url)
         title = row.get("title_cn") or row.get("title")
+        score_value = row.get("score")
+        if score_value is None:
+            score_value = row.get("points")
         evidence.append(
             {
                 "url": url,
                 "title": str(title).strip() if title else None,
                 "source": str(row.get("source") or "").strip() or None,
                 "created_at": str(row.get("created_at") or "").strip() or None,
-                "score": _safe_float(row.get("score", row.get("points"))),
+                "score": _safe_float(score_value),
             }
         )
         if len(evidence) >= max_items:

@@ -144,6 +144,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
                     "url": "https://example.com/a",
                     "summary": "summary",
                     "sentiment": "Positive",
+                    "score": None,
                     "points": 99,
                     "created_at": "2026-03-28T10:30:00",
                 }
@@ -159,6 +160,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(envelope.data["count"], 1)
         self.assertEqual(len(envelope.evidence), 1)
         self.assertEqual(envelope.evidence[0].url, "https://example.com/a")
+        self.assertEqual(envelope.evidence[0].score, 99.0)
 
     def test_trend_analysis_skill_backfills_evidence(self) -> None:
         trend_payload = {
