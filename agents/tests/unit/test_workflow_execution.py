@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 
 from agents.core.skill_contracts import SkillEnvelope
 from agents.core.skill_registry import SkillRegistry
-from agents.graph.workflow import run_workflow
+from agents.core.tool_hooks import HookDecision, ToolHookRunner
+from agents.graph.workflow import _extract_trend_topic, run_workflow
 
 
 class _QueryInput(BaseModel):
@@ -110,6 +111,28 @@ def test_run_workflow_trend_path() -> None:
     assert state["selected_skill"] == "trend_analysis"
     assert "Trend summary:" in state["final_text"]
     assert state["evidence_urls"] == ["https://example.com/trend"]
+
+
+def test_extract_trend_topic_removes_intent_and_time_words() -> None:
+    topic = _extract_trend_topic("trend of OpenAI in last 7 days")
+    assert topic.lower() == "openai"
+
+
+def test_run_workflow_honors_post_hook_deny() -> None:
+    def _deny_post(_tool: str, _payload: dict, _output: SkillEnvelope) -> HookDecision:
+        return HookDecision(action="deny", reason="audit_failed", diagnostics={"rule": "post_guard"})
+
+    hooks = ToolHookRunner(pre_hooks=[], post_hooks=[_deny_post])
+    state = run_workflow(
+        user_message="OpenAI latest updates",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+        hook_runner=hooks,
+    )
+    assert state["miner_result"].status == "error"
+    assert state["miner_result"].error == "post_hook_denied"
+    assert state["miner_result"].diagnostics.get("reason") == "audit_failed"
+    assert state["evidence_urls"] == []
 
 
 def test_run_workflow_mcp_transport_with_fake_client() -> None:

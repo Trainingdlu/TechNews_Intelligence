@@ -433,7 +433,10 @@ def _generate_workflow_v2(history: list[dict], user_message: str) -> tuple[str, 
 
     text, valid_urls = run_workflow_text(user_message=user_message, history=history)
     if not text:
-        raise RuntimeError("Workflow v2 returned empty response.")
+        raise AgentGenerationError(
+            "抱歉，针对该问题，系统未能检索到相关的新闻。",
+            code="workflow_v2_empty_response",
+        )
     return text, set(valid_urls or set())
 
 

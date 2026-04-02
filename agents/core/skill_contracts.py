@@ -1,4 +1,4 @@
-﻿"""Skill contracts and envelope schema for structured tool execution."""
+"""Skill contracts and envelope schema for structured tool execution."""
 
 from __future__ import annotations
 

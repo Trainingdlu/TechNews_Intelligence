@@ -6,6 +6,8 @@ import sys
 import types
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 def _setup_stubs() -> None:
     db_mod = types.ModuleType("db")
@@ -57,3 +59,12 @@ def test_generate_response_core_uses_v2_path_when_enabled() -> None:
     assert text == "structured answer"
     assert urls == {"https://a.com"}
     assert mock_v2.called
+
+
+def test_generate_workflow_v2_empty_raises_agent_error() -> None:
+    from agents.agent import AgentGenerationError, _generate_workflow_v2
+
+    with patch("agents.agent.run_workflow_text", return_value=("", set())):
+        with pytest.raises(AgentGenerationError) as ei:
+            _generate_workflow_v2([], "OpenAI trend")
+    assert ei.value.code == "workflow_v2_empty_response"

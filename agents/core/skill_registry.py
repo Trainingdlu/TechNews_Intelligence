@@ -1,4 +1,4 @@
-﻿"""Skill registry with typed input validation and unified dispatch."""
+"""Skill registry with typed input validation and unified dispatch."""
 
 from __future__ import annotations
 
@@ -35,10 +35,13 @@ class SkillRegistry:
         handler: SkillHandler,
         description: str = "",
     ) -> None:
-        if name in self._specs:
-            raise ValueError(f"Skill '{name}' is already registered")
-        self._specs[name] = SkillSpec(
-            name=name,
+        normalized_name = str(name).strip()
+        if not normalized_name:
+            raise ValueError("Skill name must not be empty")
+        if normalized_name in self._specs:
+            raise ValueError(f"Skill '{normalized_name}' is already registered")
+        self._specs[normalized_name] = SkillSpec(
+            name=normalized_name,
             input_model=input_model,
             handler=handler,
             description=description,

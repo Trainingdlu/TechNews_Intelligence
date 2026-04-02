@@ -43,6 +43,15 @@ def test_skill_registry_rejects_invalid_payload() -> None:
     assert envelope.error == "input_validation_failed"
 
 
+def test_skill_registry_rejects_empty_name() -> None:
+    registry = SkillRegistry()
+    try:
+        registry.register("   ", _DummyInput, _dummy_handler, "test skill")
+        raise AssertionError("Expected ValueError for empty skill name")
+    except ValueError as exc:
+        assert "must not be empty" in str(exc)
+
+
 def test_role_policy_denies_unknown_role() -> None:
     allowed, reason = assert_skill_allowed("unknown_role", "query_news")
     assert not allowed
