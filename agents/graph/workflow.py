@@ -306,9 +306,18 @@ def _normalize_role_allowlists(
         role_key = str(role).strip().lower()
         if not role_key:
             continue
+        if isinstance(skills, str):
+            skill_values: list[Any] = [skills]
+        elif skills is None:
+            skill_values = []
+        else:
+            try:
+                skill_values = list(skills)
+            except TypeError:
+                skill_values = [skills]
         allowed = {
             str(skill).strip().lower()
-            for skill in (skills or [])
+            for skill in skill_values
             if str(skill).strip()
         }
         normalized[role_key] = allowed
@@ -338,7 +347,6 @@ def _workflow_graph_cache_key(runtime: _WorkflowRuntime) -> tuple[Any, ...]:
         id(runtime.registry),
         id(runtime.hooks),
         runtime.miner_transport,
-        id(runtime.mcp_client),
         _role_allowlists_cache_key(runtime.role_allowlists),
     )
 
@@ -475,10 +483,16 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
 
     pre = runtime.hooks.pre_tool_use(selected_skill, normalized_payload)
     if pre.action == "deny":
+        deny_payload = (
+            pre.updated_payload if pre.updated_payload is not None else normalized_payload
+        )
+        deny_details: dict[str, Any] = {"phase": "pre_hook", "reason": pre.reason}
+        if pre.diagnostics:
+            deny_details["diagnostics"] = pre.diagnostics
         return {
             "miner_result": build_error_envelope(
                 tool=selected_skill,
-                request=normalized_payload,
+                request=deny_payload,
                 error="pre_hook_denied",
                 diagnostics={"reason": pre.reason, **pre.diagnostics},
             ),
@@ -486,7 +500,7 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
                 state,
                 node="miner",
                 status="deny",
-                details={"phase": "pre_hook", "reason": pre.reason},
+                details=deny_details,
             ),
         }
 
@@ -659,10 +673,13 @@ def build_workflow_graph(
         mcp_client=mcp_client,
         role_allowlists=_normalize_role_allowlists(role_allowlists),
     )
-    cache_key = _workflow_graph_cache_key(runtime)
-    cached = _get_cached_graph(cache_key)
-    if cached is not None:
-        return cached
+    # Avoid retaining non-shareable client instances in global cache.
+    use_cache = runtime.mcp_client is None
+    if use_cache:
+        cache_key = _workflow_graph_cache_key(runtime)
+        cached = _get_cached_graph(cache_key)
+        if cached is not None:
+            return cached
 
     graph = StateGraph(WorkflowState)
     graph.add_node("router", lambda state: _router_node(state, runtime))
@@ -675,6 +692,8 @@ def build_workflow_graph(
     graph.add_edge("analyst", "formatter")
     graph.add_edge("formatter", END)
     compiled = graph.compile()
+    if not use_cache:
+        return compiled
     return _put_cached_graph(cache_key, compiled)
 
 

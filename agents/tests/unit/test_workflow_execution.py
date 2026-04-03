@@ -178,6 +178,28 @@ def test_run_workflow_honors_post_hook_deny() -> None:
     assert state["node_audit"][1]["details"]["phase"] == "post_hook"
 
 
+def test_run_workflow_pre_hook_deny_uses_updated_payload() -> None:
+    def _deny_pre(_tool: str, _payload: dict) -> HookDecision:
+        return HookDecision(
+            action="deny",
+            reason="invalid_topic",
+            updated_payload={"query": "sanitized", "days": 21, "source": "all", "sort": "time_desc", "limit": 8},
+            diagnostics={"rule": "topic_guard"},
+        )
+
+    hooks = ToolHookRunner(pre_hooks=[_deny_pre], post_hooks=[])
+    state = run_workflow(
+        user_message="OpenAI latest updates",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+        hook_runner=hooks,
+    )
+    assert state["miner_result"].status == "error"
+    assert state["miner_result"].error == "pre_hook_denied"
+    assert state["miner_result"].request["query"] == "sanitized"
+    assert state["node_audit"][1]["details"]["diagnostics"]["rule"] == "topic_guard"
+
+
 def test_pre_hook_empty_payload_override_is_honored() -> None:
     def _empty_payload_pre(_tool: str, _payload: dict) -> HookDecision:
         return HookDecision(action="allow", updated_payload={})
@@ -264,6 +286,17 @@ def test_role_allowlist_override_is_case_insensitive() -> None:
     assert state["selected_skill"] == "trend_analysis"
 
 
+def test_role_allowlist_override_accepts_string_value() -> None:
+    state = run_workflow(
+        user_message="trend of OpenAI in last 7 days",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+        role_allowlists={"router": "trend_analysis"},
+    )
+    assert state["selected_skill"] == "trend_analysis"
+    assert state["miner_result"].status == "ok"
+
+
 def test_role_allowlist_override_denies_analyst() -> None:
     state = run_workflow(
         user_message="OpenAI latest updates",
@@ -286,3 +319,24 @@ def test_role_allowlist_env_override_denies_router(monkeypatch) -> None:
     )
     assert state["miner_result"].status == "error"
     assert state["miner_result"].diagnostics.get("role") == "router"
+
+
+def test_build_workflow_graph_does_not_cache_custom_mcp_client() -> None:
+    registry = _registry_with_query_and_trend()
+    hooks = ToolHookRunner()
+
+    class _Client:
+        pass
+
+    client = _Client()
+    app_a = build_workflow_graph(
+        registry=registry,
+        hook_runner=hooks,
+        mcp_client=client,
+    )
+    app_b = build_workflow_graph(
+        registry=registry,
+        hook_runner=hooks,
+        mcp_client=client,
+    )
+    assert app_a is not app_b
