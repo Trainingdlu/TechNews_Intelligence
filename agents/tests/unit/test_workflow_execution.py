@@ -143,6 +143,15 @@ def test_build_workflow_graph_compiles_and_runs() -> None:
     assert "Retrieval summary:" in final_state["final_text"]
 
 
+def test_build_workflow_graph_sets_runtime_miner_transport_in_state() -> None:
+    app = build_workflow_graph(
+        registry=_registry_with_query_and_trend(),
+        miner_transport="local",
+    )
+    final_state = app.invoke({"user_message": "OpenAI latest updates", "history": []})
+    assert final_state["miner_transport"] == "local"
+
+
 def test_build_workflow_graph_reuses_compiled_instance() -> None:
     registry = _registry_with_query_and_trend()
     hooks = ToolHookRunner()
@@ -319,6 +328,14 @@ def test_role_allowlist_env_override_denies_router(monkeypatch) -> None:
     )
     assert state["miner_result"].status == "error"
     assert state["miner_result"].diagnostics.get("role") == "router"
+
+
+def test_build_workflow_graph_honors_env_role_allowlists(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_ROLE_ALLOWLIST_ROUTER", "query_news")
+    app = build_workflow_graph(registry=_registry_with_query_and_trend())
+    final_state = app.invoke({"user_message": "trend of OpenAI in last 7 days", "history": []})
+    assert final_state["miner_result"].status == "error"
+    assert final_state["miner_result"].diagnostics.get("role") == "router"
 
 
 def test_build_workflow_graph_does_not_cache_custom_mcp_client() -> None:
