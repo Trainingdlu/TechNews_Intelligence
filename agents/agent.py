@@ -9,7 +9,6 @@ from __future__ import annotations
 import inspect
 import os
 import re
-from importlib.metadata import PackageNotFoundError, version
 from dataclasses import dataclass
 from typing import Any
 
@@ -277,38 +276,6 @@ def _build_chat_model() -> Any:
         "VERTEX_MODEL",
         os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
     ).strip()
-
-    # Vertex Express Mode with API key:
-    # this path requires langchain-google-genai >= 4.x (unified google-genai SDK).
-    vertex_api_key = os.getenv("VERTEX_API_KEY", "").strip()
-    if vertex_api_key:
-        try:
-            raw_ver = version("langchain-google-genai")
-        except PackageNotFoundError:
-            raw_ver = "0.0.0"
-        major = int(raw_ver.split(".", maxsplit=1)[0] or "0")
-        if major < 4:
-            raise RuntimeError(
-                "VERTEX_API_KEY mode requires langchain-google-genai>=4.0.0 "
-                f"(current: {raw_ver}). "
-                "This repo currently pins langchain 0.3.x, which conflicts with "
-                "langchain-google-genai 4.x. Use ADC/service-account auth, or "
-                "upgrade the full LangChain stack together."
-            )
-
-        # Keep Google GenAI environment variables aligned with Vertex backend.
-        os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")
-        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project)
-        os.environ.setdefault("GOOGLE_CLOUD_LOCATION", location)
-
-        return ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=temperature,
-            google_api_key=vertex_api_key,
-            vertexai=True,
-            project=project,
-            location=location,
-        )
 
     credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
     if credentials_path and not os.path.exists(credentials_path):
