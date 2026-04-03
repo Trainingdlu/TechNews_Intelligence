@@ -291,7 +291,9 @@ def _build_chat_model() -> Any:
             raise RuntimeError(
                 "VERTEX_API_KEY mode requires langchain-google-genai>=4.0.0 "
                 f"(current: {raw_ver}). "
-                "Either upgrade dependencies or use ADC/service-account auth."
+                "This repo currently pins langchain 0.3.x, which conflicts with "
+                "langchain-google-genai 4.x. Use ADC/service-account auth, or "
+                "upgrade the full LangChain stack together."
             )
 
         # Keep Google GenAI environment variables aligned with Vertex backend.
