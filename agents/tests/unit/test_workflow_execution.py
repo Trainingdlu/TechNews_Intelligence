@@ -206,6 +206,7 @@ def test_run_workflow_pre_hook_deny_uses_updated_payload() -> None:
     assert state["miner_result"].status == "error"
     assert state["miner_result"].error == "pre_hook_denied"
     assert state["miner_result"].request["query"] == "sanitized"
+    assert state["miner_payload"]["query"] == "sanitized"
     assert state["node_audit"][1]["details"]["diagnostics"]["rule"] == "topic_guard"
 
 

@@ -493,6 +493,7 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
             deny_details["diagnostics"] = pre.diagnostics
         return {
             "miner_transport": runtime.miner_transport,
+            "miner_payload": deny_payload,
             "miner_result": build_error_envelope(
                 tool=selected_skill,
                 request=deny_payload,
