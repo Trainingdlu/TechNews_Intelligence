@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Iterable, TypedDict
 
@@ -64,7 +65,8 @@ class _WorkflowRuntime:
 
 _DEFAULT_REGISTRY: SkillRegistry | None = None
 _DEFAULT_HOOK_RUNNER: ToolHookRunner | None = None
-_GRAPH_CACHE: dict[tuple[Any, ...], Any] = {}
+_GRAPH_CACHE_MAX_SIZE = 16
+_GRAPH_CACHE: OrderedDict[tuple[Any, ...], Any] = OrderedDict()
 
 MCP_SKILL_MAP: dict[str, str] = {
     "query_news": "mcp__newsdb__query_news_vector",
@@ -107,7 +109,12 @@ def build_default_hook_runner() -> ToolHookRunner:
 
 
 def _contains_cjk(text: str) -> bool:
-    return bool(re.search(r"[一-龥]", text or ""))
+    return bool(
+        re.search(
+            r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]",
+            text or "",
+        )
+    )
 
 
 def _extract_days(user_message: str, default: int = 21, maximum: int = 365) -> int:
@@ -298,7 +305,7 @@ def _normalize_role_allowlists(
         if not role_key:
             continue
         allowed = {
-            str(skill).strip()
+            str(skill).strip().lower()
             for skill in (skills or [])
             if str(skill).strip()
         }
@@ -334,13 +341,28 @@ def _workflow_graph_cache_key(runtime: _WorkflowRuntime) -> tuple[Any, ...]:
     )
 
 
+def _get_cached_graph(cache_key: tuple[Any, ...]) -> Any | None:
+    cached = _GRAPH_CACHE.get(cache_key)
+    if cached is not None:
+        _GRAPH_CACHE.move_to_end(cache_key)
+    return cached
+
+
+def _put_cached_graph(cache_key: tuple[Any, ...], compiled_graph: Any) -> Any:
+    _GRAPH_CACHE[cache_key] = compiled_graph
+    _GRAPH_CACHE.move_to_end(cache_key)
+    while len(_GRAPH_CACHE) > _GRAPH_CACHE_MAX_SIZE:
+        _GRAPH_CACHE.popitem(last=False)
+    return compiled_graph
+
+
 def _resolve_role_permission(
     role: str,
     skill_name: str,
     role_allowlists: dict[str, set[str]],
 ) -> tuple[bool, str | None]:
     normalized_role = str(role).strip().lower()
-    normalized_skill = str(skill_name).strip()
+    normalized_skill = str(skill_name).strip().lower()
 
     if normalized_role in role_allowlists:
         if normalized_skill in role_allowlists[normalized_role]:
@@ -464,7 +486,9 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
             ),
         }
 
-    effective_payload = pre.updated_payload or normalized_payload
+    effective_payload = (
+        pre.updated_payload if pre.updated_payload is not None else normalized_payload
+    )
     miner_result = _execute_miner_skill(
         selected_skill=selected_skill,
         payload=effective_payload,
@@ -632,7 +656,7 @@ def build_workflow_graph(
         role_allowlists=_normalize_role_allowlists(role_allowlists),
     )
     cache_key = _workflow_graph_cache_key(runtime)
-    cached = _GRAPH_CACHE.get(cache_key)
+    cached = _get_cached_graph(cache_key)
     if cached is not None:
         return cached
 
@@ -647,8 +671,7 @@ def build_workflow_graph(
     graph.add_edge("analyst", "formatter")
     graph.add_edge("formatter", END)
     compiled = graph.compile()
-    _GRAPH_CACHE[cache_key] = compiled
-    return compiled
+    return _put_cached_graph(cache_key, compiled)
 
 
 def run_workflow(
