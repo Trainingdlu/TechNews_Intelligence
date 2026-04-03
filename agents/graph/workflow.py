@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Iterable, TypedDict
@@ -67,6 +68,7 @@ _DEFAULT_REGISTRY: SkillRegistry | None = None
 _DEFAULT_HOOK_RUNNER: ToolHookRunner | None = None
 _GRAPH_CACHE_MAX_SIZE = 16
 _GRAPH_CACHE: OrderedDict[tuple[Any, ...], Any] = OrderedDict()
+_GRAPH_CACHE_LOCK = threading.RLock()
 
 MCP_SKILL_MAP: dict[str, str] = {
     "query_news": "mcp__newsdb__query_news_vector",
@@ -342,18 +344,20 @@ def _workflow_graph_cache_key(runtime: _WorkflowRuntime) -> tuple[Any, ...]:
 
 
 def _get_cached_graph(cache_key: tuple[Any, ...]) -> Any | None:
-    cached = _GRAPH_CACHE.get(cache_key)
-    if cached is not None:
-        _GRAPH_CACHE.move_to_end(cache_key)
-    return cached
+    with _GRAPH_CACHE_LOCK:
+        cached = _GRAPH_CACHE.get(cache_key)
+        if cached is not None:
+            _GRAPH_CACHE.move_to_end(cache_key)
+        return cached
 
 
 def _put_cached_graph(cache_key: tuple[Any, ...], compiled_graph: Any) -> Any:
-    _GRAPH_CACHE[cache_key] = compiled_graph
-    _GRAPH_CACHE.move_to_end(cache_key)
-    while len(_GRAPH_CACHE) > _GRAPH_CACHE_MAX_SIZE:
-        _GRAPH_CACHE.popitem(last=False)
-    return compiled_graph
+    with _GRAPH_CACHE_LOCK:
+        _GRAPH_CACHE[cache_key] = compiled_graph
+        _GRAPH_CACHE.move_to_end(cache_key)
+        while len(_GRAPH_CACHE) > _GRAPH_CACHE_MAX_SIZE:
+            _GRAPH_CACHE.popitem(last=False)
+        return compiled_graph
 
 
 def _resolve_role_permission(
