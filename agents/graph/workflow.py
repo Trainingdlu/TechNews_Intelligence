@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, TypedDict
+from typing import Any, Iterable, TypedDict
 
 from langgraph.graph import END, StateGraph
 
@@ -49,6 +49,7 @@ class WorkflowState(TypedDict, total=False):
     analyst_result: dict[str, Any]
     final_text: str
     evidence_urls: list[str]
+    node_audit: list[dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,7 @@ class _WorkflowRuntime:
     hooks: ToolHookRunner
     miner_transport: str
     mcp_client: Any | None
+    role_allowlists: dict[str, set[str]]
 
 
 _DEFAULT_REGISTRY: SkillRegistry | None = None
@@ -158,7 +160,7 @@ def _extract_trend_topic(user_message: str) -> str:
     text = re.sub(r"(\u8d8b\u52bf|\u53d8\u5316|\u5206\u6790|\u5bf9\u6bd4|\u6700\u8fd1|\u8fc7\u53bb|\u8fd1)", " ", text)
     text = re.sub(r"(?i)\b(?:of|for|about|on|in|the|please)\b", " ", text)
 
-    text = re.sub(r"[\s,\u3001\uff0c\u3002:：;；!?！？]+", " ", text).strip()
+    text = re.sub(r"[\s,\u3001\uff0c\u3002:\uff1a;\uff1b!?\uff01\uff1f]+", " ", text).strip()
     return text or raw
 
 
@@ -270,31 +272,137 @@ def _build_role_prompts() -> dict[str, str]:
     }
 
 
-def _router_node(state: WorkflowState) -> WorkflowState:
+def _normalize_role_allowlists(
+    role_allowlists: dict[str, Iterable[str]] | None,
+) -> dict[str, set[str]]:
+    normalized: dict[str, set[str]] = {}
+    if not role_allowlists:
+        return normalized
+
+    for role, skills in role_allowlists.items():
+        role_key = str(role).strip().lower()
+        if not role_key:
+            continue
+        allowed = {
+            str(skill).strip()
+            for skill in (skills or [])
+            if str(skill).strip()
+        }
+        normalized[role_key] = allowed
+    return normalized
+
+
+def _resolve_role_permission(
+    role: str,
+    skill_name: str,
+    role_allowlists: dict[str, set[str]],
+) -> tuple[bool, str | None]:
+    normalized_role = str(role).strip().lower()
+    normalized_skill = str(skill_name).strip()
+
+    if normalized_role in role_allowlists:
+        if normalized_skill in role_allowlists[normalized_role]:
+            return True, None
+        return (
+            False,
+            f"role:{normalized_role} cannot use skill:{normalized_skill} (override)",
+        )
+    return assert_skill_allowed(normalized_role, normalized_skill)
+
+
+def _append_node_audit(
+    state: WorkflowState,
+    node: str,
+    status: str,
+    details: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    trail = list(state.get("node_audit") or [])
+    event: dict[str, Any] = {"node": str(node), "status": str(status)}
+    if details:
+        event["details"] = details
+    trail.append(event)
+    return trail
+
+
+def _router_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowState:
     user_message = str(state.get("user_message") or "")
     intent, selected_skill = _route_intent(user_message)
     payload = _build_payload(intent, user_message)
+
+    allowed, deny_reason = _resolve_role_permission(
+        role="router",
+        skill_name=selected_skill,
+        role_allowlists=runtime.role_allowlists,
+    )
+    if not allowed:
+        denied = build_error_envelope(
+            tool=selected_skill,
+            request={"intent": intent, "payload": payload},
+            error="role_policy_denied",
+            diagnostics={"reason": deny_reason, "role": "router"},
+        )
+        return {
+            "intent": intent,
+            "selected_skill": selected_skill,
+            "miner_payload": payload,
+            "miner_result": denied,
+            "node_audit": _append_node_audit(
+                state,
+                node="router",
+                status="deny",
+                details={"selected_skill": selected_skill, "reason": deny_reason},
+            ),
+        }
+
     return {
         "intent": intent,
         "selected_skill": selected_skill,
         "miner_payload": payload,
+        "node_audit": _append_node_audit(
+            state,
+            node="router",
+            status="allow",
+            details={"intent": intent, "selected_skill": selected_skill},
+        ),
     }
 
 
 def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowState:
+    existing = state.get("miner_result")
+    if isinstance(existing, SkillEnvelope) and existing.status == "error":
+        return {
+            "miner_result": existing,
+            "node_audit": _append_node_audit(
+                state,
+                node="miner",
+                status="skip",
+                details={"reason": "upstream_error", "error": existing.error},
+            ),
+        }
+
     selected_skill = str(state.get("selected_skill") or "").strip()
     payload = state.get("miner_payload")
     normalized_payload = payload if isinstance(payload, dict) else {}
 
-    allowed, deny_reason = assert_skill_allowed("miner", selected_skill)
+    allowed, deny_reason = _resolve_role_permission(
+        role="miner",
+        skill_name=selected_skill,
+        role_allowlists=runtime.role_allowlists,
+    )
     if not allowed:
         return {
             "miner_result": build_error_envelope(
                 tool=selected_skill,
                 request=normalized_payload,
                 error="role_policy_denied",
-                diagnostics={"reason": deny_reason},
-            )
+                diagnostics={"reason": deny_reason, "role": "miner"},
+            ),
+            "node_audit": _append_node_audit(
+                state,
+                node="miner",
+                status="deny",
+                details={"selected_skill": selected_skill, "reason": deny_reason},
+            ),
         }
 
     pre = runtime.hooks.pre_tool_use(selected_skill, normalized_payload)
@@ -305,7 +413,13 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
                 request=normalized_payload,
                 error="pre_hook_denied",
                 diagnostics={"reason": pre.reason, **pre.diagnostics},
-            )
+            ),
+            "node_audit": _append_node_audit(
+                state,
+                node="miner",
+                status="deny",
+                details={"phase": "pre_hook", "reason": pre.reason},
+            ),
         }
 
     effective_payload = pre.updated_payload or normalized_payload
@@ -327,6 +441,12 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
                 error="post_hook_denied",
                 diagnostics={"reason": post.reason, **post.diagnostics},
             ),
+            "node_audit": _append_node_audit(
+                state,
+                node="miner",
+                status="deny",
+                details={"phase": "post_hook", "reason": post.reason},
+            ),
         }
 
     if post.diagnostics:
@@ -337,10 +457,44 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
     return {
         "miner_payload": effective_payload,
         "miner_result": miner_result,
+        "node_audit": _append_node_audit(
+            state,
+            node="miner",
+            status="allow",
+            details={
+                "selected_skill": selected_skill,
+                "transport": runtime.miner_transport,
+                "result_status": miner_result.status,
+            },
+        ),
     }
 
 
-def _analyst_node(state: WorkflowState) -> WorkflowState:
+def _analyst_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowState:
+    allowed, deny_reason = _resolve_role_permission(
+        role="analyst",
+        skill_name="synthesize_findings",
+        role_allowlists=runtime.role_allowlists,
+    )
+    if not allowed:
+        denied = build_error_envelope(
+            tool="synthesize_findings",
+            request={"selected_skill": str(state.get("selected_skill") or "")},
+            error="role_policy_denied",
+            diagnostics={"reason": deny_reason, "role": "analyst"},
+        )
+        analyst = _analyst_summarize(denied, str(state.get("user_message") or ""))
+        return {
+            "miner_result": denied,
+            "analyst_result": analyst,
+            "node_audit": _append_node_audit(
+                state,
+                node="analyst",
+                status="deny",
+                details={"reason": deny_reason},
+            ),
+        }
+
     user_message = str(state.get("user_message") or "")
     miner_result = state.get("miner_result")
     if not isinstance(miner_result, SkillEnvelope):
@@ -353,10 +507,39 @@ def _analyst_node(state: WorkflowState) -> WorkflowState:
     return {
         "miner_result": miner_result,
         "analyst_result": analyst,
+        "node_audit": _append_node_audit(
+            state,
+            node="analyst",
+            status="allow",
+            details={"result_status": miner_result.status},
+        ),
     }
 
 
-def _formatter_node(state: WorkflowState) -> WorkflowState:
+def _formatter_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowState:
+    allowed, deny_reason = _resolve_role_permission(
+        role="formatter",
+        skill_name="format_answer",
+        role_allowlists=runtime.role_allowlists,
+    )
+    if not allowed:
+        denied = build_error_envelope(
+            tool="format_answer",
+            request={"selected_skill": str(state.get("selected_skill") or "")},
+            error="role_policy_denied",
+            diagnostics={"reason": deny_reason, "role": "formatter"},
+        )
+        return {
+            "final_text": _analyst_summarize(denied, str(state.get("user_message") or ""))["final"],
+            "evidence_urls": [],
+            "node_audit": _append_node_audit(
+                state,
+                node="formatter",
+                status="deny",
+                details={"reason": deny_reason},
+            ),
+        }
+
     analyst_result = state.get("analyst_result")
     final_text = ""
     if isinstance(analyst_result, dict):
@@ -370,6 +553,12 @@ def _formatter_node(state: WorkflowState) -> WorkflowState:
     return {
         "final_text": final_text,
         "evidence_urls": evidence_urls,
+        "node_audit": _append_node_audit(
+            state,
+            node="formatter",
+            status="allow",
+            details={"final_len": len(final_text), "evidence_count": len(evidence_urls)},
+        ),
     }
 
 
@@ -378,6 +567,7 @@ def build_workflow_graph(
     hook_runner: ToolHookRunner | None = None,
     miner_transport: str | None = None,
     mcp_client: Any | None = None,
+    role_allowlists: dict[str, Iterable[str]] | None = None,
 ):
     """Build and compile the LangGraph workflow for v2 orchestration."""
 
@@ -386,13 +576,14 @@ def build_workflow_graph(
         hooks=hook_runner or ToolHookRunner(),
         miner_transport=_resolve_miner_transport(miner_transport),
         mcp_client=mcp_client,
+        role_allowlists=_normalize_role_allowlists(role_allowlists),
     )
 
     graph = StateGraph(WorkflowState)
-    graph.add_node("router", _router_node)
+    graph.add_node("router", lambda state: _router_node(state, runtime))
     graph.add_node("miner", lambda state: _miner_node(state, runtime))
-    graph.add_node("analyst", _analyst_node)
-    graph.add_node("formatter", _formatter_node)
+    graph.add_node("analyst", lambda state: _analyst_node(state, runtime))
+    graph.add_node("formatter", lambda state: _formatter_node(state, runtime))
     graph.set_entry_point("router")
     graph.add_edge("router", "miner")
     graph.add_edge("miner", "analyst")
@@ -408,6 +599,7 @@ def run_workflow(
     hook_runner: ToolHookRunner | None = None,
     miner_transport: str | None = None,
     mcp_client: Any | None = None,
+    role_allowlists: dict[str, Iterable[str]] | None = None,
 ) -> WorkflowState:
     """Run Router -> Miner -> Analyst -> Formatter with a compiled StateGraph."""
 
@@ -416,6 +608,7 @@ def run_workflow(
         "history": history or [],
         "miner_transport": _resolve_miner_transport(miner_transport),
         "role_prompts": _build_role_prompts(),
+        "node_audit": [],
     }
 
     app = build_workflow_graph(
@@ -423,6 +616,7 @@ def run_workflow(
         hook_runner=hook_runner,
         miner_transport=miner_transport,
         mcp_client=mcp_client,
+        role_allowlists=role_allowlists,
     )
     final_state = app.invoke(initial_state)
     if not isinstance(final_state, dict):

@@ -99,6 +99,12 @@ def test_run_workflow_fact_retrieval_path() -> None:
     assert state["selected_skill"] == "query_news"
     assert "Retrieval summary:" in state["final_text"]
     assert state["evidence_urls"] == ["https://example.com/query"]
+    assert [event["node"] for event in state["node_audit"]] == [
+        "router",
+        "miner",
+        "analyst",
+        "formatter",
+    ]
 
 
 def test_run_workflow_trend_path() -> None:
@@ -152,6 +158,8 @@ def test_run_workflow_honors_post_hook_deny() -> None:
     assert state["miner_result"].error == "post_hook_denied"
     assert state["miner_result"].diagnostics.get("reason") == "audit_failed"
     assert state["evidence_urls"] == []
+    assert state["node_audit"][1]["status"] == "deny"
+    assert state["node_audit"][1]["details"]["phase"] == "post_hook"
 
 
 def test_run_workflow_mcp_transport_with_fake_client() -> None:
@@ -198,3 +206,30 @@ def test_run_workflow_mcp_transport_with_fake_client() -> None:
     assert state["selected_skill"] == "query_news"
     assert "Retrieval summary:" in state["final_text"]
     assert state["evidence_urls"] == ["https://example.com/mcp"]
+
+
+def test_role_allowlist_override_denies_router() -> None:
+    state = run_workflow(
+        user_message="trend of OpenAI in last 7 days",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+        role_allowlists={"router": {"query_news"}},
+    )
+    assert state["miner_result"].status == "error"
+    assert state["miner_result"].error == "role_policy_denied"
+    assert state["miner_result"].diagnostics.get("role") == "router"
+    assert state["node_audit"][0]["node"] == "router"
+    assert state["node_audit"][0]["status"] == "deny"
+
+
+def test_role_allowlist_override_denies_analyst() -> None:
+    state = run_workflow(
+        user_message="OpenAI latest updates",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+        role_allowlists={"analyst": {"compare_entities"}},
+    )
+    assert state["miner_result"].status == "error"
+    assert state["miner_result"].diagnostics.get("role") == "analyst"
+    assert "role_policy_denied" in state["final_text"]
+    assert state["evidence_urls"] == []
