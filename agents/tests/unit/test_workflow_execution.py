@@ -178,6 +178,21 @@ def test_run_workflow_honors_post_hook_deny() -> None:
     assert state["node_audit"][1]["details"]["phase"] == "post_hook"
 
 
+def test_pre_hook_empty_payload_override_is_honored() -> None:
+    def _empty_payload_pre(_tool: str, _payload: dict) -> HookDecision:
+        return HookDecision(action="allow", updated_payload={})
+
+    hooks = ToolHookRunner(pre_hooks=[_empty_payload_pre], post_hooks=[])
+    state = run_workflow(
+        user_message="OpenAI latest updates",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+        hook_runner=hooks,
+    )
+    assert state["miner_result"].status == "ok"
+    assert state["miner_result"].request["query"] == ""
+
+
 def test_run_workflow_mcp_transport_with_fake_client() -> None:
     class _FakeMCPClient:
         @staticmethod
@@ -236,6 +251,17 @@ def test_role_allowlist_override_denies_router() -> None:
     assert state["miner_result"].diagnostics.get("role") == "router"
     assert state["node_audit"][0]["node"] == "router"
     assert state["node_audit"][0]["status"] == "deny"
+
+
+def test_role_allowlist_override_is_case_insensitive() -> None:
+    state = run_workflow(
+        user_message="trend of OpenAI in last 7 days",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+        role_allowlists={"router": {"QUERY_NEWS", "TREND_ANALYSIS"}},
+    )
+    assert state["miner_result"].status == "ok"
+    assert state["selected_skill"] == "trend_analysis"
 
 
 def test_role_allowlist_override_denies_analyst() -> None:
