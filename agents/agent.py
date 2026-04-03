@@ -9,6 +9,7 @@ from __future__ import annotations
 import inspect
 import os
 import re
+from importlib.metadata import PackageNotFoundError, version
 from dataclasses import dataclass
 from typing import Any
 
@@ -236,21 +237,107 @@ def _build_react_prompt_kwargs() -> tuple[dict[str, str], str]:
     )
 
 
+def _get_model_provider() -> str:
+    """Normalize AGENT_MODEL_PROVIDER into supported provider keys."""
+    provider = os.getenv("AGENT_MODEL_PROVIDER", "gemini_api").strip().lower()
+    if provider in {"gemini", "gemini_api", "google_ai_studio", "developer_api"}:
+        return "gemini_api"
+    if provider in {"vertex", "vertex_ai", "gcp"}:
+        return "vertex"
+    raise ValueError(
+        "AGENT_MODEL_PROVIDER must be one of: "
+        "gemini_api (default), vertex."
+    )
+
+
+def _build_chat_model() -> Any:
+    """Create the chat model client from environment configuration."""
+    temperature = float(os.getenv("AGENT_TEMPERATURE", "0.1"))
+    provider = _get_model_provider()
+
+    if provider == "gemini_api":
+        api_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY is not set.")
+        return ChatGoogleGenerativeAI(
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-pro"),
+            google_api_key=api_key,
+            temperature=temperature,
+        )
+
+    project = os.getenv("VERTEX_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", "")).strip()
+    if not project:
+        raise ValueError(
+            "VERTEX_PROJECT is not set. "
+            "You can also use GOOGLE_CLOUD_PROJECT."
+        )
+
+    location = os.getenv("VERTEX_LOCATION", os.getenv("GOOGLE_CLOUD_LOCATION", "global")).strip()
+    model_name = os.getenv(
+        "VERTEX_MODEL",
+        os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
+    ).strip()
+
+    # Vertex Express Mode with API key:
+    # this path requires langchain-google-genai >= 4.x (unified google-genai SDK).
+    vertex_api_key = os.getenv("VERTEX_API_KEY", "").strip()
+    if vertex_api_key:
+        try:
+            raw_ver = version("langchain-google-genai")
+        except PackageNotFoundError:
+            raw_ver = "0.0.0"
+        major = int(raw_ver.split(".", maxsplit=1)[0] or "0")
+        if major < 4:
+            raise RuntimeError(
+                "VERTEX_API_KEY mode requires langchain-google-genai>=4.0.0 "
+                f"(current: {raw_ver}). "
+                "Either upgrade dependencies or use ADC/service-account auth."
+            )
+
+        # Keep Google GenAI environment variables aligned with Vertex backend.
+        os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")
+        os.environ.setdefault("GOOGLE_CLOUD_PROJECT", project)
+        os.environ.setdefault("GOOGLE_CLOUD_LOCATION", location)
+
+        return ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=temperature,
+            google_api_key=vertex_api_key,
+            vertexai=True,
+            project=project,
+            location=location,
+        )
+
+    credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if credentials_path and not os.path.exists(credentials_path):
+        raise ValueError(
+            "GOOGLE_APPLICATION_CREDENTIALS points to a missing file: "
+            f"{credentials_path}"
+        )
+
+    try:
+        from langchain_google_vertexai import ChatVertexAI
+    except ImportError as exc:
+        raise RuntimeError(
+            "Vertex provider requires 'langchain-google-vertexai'. "
+            "Install dependencies with: pip install -r agents/requirements.txt"
+        ) from exc
+
+    return ChatVertexAI(
+        model=model_name,
+        project=project,
+        location=location,
+        temperature=temperature,
+    )
+
+
 def _get_react_agent():
     """Lazily initialize the LangGraph ReAct agent."""
     global _react_agent
     if _react_agent is not None:
         return _react_agent
 
-    api_key = os.getenv("GEMINI_API_KEY", "")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is not set.")
-
-    model = ChatGoogleGenerativeAI(
-        model=os.getenv("GEMINI_MODEL", "gemini-2.5-pro"),
-        google_api_key=api_key,
-        temperature=float(os.getenv("AGENT_TEMPERATURE", "0.1")),
-    )
+    model = _build_chat_model()
 
     prompt_kwargs, prompt_key = _build_react_prompt_kwargs()
     try:
