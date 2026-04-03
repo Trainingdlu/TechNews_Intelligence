@@ -143,6 +143,22 @@ def test_build_workflow_graph_compiles_and_runs() -> None:
     assert "Retrieval summary:" in final_state["final_text"]
 
 
+def test_build_workflow_graph_reuses_compiled_instance() -> None:
+    registry = _registry_with_query_and_trend()
+    hooks = ToolHookRunner()
+    app_a = build_workflow_graph(
+        registry=registry,
+        hook_runner=hooks,
+        role_allowlists={"router": {"query_news", "trend_analysis"}},
+    )
+    app_b = build_workflow_graph(
+        registry=registry,
+        hook_runner=hooks,
+        role_allowlists={"router": {"query_news", "trend_analysis"}},
+    )
+    assert app_a is app_b
+
+
 def test_run_workflow_honors_post_hook_deny() -> None:
     def _deny_post(_tool: str, _payload: dict, _output: SkillEnvelope) -> HookDecision:
         return HookDecision(action="deny", reason="audit_failed", diagnostics={"rule": "post_guard"})
@@ -229,9 +245,9 @@ def test_role_allowlist_override_denies_analyst() -> None:
         registry=_registry_with_query_and_trend(),
         role_allowlists={"analyst": {"compare_entities"}},
     )
-    assert state["miner_result"].status == "error"
-    assert state["miner_result"].diagnostics.get("role") == "analyst"
+    assert state["miner_result"].status == "ok"
     assert "role_policy_denied" in state["final_text"]
+    assert state["analyst_denied"] is True
     assert state["evidence_urls"] == []
 
 
