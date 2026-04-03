@@ -233,3 +233,14 @@ def test_role_allowlist_override_denies_analyst() -> None:
     assert state["miner_result"].diagnostics.get("role") == "analyst"
     assert "role_policy_denied" in state["final_text"]
     assert state["evidence_urls"] == []
+
+
+def test_role_allowlist_env_override_denies_router(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_ROLE_ALLOWLIST_ROUTER", "query_news")
+    state = run_workflow(
+        user_message="trend of OpenAI in last 7 days",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+    )
+    assert state["miner_result"].status == "error"
+    assert state["miner_result"].diagnostics.get("role") == "router"
