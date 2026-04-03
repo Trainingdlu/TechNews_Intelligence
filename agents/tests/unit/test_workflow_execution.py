@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from agents.core.skill_contracts import SkillEnvelope
 from agents.core.skill_registry import SkillRegistry
 from agents.core.tool_hooks import HookDecision, ToolHookRunner
-from agents.graph.workflow import _extract_trend_topic, run_workflow
+from agents.graph.workflow import _extract_trend_topic, build_workflow_graph, run_workflow
 
 
 class _QueryInput(BaseModel):
@@ -116,6 +116,25 @@ def test_run_workflow_trend_path() -> None:
 def test_extract_trend_topic_removes_intent_and_time_words() -> None:
     topic = _extract_trend_topic("trend of OpenAI in last 7 days")
     assert topic.lower() == "openai"
+
+
+def test_run_workflow_chinese_trend_path() -> None:
+    state = run_workflow(
+        user_message="过去7天OpenAI趋势",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+    )
+    assert state["intent"] == "trend_analysis"
+    assert state["selected_skill"] == "trend_analysis"
+    assert state["miner_payload"]["window"] == 7
+    assert state["miner_payload"]["topic"].lower() == "openai"
+
+
+def test_build_workflow_graph_compiles_and_runs() -> None:
+    app = build_workflow_graph(registry=_registry_with_query_and_trend())
+    final_state = app.invoke({"user_message": "OpenAI latest updates", "history": []})
+    assert final_state["selected_skill"] == "query_news"
+    assert "Retrieval summary:" in final_state["final_text"]
 
 
 def test_run_workflow_honors_post_hook_deny() -> None:
