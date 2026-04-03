@@ -292,6 +292,17 @@ def _normalize_role_allowlists(
     return normalized
 
 
+def _load_role_allowlists_from_env() -> dict[str, set[str]]:
+    raw_map: dict[str, list[str]] = {}
+    for role in ("router", "miner", "analyst", "formatter"):
+        raw = str(os.getenv(f"AGENT_ROLE_ALLOWLIST_{role.upper()}", "")).strip()
+        if not raw:
+            continue
+        parts = [segment.strip() for segment in re.split(r"[,\s]+", raw) if segment.strip()]
+        raw_map[role] = parts
+    return _normalize_role_allowlists(raw_map)
+
+
 def _resolve_role_permission(
     role: str,
     skill_name: str,
@@ -611,12 +622,18 @@ def run_workflow(
         "node_audit": [],
     }
 
+    effective_allowlists = (
+        _normalize_role_allowlists(role_allowlists)
+        if role_allowlists is not None
+        else _load_role_allowlists_from_env()
+    )
+
     app = build_workflow_graph(
         registry=registry,
         hook_runner=hook_runner,
         miner_transport=miner_transport,
         mcp_client=mcp_client,
-        role_allowlists=role_allowlists,
+        role_allowlists=effective_allowlists,
     )
     final_state = app.invoke(initial_state)
     if not isinstance(final_state, dict):
