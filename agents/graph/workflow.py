@@ -447,6 +447,7 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
     existing = state.get("miner_result")
     if isinstance(existing, SkillEnvelope) and existing.status == "error":
         return {
+            "miner_transport": runtime.miner_transport,
             "miner_result": existing,
             "node_audit": _append_node_audit(
                 state,
@@ -467,6 +468,7 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
     )
     if not allowed:
         return {
+            "miner_transport": runtime.miner_transport,
             "miner_result": build_error_envelope(
                 tool=selected_skill,
                 request=normalized_payload,
@@ -490,6 +492,7 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
         if pre.diagnostics:
             deny_details["diagnostics"] = pre.diagnostics
         return {
+            "miner_transport": runtime.miner_transport,
             "miner_result": build_error_envelope(
                 tool=selected_skill,
                 request=deny_payload,
@@ -518,6 +521,7 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
     post = runtime.hooks.post_tool_use(selected_skill, effective_payload, miner_result)
     if post.action == "deny":
         return {
+            "miner_transport": runtime.miner_transport,
             "miner_payload": effective_payload,
             "miner_result": build_error_envelope(
                 tool=selected_skill,
@@ -539,6 +543,7 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
         miner_result.diagnostics["post_hook_warning"] = post.reason
 
     return {
+        "miner_transport": runtime.miner_transport,
         "miner_payload": effective_payload,
         "miner_result": miner_result,
         "node_audit": _append_node_audit(
@@ -666,12 +671,17 @@ def build_workflow_graph(
 ):
     """Build and compile the LangGraph workflow for v2 orchestration."""
 
+    effective_allowlists = (
+        _normalize_role_allowlists(role_allowlists)
+        if role_allowlists is not None
+        else _load_role_allowlists_from_env()
+    )
     runtime = _WorkflowRuntime(
         registry=registry or build_default_registry(),
         hooks=hook_runner or build_default_hook_runner(),
         miner_transport=_resolve_miner_transport(miner_transport),
         mcp_client=mcp_client,
-        role_allowlists=_normalize_role_allowlists(role_allowlists),
+        role_allowlists=effective_allowlists,
     )
     # Avoid retaining non-shareable client instances in global cache.
     use_cache = runtime.mcp_client is None
