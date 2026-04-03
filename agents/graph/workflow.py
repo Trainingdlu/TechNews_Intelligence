@@ -50,6 +50,7 @@ class WorkflowState(TypedDict, total=False):
     final_text: str
     evidence_urls: list[str]
     node_audit: list[dict[str, Any]]
+    analyst_denied: bool
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,9 @@ class _WorkflowRuntime:
 
 
 _DEFAULT_REGISTRY: SkillRegistry | None = None
+_DEFAULT_HOOK_RUNNER: ToolHookRunner | None = None
+_GRAPH_CACHE: dict[tuple[Any, ...], Any] = {}
+
 MCP_SKILL_MAP: dict[str, str] = {
     "query_news": "mcp__newsdb__query_news_vector",
     "trend_analysis": "mcp__newsdb__trend_analysis",
@@ -92,13 +96,23 @@ def build_default_registry() -> SkillRegistry:
     return registry
 
 
+def build_default_hook_runner() -> ToolHookRunner:
+    """Build the default shared hook runner to maximize graph reuse."""
+
+    global _DEFAULT_HOOK_RUNNER
+    if _DEFAULT_HOOK_RUNNER is not None:
+        return _DEFAULT_HOOK_RUNNER
+    _DEFAULT_HOOK_RUNNER = ToolHookRunner()
+    return _DEFAULT_HOOK_RUNNER
+
+
 def _contains_cjk(text: str) -> bool:
-    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+    return bool(re.search(r"[一-龥]", text or ""))
 
 
 def _extract_days(user_message: str, default: int = 21, maximum: int = 365) -> int:
     text = user_message or ""
-    m = re.search(r"(\d{1,3})\s*(?:day|days|\u5929|\u65e5)", text, flags=re.IGNORECASE)
+    m = re.search(r"(\d{1,3})\s*(?:day|days|天|日)", text, flags=re.IGNORECASE)
     if not m:
         return default
     days = int(m.group(1))
@@ -110,9 +124,9 @@ def _route_intent(user_message: str) -> tuple[str, str]:
     trend_markers = [
         "trend",
         "momentum",
-        "\u53d8\u5316",
-        "\u8d8b\u52bf",
-        "\u8fc7\u53bb",
+        "变化",
+        "趋势",
+        "过去",
         "recent",
         "last",
     ]
@@ -150,17 +164,17 @@ def _extract_trend_topic(user_message: str) -> str:
         " ",
         text,
     )
-    text = re.sub(r"\d{1,3}\s*(?:\u5929|\u65e5|\u5468|\u4e2a\u6708|\u6708)", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\d{1,3}\s*(?:天|日|周|个月|月)", " ", text, flags=re.IGNORECASE)
 
     text = re.sub(
         r"(?i)\b(?:trend|momentum|analysis|analyze|analyse|compare|changes?)\b",
         " ",
         text,
     )
-    text = re.sub(r"(\u8d8b\u52bf|\u53d8\u5316|\u5206\u6790|\u5bf9\u6bd4|\u6700\u8fd1|\u8fc7\u53bb|\u8fd1)", " ", text)
+    text = re.sub(r"(趋势|变化|分析|对比|最近|过去|近)", " ", text)
     text = re.sub(r"(?i)\b(?:of|for|about|on|in|the|please)\b", " ", text)
 
-    text = re.sub(r"[\s,\u3001\uff0c\u3002:\uff1a;\uff1b!?\uff01\uff1f]+", " ", text).strip()
+    text = re.sub(r"[\s,、，。:：;；!?！？]+", " ", text).strip()
     return text or raw
 
 
@@ -213,7 +227,7 @@ def _analyst_summarize(envelope: SkillEnvelope, user_message: str) -> dict[str, 
 
     if envelope.status == "empty":
         if _contains_cjk(user_message):
-            final = "\u62b1\u6b49\uff0c\u5f53\u524d\u65f6\u95f4\u7a97\u5185\u672a\u68c0\u7d22\u5230\u5339\u914d\u6570\u636e\u3002"
+            final = "抱歉，当前时间窗内未检索到匹配数据。"
         else:
             final = "No matching records were found in the current time window."
         return {"facts": [], "inference": [], "final": final}
@@ -232,9 +246,9 @@ def _analyst_summarize(envelope: SkillEnvelope, user_message: str) -> dict[str, 
 
         if _contains_cjk(user_message):
             final = (
-                "\n".join(["\u68c0\u7d22\u6458\u8981\uff1a", *facts])
+                "\n".join(["检索摘要：", *facts])
                 if facts
-                else "\u68c0\u7d22\u5b8c\u6210\uff0c\u4f46\u65e0\u53ef\u5c55\u793a\u8bb0\u5f55\u3002"
+                else "检索完成，但无可展示记录。"
             )
         else:
             final = "\n".join(["Retrieval summary:", *facts]) if facts else "Retrieval completed with no displayable records."
@@ -250,8 +264,8 @@ def _analyst_summarize(envelope: SkillEnvelope, user_message: str) -> dict[str, 
 
         if _contains_cjk(user_message):
             final = (
-                f"\u8d8b\u52bf\u6458\u8981\uff1atopic={topic}\uff0crecent={recent_cnt}\uff0cprevious={prev_cnt}\uff0c"
-                f"delta={count_delta}\u3002"
+                f"趋势摘要：topic={topic}，recent={recent_cnt}，previous={prev_cnt}，"
+                f"delta={count_delta}。"
             )
         else:
             final = (
@@ -301,6 +315,23 @@ def _load_role_allowlists_from_env() -> dict[str, set[str]]:
         parts = [segment.strip() for segment in re.split(r"[,\s]+", raw) if segment.strip()]
         raw_map[role] = parts
     return _normalize_role_allowlists(raw_map)
+
+
+def _role_allowlists_cache_key(role_allowlists: dict[str, set[str]]) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    rows: list[tuple[str, tuple[str, ...]]] = []
+    for role, skills in sorted(role_allowlists.items(), key=lambda item: item[0]):
+        rows.append((role, tuple(sorted(skills))))
+    return tuple(rows)
+
+
+def _workflow_graph_cache_key(runtime: _WorkflowRuntime) -> tuple[Any, ...]:
+    return (
+        id(runtime.registry),
+        id(runtime.hooks),
+        runtime.miner_transport,
+        id(runtime.mcp_client),
+        _role_allowlists_cache_key(runtime.role_allowlists),
+    )
 
 
 def _resolve_role_permission(
@@ -488,6 +519,14 @@ def _analyst_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowSt
         role_allowlists=runtime.role_allowlists,
     )
     if not allowed:
+        miner_result = state.get("miner_result")
+        if not isinstance(miner_result, SkillEnvelope):
+            miner_result = build_error_envelope(
+                tool=str(state.get("selected_skill") or "unknown"),
+                request=state.get("miner_payload") if isinstance(state.get("miner_payload"), dict) else {},
+                error="missing_miner_result",
+            )
+
         denied = build_error_envelope(
             tool="synthesize_findings",
             request={"selected_skill": str(state.get("selected_skill") or "")},
@@ -496,8 +535,9 @@ def _analyst_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowSt
         )
         analyst = _analyst_summarize(denied, str(state.get("user_message") or ""))
         return {
-            "miner_result": denied,
+            "miner_result": miner_result,
             "analyst_result": analyst,
+            "analyst_denied": True,
             "node_audit": _append_node_audit(
                 state,
                 node="analyst",
@@ -518,6 +558,7 @@ def _analyst_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowSt
     return {
         "miner_result": miner_result,
         "analyst_result": analyst,
+        "analyst_denied": False,
         "node_audit": _append_node_audit(
             state,
             node="analyst",
@@ -558,7 +599,8 @@ def _formatter_node(state: WorkflowState, runtime: _WorkflowRuntime) -> Workflow
 
     miner_result = state.get("miner_result")
     evidence_urls: list[str] = []
-    if isinstance(miner_result, SkillEnvelope) and miner_result.status != "error":
+    analyst_denied = bool(state.get("analyst_denied"))
+    if isinstance(miner_result, SkillEnvelope) and miner_result.status != "error" and not analyst_denied:
         evidence_urls = _extract_urls(miner_result)
 
     return {
@@ -584,11 +626,15 @@ def build_workflow_graph(
 
     runtime = _WorkflowRuntime(
         registry=registry or build_default_registry(),
-        hooks=hook_runner or ToolHookRunner(),
+        hooks=hook_runner or build_default_hook_runner(),
         miner_transport=_resolve_miner_transport(miner_transport),
         mcp_client=mcp_client,
         role_allowlists=_normalize_role_allowlists(role_allowlists),
     )
+    cache_key = _workflow_graph_cache_key(runtime)
+    cached = _GRAPH_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
 
     graph = StateGraph(WorkflowState)
     graph.add_node("router", lambda state: _router_node(state, runtime))
@@ -600,7 +646,9 @@ def build_workflow_graph(
     graph.add_edge("miner", "analyst")
     graph.add_edge("analyst", "formatter")
     graph.add_edge("formatter", END)
-    return graph.compile()
+    compiled = graph.compile()
+    _GRAPH_CACHE[cache_key] = compiled
+    return compiled
 
 
 def run_workflow(
@@ -620,6 +668,7 @@ def run_workflow(
         "miner_transport": _resolve_miner_transport(miner_transport),
         "role_prompts": _build_role_prompts(),
         "node_audit": [],
+        "analyst_denied": False,
     }
 
     effective_allowlists = (
