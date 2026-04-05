@@ -101,6 +101,9 @@ def test_run_workflow_fact_retrieval_path() -> None:
     assert state["selected_skill"] == "query_news"
     assert "Retrieval summary:" in state["final_text"]
     assert state["evidence_urls"] == ["https://example.com/query"]
+    assert isinstance(state["router_llm_output"], dict)
+    assert state["router_confidence"] in {"high", "medium", "low"}
+    assert state["analyst_confidence"] in {"high", "medium", "low"}
     assert [event["node"] for event in state["node_audit"]] == [
         "router",
         "miner",
@@ -425,3 +428,33 @@ def test_build_workflow_graph_does_not_cache_custom_mcp_client() -> None:
         mcp_client=client,
     )
     assert app_a is not app_b
+
+
+def test_run_workflow_router_and_analyst_llm_path(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_WORKFLOW_V2_LLM", "1")
+
+    def _fake_invoke(*, system_instruction: str, user_prompt: str, model_name: str, temperature: float = 0.1) -> str:
+        if "Classify user request" in user_prompt:
+            return (
+                '{"intent":"fact_retrieval","skill":"query_news","params":{"query":"OpenAI","days":7,'
+                '"source":"all","sort":"time_desc","limit":5},"confidence":"high"}'
+            )
+        return (
+            '{"facts":["OpenAI coverage remains high"],"inference":["Momentum remains positive"],'
+            '"final":"LLM analyst summary.","confidence":"high"}'
+        )
+
+    with patch("agents.graph.workflow._invoke_vertex_text", side_effect=_fake_invoke):
+        state = run_workflow(
+            user_message="OpenAI latest updates",
+            history=[],
+            registry=_registry_with_query_and_trend(),
+            miner_transport="local",
+        )
+
+    assert state["selected_skill"] == "query_news"
+    assert state["router_llm_output"].get("used") is True
+    assert state["router_confidence"] == "high"
+    assert state["analyst_confidence"] == "high"
+    assert state["analyst_result"]["final"] == "LLM analyst summary."
+    assert state["analyst_llm_output"]

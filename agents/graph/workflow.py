@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
@@ -99,6 +100,8 @@ _DEFAULT_HOOK_RUNNER: ToolHookRunner | None = None
 _GRAPH_CACHE_MAX_SIZE = 16
 _GRAPH_CACHE: OrderedDict[tuple[Any, ...], Any] = OrderedDict()
 _GRAPH_CACHE_LOCK = threading.RLock()
+_VERTEX_MODEL_CACHE: dict[tuple[str, str, str, float], Any] = {}
+_VERTEX_MODEL_CACHE_LOCK = threading.RLock()
 
 MCP_SKILL_MAP: dict[str, str] = {
     "query_news": "mcp__newsdb__query_news_vector",
@@ -182,6 +185,150 @@ def build_default_hook_runner() -> ToolHookRunner:
     return _DEFAULT_HOOK_RUNNER
 
 
+def _workflow_llm_enabled() -> bool:
+    raw = str(os.getenv("AGENT_WORKFLOW_V2_LLM", "auto")).strip().lower()
+    if raw in {"0", "false", "off", "no"}:
+        return False
+    if raw in {"1", "true", "on", "yes"}:
+        return True
+    # auto: enable only when Vertex project context exists.
+    return bool(
+        str(os.getenv("VERTEX_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", ""))).strip()
+    )
+
+
+def _coerce_llm_content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                chunks.append(part)
+                continue
+            if isinstance(part, dict):
+                text = part.get("text")
+                if text:
+                    chunks.append(str(text))
+        return "\n".join(chunks).strip()
+    if content is None:
+        return ""
+    return str(content).strip()
+
+
+def _build_vertex_chat_model_for_workflow(
+    *,
+    model_name: str,
+    temperature: float,
+) -> Any:
+    project = os.getenv("VERTEX_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", "")).strip()
+    if not project:
+        raise ValueError(
+            "VERTEX_PROJECT is not set. You can also use GOOGLE_CLOUD_PROJECT."
+        )
+
+    location = os.getenv(
+        "VERTEX_LOCATION",
+        os.getenv("GOOGLE_CLOUD_LOCATION", "global"),
+    ).strip()
+    model = str(model_name).strip()
+    if not model:
+        raise ValueError("VERTEX model name is empty.")
+
+    credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if credentials_path and not os.path.exists(credentials_path):
+        raise ValueError(
+            "GOOGLE_APPLICATION_CREDENTIALS points to a missing file: "
+            f"{credentials_path}"
+        )
+
+    cache_key = (project, location, model, float(temperature))
+    with _VERTEX_MODEL_CACHE_LOCK:
+        cached = _VERTEX_MODEL_CACHE.get(cache_key)
+        if cached is not None:
+            return cached
+
+    try:
+        from langchain_google_vertexai import ChatVertexAI
+    except ImportError as exc:
+        raise RuntimeError(
+            "Vertex provider requires 'langchain-google-vertexai'. "
+            "Install dependencies with: pip install -r agents/requirements.txt"
+        ) from exc
+
+    built = ChatVertexAI(
+        model=model,
+        project=project,
+        location=location,
+        temperature=float(temperature),
+    )
+    with _VERTEX_MODEL_CACHE_LOCK:
+        _VERTEX_MODEL_CACHE[cache_key] = built
+    return built
+
+
+def _invoke_vertex_text(
+    *,
+    system_instruction: str,
+    user_prompt: str,
+    model_name: str,
+    temperature: float = 0.1,
+) -> str:
+    model = _build_vertex_chat_model_for_workflow(
+        model_name=model_name,
+        temperature=temperature,
+    )
+    merged_prompt = (
+        f"{system_instruction.strip()}\n\n"
+        f"# Task\n{user_prompt.strip()}\n"
+    )
+    response = model.invoke(merged_prompt)
+    content = getattr(response, "content", response)
+    return _coerce_llm_content_to_text(content)
+
+
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    raw = (text or "").strip()
+    if not raw:
+        return None
+
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+        raw = re.sub(r"\s*```$", "", raw)
+        raw = raw.strip()
+
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    candidate = raw[start : end + 1]
+    try:
+        parsed = json.loads(candidate)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _normalize_confidence(value: Any, default: str = "medium") -> str:
+    text = str(value or "").strip().lower()
+    if text in {"high", "medium", "low"}:
+        return text
+    if text in {"h", "strong"}:
+        return "high"
+    if text in {"m", "mid"}:
+        return "medium"
+    if text in {"l", "weak"}:
+        return "low"
+    return default
+
+
 def _contains_cjk(text: str) -> bool:
     return bool(
         re.search(
@@ -232,7 +379,7 @@ def _build_payload(intent: str, user_message: str) -> dict[str, Any]:
     }
 
 
-def _extract_trend_topic(user_message: str) -> str:
+def _extract_trend_topic_legacy(user_message: str) -> str:
     """Extract likely topic/entity phrase from trend-style user prompts."""
 
     raw = (user_message or "").strip()
@@ -257,6 +404,283 @@ def _extract_trend_topic(user_message: str) -> str:
 
     text = re.sub(r"[\s,、，。:：;；!?！？]+", " ", text).strip()
     return text or raw
+
+
+def _extract_days_v2(user_message: str, default: int = 21, maximum: int = 365) -> int:
+    text = user_message or ""
+    match = re.search(
+        r"(\d{1,3})\s*(?:day|days|week|weeks|month|months|\u5929|\u65e5|\u5468|\u4e2a\u6708)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return default
+    days = int(match.group(1))
+    unit = match.group(0).lower()
+    if "week" in unit or "\u5468" in unit:
+        days *= 7
+    elif "month" in unit or "\u6708" in unit:
+        days *= 30
+    return max(1, min(maximum, days))
+
+
+def _extract_trend_topic(user_message: str) -> str:
+    """Extract likely topic/entity phrase from trend-style prompts."""
+
+    raw = (user_message or "").strip()
+    if not raw:
+        return raw
+
+    text = raw
+    text = re.sub(
+        r"(?i)\b(?:in\s+)?(?:the\s+)?(?:last|past|recent)\s+\d{1,3}\s*(?:day|days|week|weeks|month|months)\b",
+        " ",
+        text,
+    )
+    text = re.sub(
+        r"\d{1,3}\s*(?:\u5929|\u65e5|\u5468|\u4e2a\u6708|\u6708)",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?i)\b(?:trend|momentum|analysis|analyze|analyse|compare|changes?)\b",
+        " ",
+        text,
+    )
+    text = re.sub(
+        r"(?:\u8d8b\u52bf|\u53d8\u5316|\u5206\u6790|\u5bf9\u6bd4|\u6700\u8fd1|\u8fc7\u53bb)",
+        " ",
+        text,
+    )
+    text = re.sub(r"(?i)\b(?:of|for|about|on|in|the|please)\b", " ", text)
+    text = re.sub(r"[\s,\u3001\uff0c\u3002\uff1a\uff1b\uff01\uff1f]+", " ", text).strip()
+    return text or raw
+
+
+def _extract_compare_topics(user_message: str) -> tuple[str, str] | None:
+    text = (user_message or "").strip()
+    if not text:
+        return None
+
+    patterns = [
+        r"(?i)\b(.+?)\s+(?:vs\.?|versus|compare(?:\s+with)?|against)\s+(.+?)\s*$",
+        r"(.+?)\s*(?:\u5bf9\u6bd4|\u5bf9\u7167|\u4e0e|\u548c|VS|vs)\s*(.+?)\s*$",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        left = re.sub(r"^[\W_]+|[\W_]+$", "", str(match.group(1)).strip())
+        right = re.sub(r"^[\W_]+|[\W_]+$", "", str(match.group(2)).strip())
+        if left and right and left.lower() != right.lower():
+            return left, right
+    return None
+
+
+def _intent_from_skill(skill_name: str) -> str:
+    skill = str(skill_name or "").strip().lower()
+    mapping = {
+        "query_news": "fact_retrieval",
+        "search_news": "semantic_search",
+        "trend_analysis": "trend_analysis",
+        "compare_sources": "source_comparison",
+        "compare_topics": "comparative_analysis",
+        "build_timeline": "timeline_analysis",
+        "analyze_landscape": "landscape_analysis",
+        "fulltext_batch": "document_reading",
+    }
+    return mapping.get(skill, "fact_retrieval")
+
+
+def _route_intent_v2(user_message: str) -> tuple[str, str]:
+    text = (user_message or "").lower()
+    if re.search(r"(?i)\b(vs|versus|compare)\b", text):
+        return "comparative_analysis", "compare_topics"
+    if any(token in text for token in ["timeline", "chronology", "milestone", "\u65f6\u95f4\u7ebf", "\u8109\u7edc"]):
+        return "timeline_analysis", "build_timeline"
+    if any(token in text for token in ["landscape", "ecosystem", "key players", "\u751f\u6001", "\u683c\u5c40"]):
+        return "landscape_analysis", "analyze_landscape"
+    if any(token in text for token in ["source", "hackernews", "techcrunch", "\u6765\u6e90"]):
+        return "source_comparison", "compare_sources"
+    if any(token in text for token in ["full text", "read article", "full article", "\u5168\u6587", "\u539f\u6587"]):
+        return "document_reading", "fulltext_batch"
+    if any(token in text for token in ["semantic", "similar", "related", "\u76f8\u5173", "\u76f8\u4f3c"]):
+        return "semantic_search", "search_news"
+    if any(token in text for token in ["trend", "momentum", "\u8d8b\u52bf", "\u53d8\u5316", "recent", "last"]):
+        return "trend_analysis", "trend_analysis"
+    return "fact_retrieval", "query_news"
+
+
+def _build_payload_for_skill(
+    skill_name: str,
+    user_message: str,
+    intent: str | None = None,
+) -> dict[str, Any]:
+    skill = str(skill_name or "").strip().lower()
+    text = (user_message or "").strip()
+    topic = _extract_trend_topic(text) or text
+
+    if skill == "query_news":
+        return {
+            "query": text,
+            "days": _extract_days_v2(text, default=21, maximum=365),
+            "source": "all",
+            "sort": "time_desc",
+            "limit": 8,
+        }
+    if skill == "search_news":
+        return {"query": text or topic or "AI", "days": _extract_days_v2(text, default=21, maximum=365)}
+    if skill == "trend_analysis":
+        return {
+            "topic": topic or text or "AI",
+            "window": max(3, min(60, _extract_days_v2(text, default=7, maximum=60))),
+        }
+    if skill == "compare_sources":
+        return {
+            "topic": topic or text or "AI",
+            "days": max(1, min(90, _extract_days_v2(text, default=14, maximum=90))),
+        }
+    if skill == "compare_topics":
+        pair = _extract_compare_topics(text)
+        if pair:
+            topic_a, topic_b = pair
+        else:
+            inferred = topic or text or "OpenAI"
+            topic_a = inferred
+            topic_b = "Anthropic" if inferred.lower() != "anthropic" else "OpenAI"
+        return {
+            "topic_a": topic_a,
+            "topic_b": topic_b,
+            "days": max(1, min(90, _extract_days_v2(text, default=14, maximum=90))),
+        }
+    if skill == "build_timeline":
+        return {
+            "topic": topic or text or "AI",
+            "days": max(1, min(180, _extract_days_v2(text, default=30, maximum=180))),
+            "limit": 12,
+        }
+    if skill == "analyze_landscape":
+        return {
+            "topic": topic or text or "AI",
+            "days": max(7, min(180, _extract_days_v2(text, default=30, maximum=180))),
+            "entities": "",
+            "limit_per_entity": 3,
+        }
+    if skill == "fulltext_batch":
+        return {"urls": text or topic or "OpenAI", "max_chars_per_article": 4000}
+    # Defensive fallback to baseline retrieval.
+    return {
+        "query": text,
+        "days": _extract_days_v2(text, default=21, maximum=365),
+        "source": "all",
+        "sort": "time_desc",
+        "limit": 8,
+    }
+
+
+def _build_payload_v2(intent: str, user_message: str) -> dict[str, Any]:
+    if intent == "trend_analysis":
+        return _build_payload_for_skill("trend_analysis", user_message, intent)
+    return _build_payload_for_skill("query_news", user_message, intent)
+
+
+def _coerce_payload_with_registry(
+    registry: SkillRegistry,
+    skill_name: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        spec = registry.get(skill_name)
+    except KeyError:
+        return payload
+    try:
+        validated = spec.input_model.model_validate(payload or {})
+        return validated.model_dump(mode="python")
+    except Exception:
+        return payload
+
+
+def _plan_route_with_llm(
+    user_message: str,
+    runtime: _WorkflowRuntime,
+    role_prompts: dict[str, str],
+) -> tuple[str, str, dict[str, Any], dict[str, Any], str]:
+    heuristic_intent, heuristic_skill = _route_intent_v2(user_message)
+    heuristic_payload = _coerce_payload_with_registry(
+        runtime.registry,
+        heuristic_skill,
+        _build_payload_for_skill(heuristic_skill, user_message, heuristic_intent),
+    )
+
+    llm_enabled = _workflow_llm_enabled()
+    fallback_meta: dict[str, Any] = {
+        "enabled": llm_enabled,
+        "used": False,
+        "fallback_skill": heuristic_skill,
+        "fallback_intent": heuristic_intent,
+    }
+    if not llm_enabled:
+        fallback_meta["reason"] = "llm_disabled_or_unconfigured"
+        return heuristic_intent, heuristic_skill, heuristic_payload, fallback_meta, "medium"
+
+    allowed_skills = runtime.registry.list_skills()
+    router_system_prompt = role_prompts.get("router") or get_role_system_instruction("router")
+    router_user_prompt = (
+        "Classify user request and return ONLY valid JSON.\n"
+        f"User query: {user_message}\n"
+        f"Allowed skills: {', '.join(allowed_skills)}\n"
+        "Schema: "
+        '{"intent":"<string>","skill":"<one_allowed_skill>","params":{...},"confidence":"high|medium|low","reason":"<short>"}'
+    )
+    model_name = os.getenv(
+        "AGENT_WORKFLOW_ROUTER_MODEL",
+        os.getenv("VERTEX_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")),
+    ).strip()
+    temperature = float(os.getenv("AGENT_WORKFLOW_ROUTER_TEMPERATURE", "0.0"))
+
+    try:
+        raw = _invoke_vertex_text(
+            system_instruction=router_system_prompt,
+            user_prompt=router_user_prompt,
+            model_name=model_name,
+            temperature=temperature,
+        )
+    except Exception as exc:  # noqa: BLE001
+        fallback_meta["reason"] = "router_llm_call_failed"
+        fallback_meta["exception_type"] = type(exc).__name__
+        fallback_meta["exception"] = str(exc)
+        return heuristic_intent, heuristic_skill, heuristic_payload, fallback_meta, "medium"
+
+    parsed = _extract_json_object(raw)
+    if not parsed:
+        fallback_meta["reason"] = "router_llm_parse_failed"
+        fallback_meta["raw_output"] = raw
+        return heuristic_intent, heuristic_skill, heuristic_payload, fallback_meta, "medium"
+
+    candidate_skill = str(parsed.get("skill") or "").strip().lower()
+    if candidate_skill not in allowed_skills:
+        fallback_meta["reason"] = "router_llm_unknown_skill"
+        fallback_meta["raw_output"] = raw
+        fallback_meta["parsed_skill"] = candidate_skill
+        return heuristic_intent, heuristic_skill, heuristic_payload, fallback_meta, "medium"
+
+    llm_params = parsed.get("params")
+    params = llm_params if isinstance(llm_params, dict) else {}
+    merged_payload = _build_payload_for_skill(candidate_skill, user_message, _intent_from_skill(candidate_skill))
+    merged_payload.update(params)
+    merged_payload = _coerce_payload_with_registry(runtime.registry, candidate_skill, merged_payload)
+
+    candidate_intent = str(parsed.get("intent") or "").strip().lower() or _intent_from_skill(candidate_skill)
+    confidence = _normalize_confidence(parsed.get("confidence"), default="medium")
+    router_meta = {
+        "enabled": True,
+        "used": True,
+        "raw_output": raw,
+        "parsed": parsed,
+        "reason": str(parsed.get("reason") or "").strip(),
+    }
+    return candidate_intent, candidate_skill, merged_payload, router_meta, confidence
 
 
 def _extract_urls(envelope: SkillEnvelope) -> list[str]:
@@ -342,7 +766,7 @@ def _execute_miner_skill(
     return result
 
 
-def _analyst_summarize(envelope: SkillEnvelope, user_message: str) -> dict[str, Any]:
+def _analyst_summarize_v2(envelope: SkillEnvelope, user_message: str) -> dict[str, Any]:
     if envelope.status == "error":
         return {
             "facts": [],
@@ -400,6 +824,156 @@ def _analyst_summarize(envelope: SkillEnvelope, user_message: str) -> dict[str, 
         return {"facts": [final], "inference": [], "final": final}
 
     return {"facts": [], "inference": [], "final": "No analyst formatter for this skill."}
+
+
+def _envelope_for_llm(envelope: SkillEnvelope) -> dict[str, Any]:
+    data: Any = envelope.data
+    if isinstance(data, dict):
+        compact_data = dict(data)
+        records = compact_data.get("records")
+        if isinstance(records, list):
+            compact_data["records"] = records[:8]
+    elif isinstance(data, list):
+        compact_data = data[:8]
+    else:
+        compact_data = data
+
+    evidence_rows: list[dict[str, Any]] = []
+    for item in list(envelope.evidence or [])[:12]:
+        evidence_rows.append(
+            {
+                "url": str(item.url or "").strip(),
+                "title": str(item.title or "").strip(),
+                "source": str(item.source or "").strip(),
+                "score": item.score,
+                "created_at": item.created_at,
+            }
+        )
+
+    return {
+        "tool": envelope.tool,
+        "status": envelope.status,
+        "request": envelope.request,
+        "data": compact_data,
+        "diagnostics": envelope.diagnostics,
+        "error": envelope.error,
+        "evidence": evidence_rows,
+    }
+
+
+def _heuristic_analyst_summarize(envelope: SkillEnvelope, user_message: str) -> dict[str, Any]:
+    if envelope.status == "error":
+        return {
+            "facts": [],
+            "inference": [],
+            "final": f"Skill execution failed: {envelope.error or 'unknown_error'}",
+            "confidence": "low",
+        }
+
+    if envelope.status == "empty":
+        if _contains_cjk(user_message):
+            final = "\u62b1\u6b49\uff0c\u5f53\u524d\u65f6\u95f4\u7a97\u53e3\u5185\u672a\u68c0\u7d22\u5230\u5339\u914d\u6570\u636e\u3002"
+        else:
+            final = "No matching records were found in the current time window."
+        return {"facts": [], "inference": [], "final": final, "confidence": "low"}
+
+    if envelope.tool == "query_news":
+        records = []
+        if isinstance(envelope.data, dict):
+            records = list(envelope.data.get("records", []))
+        facts: list[str] = []
+        for idx, row in enumerate(records[:3], 1):
+            title = row.get("title_cn") or row.get("title") or "(untitled)"
+            source = row.get("source") or "unknown"
+            points = row.get("points", 0)
+            facts.append(f"{idx}. [{source}] {title} (points={points})")
+        final = "\n".join(["Retrieval summary:", *facts]) if facts else "Retrieval completed with no displayable records."
+        return {"facts": facts, "inference": [], "final": final, "confidence": "medium"}
+
+    if envelope.tool == "trend_analysis":
+        summary = envelope.data if isinstance(envelope.data, dict) else {}
+        topic = str(summary.get("topic", ""))
+        recent_cnt = int(summary.get("recent_count", 0))
+        prev_cnt = int(summary.get("previous_count", 0))
+        count_delta = str(summary.get("count_delta", ""))
+        final = (
+            f"Trend summary: topic={topic}, recent={recent_cnt}, previous={prev_cnt}, "
+            f"delta={count_delta}."
+        )
+        return {"facts": [final], "inference": [], "final": final, "confidence": "medium"}
+
+    if _contains_cjk(user_message):
+        final_generic = "\u5206\u6790\u5df2\u5b8c\u6210\uff0c\u8bf7\u7ed3\u5408\u8bc1\u636e\u94fe\u63a5\u67e5\u770b\u8be6\u7ec6\u6570\u636e\u3002"
+    else:
+        final_generic = "Analysis completed. Please review evidence URLs for detailed records."
+    return {"facts": [], "inference": [], "final": final_generic, "confidence": "medium"}
+
+
+def _analyst_summarize_with_meta(
+    envelope: SkillEnvelope,
+    user_message: str,
+    role_prompts: dict[str, str] | None = None,
+) -> tuple[dict[str, Any], str, str, bool]:
+    heuristic = _heuristic_analyst_summarize(envelope, user_message)
+    if envelope.status != "ok":
+        return heuristic, "", str(heuristic.get("confidence", "low")), False
+    if not _workflow_llm_enabled():
+        return heuristic, "", str(heuristic.get("confidence", "medium")), False
+
+    prompts = role_prompts or {}
+    analyst_system_prompt = prompts.get("analyst") or get_role_system_instruction("analyst")
+    analyst_user_prompt = (
+        "Use evidence-first reasoning. Return ONLY JSON.\n"
+        f"User question: {user_message}\n"
+        f"Miner envelope JSON: {json.dumps(_envelope_for_llm(envelope), ensure_ascii=False)}\n"
+        "Schema: "
+        '{"facts":["..."],"inference":["..."],"final":"...","confidence":"high|medium|low"}'
+    )
+    model_name = os.getenv(
+        "AGENT_WORKFLOW_ANALYST_MODEL",
+        os.getenv("VERTEX_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")),
+    ).strip()
+    temperature = float(os.getenv("AGENT_WORKFLOW_ANALYST_TEMPERATURE", "0.1"))
+
+    try:
+        raw = _invoke_vertex_text(
+            system_instruction=analyst_system_prompt,
+            user_prompt=analyst_user_prompt,
+            model_name=model_name,
+            temperature=temperature,
+        )
+    except Exception:
+        return heuristic, "", str(heuristic.get("confidence", "medium")), False
+
+    parsed = _extract_json_object(raw)
+    if not parsed:
+        return heuristic, raw, str(heuristic.get("confidence", "medium")), False
+
+    facts = parsed.get("facts")
+    inference = parsed.get("inference")
+    final = str(parsed.get("final") or "").strip()
+    confidence = _normalize_confidence(parsed.get("confidence"), default="medium")
+    if not isinstance(facts, list):
+        facts = []
+    if not isinstance(inference, list):
+        inference = []
+    if not final:
+        return heuristic, raw, confidence, False
+
+    llm_result = {
+        "facts": [str(item).strip() for item in facts if str(item).strip()],
+        "inference": [str(item).strip() for item in inference if str(item).strip()],
+        "final": final,
+        "confidence": confidence,
+    }
+    return llm_result, raw, confidence, True
+
+
+def _analyst_summarize(envelope: SkillEnvelope, user_message: str) -> dict[str, Any]:
+    result, _, confidence, _ = _analyst_summarize_with_meta(envelope, user_message)
+    out = dict(result)
+    out.setdefault("confidence", confidence)
+    return out
 
 
 def _build_role_prompts() -> dict[str, str]:
@@ -555,8 +1129,13 @@ def _append_node_audit(
 
 def _router_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowState:
     user_message = str(state.get("user_message") or "")
-    intent, selected_skill = _route_intent(user_message)
-    payload = _build_payload(intent, user_message)
+    role_prompts = state.get("role_prompts")
+    normalized_prompts = role_prompts if isinstance(role_prompts, dict) else _build_role_prompts()
+    intent, selected_skill, payload, router_llm_output, router_confidence = _plan_route_with_llm(
+        user_message=user_message,
+        runtime=runtime,
+        role_prompts=normalized_prompts,
+    )
 
     allowed, deny_reason = _resolve_role_permission(
         role="router",
@@ -575,11 +1154,18 @@ def _router_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowSta
             "selected_skill": selected_skill,
             "miner_payload": payload,
             "miner_result": denied,
+            "router_llm_output": router_llm_output,
+            "router_confidence": router_confidence,
             "node_audit": _append_node_audit(
                 state,
                 node="router",
                 status="deny",
-                details={"selected_skill": selected_skill, "reason": deny_reason},
+                details={
+                    "intent": intent,
+                    "selected_skill": selected_skill,
+                    "reason": deny_reason,
+                    "router_confidence": router_confidence,
+                },
             ),
         }
 
@@ -587,11 +1173,18 @@ def _router_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowSta
         "intent": intent,
         "selected_skill": selected_skill,
         "miner_payload": payload,
+        "router_llm_output": router_llm_output,
+        "router_confidence": router_confidence,
         "node_audit": _append_node_audit(
             state,
             node="router",
             status="allow",
-            details={"intent": intent, "selected_skill": selected_skill},
+            details={
+                "intent": intent,
+                "selected_skill": selected_skill,
+                "router_confidence": router_confidence,
+                "llm_used": bool(router_llm_output.get("used")) if isinstance(router_llm_output, dict) else False,
+            },
         ),
     }
 
@@ -714,6 +1307,8 @@ def _miner_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowStat
 
 
 def _analyst_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowState:
+    role_prompts = state.get("role_prompts")
+    normalized_prompts = role_prompts if isinstance(role_prompts, dict) else _build_role_prompts()
     allowed, deny_reason = _resolve_role_permission(
         role="analyst",
         skill_name="synthesize_findings",
@@ -734,11 +1329,13 @@ def _analyst_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowSt
             error="role_policy_denied",
             diagnostics={"reason": deny_reason, "role": "analyst"},
         )
-        analyst = _analyst_summarize(denied, str(state.get("user_message") or ""))
+        analyst = _analyst_summarize_v2(denied, str(state.get("user_message") or ""))
         return {
             "miner_result": miner_result,
             "analyst_result": analyst,
             "analyst_denied": True,
+            "analyst_llm_output": "",
+            "analyst_confidence": str(analyst.get("confidence", "low")),
             "node_audit": _append_node_audit(
                 state,
                 node="analyst",
@@ -755,16 +1352,26 @@ def _analyst_node(state: WorkflowState, runtime: _WorkflowRuntime) -> WorkflowSt
             request=state.get("miner_payload") if isinstance(state.get("miner_payload"), dict) else {},
             error="missing_miner_result",
         )
-    analyst = _analyst_summarize(miner_result, user_message)
+    analyst, raw_llm, analyst_confidence, analyst_llm_used = _analyst_summarize_with_meta(
+        miner_result,
+        user_message,
+        role_prompts=normalized_prompts,
+    )
     return {
         "miner_result": miner_result,
         "analyst_result": analyst,
         "analyst_denied": False,
+        "analyst_llm_output": raw_llm,
+        "analyst_confidence": analyst_confidence,
         "node_audit": _append_node_audit(
             state,
             node="analyst",
             status="allow",
-            details={"result_status": miner_result.status},
+            details={
+                "result_status": miner_result.status,
+                "analyst_confidence": analyst_confidence,
+                "llm_used": analyst_llm_used,
+            },
         ),
     }
 
@@ -783,7 +1390,8 @@ def _formatter_node(state: WorkflowState, runtime: _WorkflowRuntime) -> Workflow
             diagnostics={"reason": deny_reason, "role": "formatter"},
         )
         return {
-            "final_text": _analyst_summarize(denied, str(state.get("user_message") or ""))["final"],
+            "final_text": _analyst_summarize_v2(denied, str(state.get("user_message") or ""))["final"],
+            "formatter_llm_output": "",
             "evidence_urls": [],
             "node_audit": _append_node_audit(
                 state,
@@ -806,6 +1414,7 @@ def _formatter_node(state: WorkflowState, runtime: _WorkflowRuntime) -> Workflow
 
     return {
         "final_text": final_text,
+        "formatter_llm_output": final_text,
         "evidence_urls": evidence_urls,
         "node_audit": _append_node_audit(
             state,
@@ -879,6 +1488,11 @@ def run_workflow(
         "role_prompts": _build_role_prompts(),
         "node_audit": [],
         "analyst_denied": False,
+        "router_llm_output": {},
+        "router_confidence": "medium",
+        "analyst_llm_output": "",
+        "analyst_confidence": "medium",
+        "formatter_llm_output": "",
     }
 
     effective_allowlists = (
