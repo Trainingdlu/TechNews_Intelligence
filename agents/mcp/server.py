@@ -12,16 +12,40 @@ try:
     from tools import (
         QueryNewsSkillInput,
         TrendAnalysisSkillInput,
+        SearchNewsSkillInput,
+        CompareSourcesSkillInput,
+        CompareTopicsSkillInput,
+        BuildTimelineSkillInput,
+        AnalyzeLandscapeSkillInput,
+        FulltextBatchSkillInput,
         query_news_skill,
         trend_analysis_skill,
+        search_news_skill,
+        compare_sources_skill,
+        compare_topics_skill,
+        build_timeline_skill,
+        analyze_landscape_skill,
+        fulltext_batch_skill,
     )
 except ImportError:  # package-style import fallback
     from ..core.skill_contracts import SkillEnvelope, build_error_envelope
     from ..tools import (
         QueryNewsSkillInput,
         TrendAnalysisSkillInput,
+        SearchNewsSkillInput,
+        CompareSourcesSkillInput,
+        CompareTopicsSkillInput,
+        BuildTimelineSkillInput,
+        AnalyzeLandscapeSkillInput,
+        FulltextBatchSkillInput,
         query_news_skill,
         trend_analysis_skill,
+        search_news_skill,
+        compare_sources_skill,
+        compare_topics_skill,
+        build_timeline_skill,
+        analyze_landscape_skill,
+        fulltext_batch_skill,
     )
 
 MCPToolHandler = Callable[[BaseModel], SkillEnvelope]
@@ -137,6 +161,42 @@ def _trend_analysis_handler(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
     return envelope
 
 
+def _search_news_handler(payload: SearchNewsSkillInput) -> SkillEnvelope:
+    envelope = search_news_skill(payload)
+    envelope.diagnostics["delegated_skill"] = "search_news"
+    return envelope
+
+
+def _compare_sources_handler(payload: CompareSourcesSkillInput) -> SkillEnvelope:
+    envelope = compare_sources_skill(payload)
+    envelope.diagnostics["delegated_skill"] = "compare_sources"
+    return envelope
+
+
+def _compare_topics_handler(payload: CompareTopicsSkillInput) -> SkillEnvelope:
+    envelope = compare_topics_skill(payload)
+    envelope.diagnostics["delegated_skill"] = "compare_topics"
+    return envelope
+
+
+def _build_timeline_handler(payload: BuildTimelineSkillInput) -> SkillEnvelope:
+    envelope = build_timeline_skill(payload)
+    envelope.diagnostics["delegated_skill"] = "build_timeline"
+    return envelope
+
+
+def _analyze_landscape_handler(payload: AnalyzeLandscapeSkillInput) -> SkillEnvelope:
+    envelope = analyze_landscape_skill(payload)
+    envelope.diagnostics["delegated_skill"] = "analyze_landscape"
+    return envelope
+
+
+def _fulltext_batch_handler(payload: FulltextBatchSkillInput) -> SkillEnvelope:
+    envelope = fulltext_batch_skill(payload)
+    envelope.diagnostics["delegated_skill"] = "fulltext_batch"
+    return envelope
+
+
 def build_newsdb_server(server_name: str = "newsdb") -> InProcessMCPServer:
     """Build local NewsDB MCP server with namespaced tool contracts."""
 
@@ -152,5 +212,41 @@ def build_newsdb_server(server_name: str = "newsdb") -> InProcessMCPServer:
         input_model=TrendAnalysisSkillInput,
         handler=_trend_analysis_handler,
         description="Topic momentum analysis over local news DB",
+    )
+    server.register_tool(
+        name="search_news",
+        input_model=SearchNewsSkillInput,
+        handler=_search_news_handler,
+        description="Semantic + keyword hybrid news search",
+    )
+    server.register_tool(
+        name="compare_sources",
+        input_model=CompareSourcesSkillInput,
+        handler=_compare_sources_handler,
+        description="HackerNews vs TechCrunch source comparison",
+    )
+    server.register_tool(
+        name="compare_topics",
+        input_model=CompareTopicsSkillInput,
+        handler=_compare_topics_handler,
+        description="A-vs-B entity comparison with evidence",
+    )
+    server.register_tool(
+        name="build_timeline",
+        input_model=BuildTimelineSkillInput,
+        handler=_build_timeline_handler,
+        description="Chronological event timeline construction",
+    )
+    server.register_tool(
+        name="analyze_landscape",
+        input_model=AnalyzeLandscapeSkillInput,
+        handler=_analyze_landscape_handler,
+        description="Competitive landscape analysis with entity stats",
+    )
+    server.register_tool(
+        name="fulltext_batch",
+        input_model=FulltextBatchSkillInput,
+        handler=_fulltext_batch_handler,
+        description="Batch full-text article reading",
     )
     return server

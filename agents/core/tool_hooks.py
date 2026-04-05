@@ -107,6 +107,44 @@ class ToolHookRunner:
                     diagnostics={"window": window},
                 )
 
+        if tool_name == "compare_topics":
+            topic_a = str(payload.get("topic_a", "")).strip().lower()
+            topic_b = str(payload.get("topic_b", "")).strip().lower()
+            if topic_a and topic_b and topic_a == topic_b:
+                return HookDecision(
+                    action="deny",
+                    reason="compare_topics requires two distinct topics",
+                    diagnostics={"topic_a": topic_a, "topic_b": topic_b},
+                )
+
+        if tool_name == "build_timeline":
+            topic = str(payload.get("topic", "")).strip()
+            if not topic:
+                return HookDecision(
+                    action="deny",
+                    reason="build_timeline requires a non-empty topic",
+                    diagnostics={"topic": topic},
+                )
+
+        # Generic days range guard for time-windowed skills
+        if tool_name in {"compare_sources", "compare_topics", "build_timeline", "analyze_landscape"}:
+            raw_days = payload.get("days")
+            if raw_days is not None:
+                try:
+                    days = int(raw_days)
+                except (TypeError, ValueError):
+                    return HookDecision(
+                        action="deny",
+                        reason=f"{tool_name}.days must be an integer",
+                        diagnostics={"days": raw_days},
+                    )
+                if days < 1 or days > 365:
+                    return HookDecision(
+                        action="deny",
+                        reason=f"{tool_name}.days must be between 1 and 365",
+                        diagnostics={"days": days},
+                    )
+
         return HookDecision(action="allow")
 
     @staticmethod
@@ -119,7 +157,12 @@ class ToolHookRunner:
 
         if output.status == "ok":
             evidence_count = len(output.evidence)
-            if evidence_count == 0 and tool_name in {"query_news", "trend_analysis"}:
+            evidence_tools = {
+                "query_news", "trend_analysis", "search_news",
+                "compare_sources", "compare_topics", "build_timeline",
+                "analyze_landscape", "fulltext_batch",
+            }
+            if evidence_count == 0 and tool_name in evidence_tools:
                 return HookDecision(
                     action="warn",
                     reason="no_evidence_urls_in_skill_output",

@@ -630,6 +630,52 @@ class TrendAnalysisSkillInput(BaseModel):
     window: int = Field(default=7, ge=3, le=60)
 
 
+class SearchNewsSkillInput(BaseModel):
+    """Typed input contract for structured search_news skill."""
+
+    query: str = Field(min_length=1)
+    days: int = Field(default=21, ge=1, le=365)
+
+
+class CompareSourcesSkillInput(BaseModel):
+    """Typed input contract for structured compare_sources skill."""
+
+    topic: str = Field(min_length=1)
+    days: int = Field(default=14, ge=1, le=90)
+
+
+class CompareTopicsSkillInput(BaseModel):
+    """Typed input contract for structured compare_topics skill."""
+
+    topic_a: str = Field(min_length=1)
+    topic_b: str = Field(min_length=1)
+    days: int = Field(default=14, ge=1, le=90)
+
+
+class BuildTimelineSkillInput(BaseModel):
+    """Typed input contract for structured build_timeline skill."""
+
+    topic: str = Field(min_length=1)
+    days: int = Field(default=30, ge=1, le=180)
+    limit: int = Field(default=12, ge=3, le=40)
+
+
+class AnalyzeLandscapeSkillInput(BaseModel):
+    """Typed input contract for structured analyze_landscape skill."""
+
+    topic: str = ""
+    days: int = Field(default=30, ge=7, le=180)
+    entities: str = ""
+    limit_per_entity: int = Field(default=3, ge=1, le=5)
+
+
+class FulltextBatchSkillInput(BaseModel):
+    """Typed input contract for structured fulltext_batch skill."""
+
+    urls: str = Field(min_length=1)
+    max_chars_per_article: int = Field(default=4000, ge=800, le=12000)
+
+
 def get_db_stats() -> str:
     """Get database freshness statistics and total article count.
 
@@ -1303,6 +1349,378 @@ def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
         diagnostics={
             "evidence_backfill_count": len(evidence),
             "window": request.get("window"),
+        },
+    )
+
+
+def _evidence_from_text_output(text: str, max_items: int = 8) -> list[dict[str, Any]]:
+    """Extract evidence entries from structured text output containing URLs.
+
+    Parses lines with URL patterns and optional metadata (title, source, points).
+    Used by text-based skill adapters that don't have a JSON mode.
+    """
+    if not text:
+        return []
+
+    url_pattern = re.compile(r"https?://[^\s)\]]+")
+    evidence: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+
+    for line in text.splitlines():
+        urls_in_line = url_pattern.findall(line)
+        for url in urls_in_line:
+            url = url.rstrip(".,;:!?")
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+
+            # Try to extract title from structured line patterns
+            title = None
+            # Pattern: "headline | points=N | time | URL"
+            parts = line.split("|")
+            if len(parts) >= 2:
+                # First part after rank/source markers is usually the headline
+                candidate = parts[0].strip()
+                # Strip common prefixes like "  [Entity] #N [Source] "
+                candidate = re.sub(
+                    r"^\s*(?:\d+\.\s*)?(?:\[.*?\]\s*)*(?:#\d+\s*)?(?:\[.*?\]\s*)*",
+                    "",
+                    candidate,
+                ).strip()
+                if candidate and len(candidate) > 3:
+                    title = candidate
+
+            # Try to extract source from line
+            source = None
+            source_match = re.search(r"\[(HackerNews|TechCrunch)\]", line)
+            if source_match:
+                source = source_match.group(1)
+
+            evidence.append({
+                "url": url,
+                "title": title,
+                "source": source,
+                "created_at": None,
+                "score": None,
+            })
+            if len(evidence) >= max_items:
+                return evidence
+    return evidence
+
+
+def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
+    """Structured skill adapter for search_news."""
+
+    request = payload.model_dump(mode="python")
+    try:
+        raw_output = search_news(
+            query=request["query"],
+            days=int(request.get("days", 21)),
+        )
+    except Exception as exc:
+        return build_error_envelope(
+            tool="search_news",
+            request=request,
+            error="search_news_execution_failed",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+            },
+        )
+
+    if raw_output.startswith("No related news") or raw_output.startswith("search_news failed"):
+        is_error = raw_output.startswith("search_news failed")
+        return SkillEnvelope(
+            tool="search_news",
+            status="error" if is_error else "empty",
+            request=request,
+            data={"raw_output": raw_output},
+            evidence=[],
+            error=raw_output if is_error else None,
+            diagnostics={"query": request["query"]},
+        )
+
+    evidence = _evidence_from_text_output(raw_output, max_items=5)
+    return SkillEnvelope(
+        tool="search_news",
+        status="ok",
+        request=request,
+        data={"raw_output": raw_output, "result_count": len(evidence)},
+        evidence=evidence,
+        diagnostics={"query": request["query"]},
+    )
+
+
+def compare_sources_skill(payload: CompareSourcesSkillInput) -> SkillEnvelope:
+    """Structured skill adapter for compare_sources."""
+
+    request = payload.model_dump(mode="python")
+    try:
+        raw_output = compare_sources(
+            topic=request["topic"],
+            days=int(request.get("days", 14)),
+        )
+    except Exception as exc:
+        return build_error_envelope(
+            tool="compare_sources",
+            request=request,
+            error="compare_sources_execution_failed",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+            },
+        )
+
+    if raw_output.startswith("No comparison data") or raw_output.startswith("compare_sources"):
+        is_error = "failed" in raw_output
+        return SkillEnvelope(
+            tool="compare_sources",
+            status="error" if is_error else "empty",
+            request=request,
+            data={"raw_output": raw_output},
+            evidence=[],
+            error=raw_output if is_error else None,
+            diagnostics={"topic": request["topic"]},
+        )
+
+    evidence = _evidence_from_text_output(raw_output, max_items=6)
+    return SkillEnvelope(
+        tool="compare_sources",
+        status="ok",
+        request=request,
+        data={"raw_output": raw_output},
+        evidence=evidence,
+        diagnostics={"topic": request["topic"]},
+    )
+
+
+def compare_topics_skill(payload: CompareTopicsSkillInput) -> SkillEnvelope:
+    """Structured skill adapter for compare_topics."""
+
+    request = payload.model_dump(mode="python")
+    try:
+        raw_output = compare_topics(
+            topic_a=request["topic_a"],
+            topic_b=request["topic_b"],
+            days=int(request.get("days", 14)),
+        )
+    except Exception as exc:
+        return build_error_envelope(
+            tool="compare_topics",
+            request=request,
+            error="compare_topics_execution_failed",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+            },
+        )
+
+    if raw_output.startswith("compare_topics requires") or raw_output.startswith("compare_topics failed"):
+        return SkillEnvelope(
+            tool="compare_topics",
+            status="error",
+            request=request,
+            data={"raw_output": raw_output},
+            evidence=[],
+            error=raw_output,
+            diagnostics={},
+        )
+
+    # Extract confidence from output
+    confidence = None
+    for line in raw_output.splitlines():
+        if line.strip().startswith("Confidence:"):
+            confidence = line.strip().split(":", 1)[1].strip()
+
+    evidence = _evidence_from_text_output(raw_output, max_items=6)
+    status = "ok" if evidence else "empty"
+    return SkillEnvelope(
+        tool="compare_topics",
+        status=status,
+        request=request,
+        data={"raw_output": raw_output, "confidence": confidence},
+        evidence=evidence,
+        diagnostics={
+            "topic_a": request["topic_a"],
+            "topic_b": request["topic_b"],
+            "confidence": confidence,
+        },
+    )
+
+
+def build_timeline_skill(payload: BuildTimelineSkillInput) -> SkillEnvelope:
+    """Structured skill adapter for build_timeline."""
+
+    request = payload.model_dump(mode="python")
+    try:
+        raw_output = build_timeline(
+            topic=request["topic"],
+            days=int(request.get("days", 30)),
+            limit=int(request.get("limit", 12)),
+        )
+    except Exception as exc:
+        return build_error_envelope(
+            tool="build_timeline",
+            request=request,
+            error="build_timeline_execution_failed",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+            },
+        )
+
+    if raw_output.startswith("No timeline data") or raw_output.startswith("build_timeline"):
+        is_error = "failed" in raw_output or "requires" in raw_output
+        return SkillEnvelope(
+            tool="build_timeline",
+            status="error" if is_error else "empty",
+            request=request,
+            data={"raw_output": raw_output},
+            evidence=[],
+            error=raw_output if is_error else None,
+            diagnostics={"topic": request["topic"]},
+        )
+
+    evidence = _evidence_from_text_output(raw_output, max_items=12)
+    return SkillEnvelope(
+        tool="build_timeline",
+        status="ok",
+        request=request,
+        data={"raw_output": raw_output, "event_count": len(evidence)},
+        evidence=evidence,
+        diagnostics={"topic": request["topic"]},
+    )
+
+
+def analyze_landscape_skill(payload: AnalyzeLandscapeSkillInput) -> SkillEnvelope:
+    """Structured skill adapter for analyze_landscape."""
+
+    request = payload.model_dump(mode="python")
+    try:
+        raw_output = analyze_landscape(
+            topic=request.get("topic", ""),
+            days=int(request.get("days", 30)),
+            entities=request.get("entities", ""),
+            limit_per_entity=int(request.get("limit_per_entity", 3)),
+        )
+    except Exception as exc:
+        return build_error_envelope(
+            tool="analyze_landscape",
+            request=request,
+            error="analyze_landscape_execution_failed",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+            },
+        )
+
+    if raw_output.startswith("No landscape data") or raw_output.startswith("analyze_landscape failed"):
+        is_error = "failed" in raw_output
+        return SkillEnvelope(
+            tool="analyze_landscape",
+            status="error" if is_error else "empty",
+            request=request,
+            data={"raw_output": raw_output},
+            evidence=[],
+            error=raw_output if is_error else None,
+            diagnostics={"topic": request.get("topic", "")},
+        )
+
+    # Extract confidence from output
+    confidence = None
+    for line in raw_output.splitlines():
+        if line.strip().startswith("Confidence:"):
+            confidence = line.strip().split(":", 1)[1].strip()
+
+    evidence = _evidence_from_text_output(raw_output, max_items=12)
+    return SkillEnvelope(
+        tool="analyze_landscape",
+        status="ok",
+        request=request,
+        data={"raw_output": raw_output, "confidence": confidence},
+        evidence=evidence,
+        diagnostics={
+            "topic": request.get("topic", ""),
+            "confidence": confidence,
+        },
+    )
+
+
+def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
+    """Structured skill adapter for fulltext_batch."""
+
+    request = payload.model_dump(mode="python")
+    try:
+        raw_output = fulltext_batch(
+            urls=request["urls"],
+            max_chars_per_article=int(request.get("max_chars_per_article", 4000)),
+            response_format="json",
+        )
+    except Exception as exc:
+        return build_error_envelope(
+            tool="fulltext_batch",
+            request=request,
+            error="fulltext_batch_execution_failed",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+            },
+        )
+
+    try:
+        parsed = json.loads(raw_output)
+    except Exception as exc:
+        return build_error_envelope(
+            tool="fulltext_batch",
+            request=request,
+            error="fulltext_batch_json_parse_failed",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+                "raw_preview": str(raw_output)[:500],
+            },
+        )
+
+    status = str(parsed.get("status", "ok")).lower()
+    if status == "empty":
+        return SkillEnvelope(
+            tool="fulltext_batch",
+            status="empty",
+            request=request,
+            data=parsed,
+            evidence=[],
+            error=parsed.get("error"),
+            diagnostics={},
+        )
+
+    selected = parsed.get("selected", [])
+    articles = parsed.get("articles", [])
+    evidence: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for item in selected:
+        url = str(item.get("url") or "").strip()
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            evidence.append({
+                "url": url,
+                "title": item.get("headline"),
+                "source": item.get("source_type"),
+                "created_at": item.get("created_at"),
+                "score": _safe_float(item.get("score")),
+            })
+
+    return SkillEnvelope(
+        tool="fulltext_batch",
+        status="ok",
+        request=request,
+        data={
+            "article_count": len(articles),
+            "articles": articles,
+        },
+        evidence=evidence,
+        diagnostics={
+            "selection_count": len(selected),
+            "article_count": len(articles),
         },
     )
 
