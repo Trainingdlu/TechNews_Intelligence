@@ -5,10 +5,12 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import queue
 import shlex
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -65,7 +67,67 @@ class StdioMCPServer:
         self._proc: subprocess.Popen[str] | None = None
         self._lock = threading.RLock()
         self._request_ids = itertools.count(1)
+        self._stdout_queue: queue.Queue[dict[str, Any]] = queue.Queue()
+        self._pending_by_id: dict[Any, dict[str, Any]] = {}
+        self._reader_thread: threading.Thread | None = None
+        self._rpc_timeout_sec = self._resolve_rpc_timeout()
         self._ensure_started()
+
+    @staticmethod
+    def _resolve_rpc_timeout() -> float:
+        raw = str(os.getenv("AGENT_MCP_RPC_TIMEOUT_SEC", "20")).strip()
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = 20.0
+        return max(1.0, value)
+
+    def _start_reader_thread_locked(self) -> None:
+        proc = self._proc
+        if proc is None or proc.stdout is None:
+            raise RuntimeError("stdio process stdout is not ready")
+
+        self._stdout_queue = queue.Queue()
+        self._pending_by_id = {}
+
+        def _reader() -> None:
+            stdout = proc.stdout
+            if stdout is None:
+                return
+            try:
+                for line in stdout:
+                    text = line.strip()
+                    if not text:
+                        continue
+                    try:
+                        message = json.loads(text)
+                    except Exception:
+                        # Non-JSON line on stdout is ignored to keep transport robust.
+                        continue
+                    if isinstance(message, dict):
+                        self._stdout_queue.put(message)
+            finally:
+                self._stdout_queue.put({"__eof__": True})
+
+        self._reader_thread = threading.Thread(
+            target=_reader,
+            name=f"mcp-stdio-reader-{self.server_name}",
+            daemon=True,
+        )
+        self._reader_thread.start()
+
+    def _shutdown_process_locked(self) -> None:
+        proc = self._proc
+        self._proc = None
+        self._pending_by_id = {}
+        if proc is None:
+            return
+        try:
+            if proc.poll() is None:
+                proc.terminate()
+            proc.wait(timeout=2)
+        except Exception:
+            pass
 
     def _ensure_started(self) -> None:
         with self._lock:
@@ -77,11 +139,12 @@ class StdioMCPServer:
                 cwd=self._cwd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 text=True,
                 encoding="utf-8",
                 bufsize=1,
             )
+            self._start_reader_thread_locked()
 
             # Minimal MCP init handshake.
             self._rpc(
@@ -97,7 +160,7 @@ class StdioMCPServer:
         with self._lock:
             self._ensure_started()
             proc = self._proc
-            if proc is None or proc.stdin is None or proc.stdout is None:
+            if proc is None or proc.stdin is None:
                 raise RuntimeError("stdio process is not ready")
 
             request_id = next(self._request_ids)
@@ -111,28 +174,49 @@ class StdioMCPServer:
             if not expect_response:
                 return {}
 
-            line = proc.stdout.readline()
-            if not line:
-                raise RuntimeError("stdio server closed unexpectedly")
-            message = json.loads(line)
-            if not isinstance(message, dict):
-                raise RuntimeError("invalid jsonrpc response type")
+            deadline = time.monotonic() + self._rpc_timeout_sec
+            while True:
+                if request_id in self._pending_by_id:
+                    message = self._pending_by_id.pop(request_id)
+                else:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        self._shutdown_process_locked()
+                        raise RuntimeError(f"rpc timeout waiting for method={method}")
+                    try:
+                        message = self._stdout_queue.get(timeout=remaining)
+                    except queue.Empty:
+                        self._shutdown_process_locked()
+                        raise RuntimeError(f"rpc timeout waiting for method={method}")
 
-            if "error" in message:
-                error = message.get("error")
-                if isinstance(error, dict):
-                    code = error.get("code")
-                    detail = error.get("message")
-                    raise RuntimeError(f"rpc error {code}: {detail}")
-                raise RuntimeError("rpc error")
+                    if message.get("__eof__"):
+                        self._shutdown_process_locked()
+                        raise RuntimeError("stdio server closed unexpectedly")
 
-            if message.get("id") != request_id:
-                raise RuntimeError("jsonrpc response id mismatch")
+                    msg_id = message.get("id")
+                    if msg_id is None:
+                        # JSON-RPC notifications are legal; ignore and continue.
+                        continue
+                    if msg_id != request_id:
+                        self._pending_by_id[msg_id] = message
+                        continue
+                    # Matched response for current request_id.
 
-            result = message.get("result")
-            if isinstance(result, dict):
-                return result
-            raise RuntimeError("jsonrpc result is not an object")
+                if not isinstance(message, dict):
+                    raise RuntimeError("invalid jsonrpc response type")
+
+                if "error" in message:
+                    error = message.get("error")
+                    if isinstance(error, dict):
+                        code = error.get("code")
+                        detail = error.get("message")
+                        raise RuntimeError(f"rpc error {code}: {detail}")
+                    raise RuntimeError("rpc error")
+
+                result = message.get("result")
+                if isinstance(result, dict):
+                    return result
+                raise RuntimeError("jsonrpc result is not an object")
 
     def list_tools(self) -> list[dict[str, Any]]:
         result = self._rpc("tools/list", {})
@@ -224,16 +308,7 @@ class StdioMCPServer:
 
     def close(self) -> None:
         with self._lock:
-            proc = self._proc
-            self._proc = None
-            if proc is None:
-                return
-            if proc.poll() is None:
-                proc.terminate()
-            try:
-                proc.wait(timeout=2)
-            except Exception:
-                pass
+            self._shutdown_process_locked()
 
     def __del__(self) -> None:  # pragma: no cover - best-effort cleanup
         try:
@@ -364,4 +439,3 @@ def build_default_mcp_client() -> MCPClient:
 
     _DEFAULT_CLIENT = client
     return client
-

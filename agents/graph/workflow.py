@@ -21,8 +21,20 @@ try:
     from tools import (
         QueryNewsSkillInput,
         TrendAnalysisSkillInput,
+        SearchNewsSkillInput,
+        CompareSourcesSkillInput,
+        CompareTopicsSkillInput,
+        BuildTimelineSkillInput,
+        AnalyzeLandscapeSkillInput,
+        FulltextBatchSkillInput,
         query_news_skill,
         trend_analysis_skill,
+        search_news_skill,
+        compare_sources_skill,
+        compare_topics_skill,
+        build_timeline_skill,
+        analyze_landscape_skill,
+        fulltext_batch_skill,
     )
 except ImportError:  # package-style import fallback
     from ..mcp.client import build_default_mcp_client
@@ -34,8 +46,20 @@ except ImportError:  # package-style import fallback
     from ..tools import (
         QueryNewsSkillInput,
         TrendAnalysisSkillInput,
+        SearchNewsSkillInput,
+        CompareSourcesSkillInput,
+        CompareTopicsSkillInput,
+        BuildTimelineSkillInput,
+        AnalyzeLandscapeSkillInput,
+        FulltextBatchSkillInput,
         query_news_skill,
         trend_analysis_skill,
+        search_news_skill,
+        compare_sources_skill,
+        compare_topics_skill,
+        build_timeline_skill,
+        analyze_landscape_skill,
+        fulltext_batch_skill,
     )
 
 
@@ -53,6 +77,12 @@ class WorkflowState(TypedDict, total=False):
     evidence_urls: list[str]
     node_audit: list[dict[str, Any]]
     analyst_denied: bool
+    # LLM integration fields (Phase 3)
+    router_llm_output: dict[str, Any]   # Raw LLM routing decision JSON
+    router_confidence: str               # Router classification confidence
+    analyst_llm_output: str              # Raw LLM analysis text
+    analyst_confidence: str              # Analyst confidence assessment
+    formatter_llm_output: str            # Raw LLM formatted text
 
 
 @dataclass(frozen=True)
@@ -73,6 +103,12 @@ _GRAPH_CACHE_LOCK = threading.RLock()
 MCP_SKILL_MAP: dict[str, str] = {
     "query_news": "mcp__newsdb__query_news_vector",
     "trend_analysis": "mcp__newsdb__trend_analysis",
+    "search_news": "mcp__newsdb__search_news",
+    "compare_sources": "mcp__newsdb__compare_sources",
+    "compare_topics": "mcp__newsdb__compare_topics",
+    "build_timeline": "mcp__newsdb__build_timeline",
+    "analyze_landscape": "mcp__newsdb__analyze_landscape",
+    "fulltext_batch": "mcp__newsdb__fulltext_batch",
 }
 
 
@@ -95,6 +131,42 @@ def build_default_registry() -> SkillRegistry:
         input_model=TrendAnalysisSkillInput,
         handler=lambda payload: trend_analysis_skill(payload),
         description="Structured trend momentum analysis",
+    )
+    registry.register(
+        name="search_news",
+        input_model=SearchNewsSkillInput,
+        handler=lambda payload: search_news_skill(payload),
+        description="Hybrid semantic+keyword news search",
+    )
+    registry.register(
+        name="compare_sources",
+        input_model=CompareSourcesSkillInput,
+        handler=lambda payload: compare_sources_skill(payload),
+        description="HackerNews vs TechCrunch source comparison",
+    )
+    registry.register(
+        name="compare_topics",
+        input_model=CompareTopicsSkillInput,
+        handler=lambda payload: compare_topics_skill(payload),
+        description="A-vs-B entity comparison with evidence",
+    )
+    registry.register(
+        name="build_timeline",
+        input_model=BuildTimelineSkillInput,
+        handler=lambda payload: build_timeline_skill(payload),
+        description="Chronological event timeline construction",
+    )
+    registry.register(
+        name="analyze_landscape",
+        input_model=AnalyzeLandscapeSkillInput,
+        handler=lambda payload: analyze_landscape_skill(payload),
+        description="Competitive landscape analysis with entity stats",
+    )
+    registry.register(
+        name="fulltext_batch",
+        input_model=FulltextBatchSkillInput,
+        handler=lambda payload: fulltext_batch_skill(payload),
+        description="Batch full-text article reading",
     )
     _DEFAULT_REGISTRY = registry
     return registry
@@ -386,10 +458,47 @@ def _role_allowlists_cache_key(role_allowlists: dict[str, set[str]]) -> tuple[tu
     return tuple(rows)
 
 
+def _callable_cache_key(fn: Any) -> tuple[str, str]:
+    return (
+        str(getattr(fn, "__module__", "")),
+        str(getattr(fn, "__qualname__", getattr(fn, "__name__", type(fn).__name__))),
+    )
+
+
+def _type_cache_key(tp: Any) -> tuple[str, str]:
+    return (
+        str(getattr(tp, "__module__", "")),
+        str(getattr(tp, "__qualname__", getattr(tp, "__name__", type(tp).__name__))),
+    )
+
+
+def _registry_cache_key(registry: SkillRegistry) -> tuple[tuple[Any, ...], ...]:
+    rows: list[tuple[Any, ...]] = []
+    for skill_name in registry.list_skills():
+        try:
+            spec = registry.get(skill_name)
+        except KeyError:
+            continue
+        rows.append(
+            (
+                skill_name,
+                _type_cache_key(spec.input_model),
+                _callable_cache_key(spec.handler),
+            )
+        )
+    return tuple(rows)
+
+
+def _hook_runner_cache_key(hooks: ToolHookRunner) -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
+    pre = tuple(_callable_cache_key(hook) for hook in getattr(hooks, "pre_hooks", []))
+    post = tuple(_callable_cache_key(hook) for hook in getattr(hooks, "post_hooks", []))
+    return pre, post
+
+
 def _workflow_graph_cache_key(runtime: _WorkflowRuntime) -> tuple[Any, ...]:
     return (
-        id(runtime.registry),
-        id(runtime.hooks),
+        _registry_cache_key(runtime.registry),
+        _hook_runner_cache_key(runtime.hooks),
         runtime.miner_transport,
         _role_allowlists_cache_key(runtime.role_allowlists),
     )
