@@ -197,10 +197,27 @@ def _extract_urls(envelope: SkillEnvelope) -> list[str]:
 
 
 def _resolve_miner_transport(miner_transport: str | None = None) -> str:
-    raw = (miner_transport or os.getenv("AGENT_MINER_TRANSPORT", "local")).strip().lower()
+    raw = (miner_transport or os.getenv("AGENT_MINER_TRANSPORT", "mcp")).strip().lower()
     if raw in {"mcp", "mcp_stdio", "remote_mcp"}:
         return "mcp"
     return "local"
+
+
+def _mcp_local_fallback_enabled() -> bool:
+    raw = str(os.getenv("AGENT_MCP_FALLBACK_LOCAL", "1")).strip().lower()
+    return raw not in {"0", "false", "off", "no"}
+
+
+def _is_mcp_fallback_error(error_code: str | None) -> bool:
+    return str(error_code or "").strip().lower() in {
+        "mcp_client_transport_error",
+        "mcp_client_protocol_error",
+        "mcp_unknown_namespaced_tool",
+        "mcp_server_unavailable",
+        "mcp_server_call_failed",
+        "mcp_unknown_tool",
+        "mcp_tool_execution_failed",
+    }
 
 
 def _execute_miner_skill(
@@ -215,14 +232,41 @@ def _execute_miner_skill(
         result.diagnostics["miner_transport"] = "local"
         return result
 
-    client = mcp_client or build_default_mcp_client()
     qualified_name = MCP_SKILL_MAP.get(selected_skill, f"mcp__newsdb__{selected_skill}")
-    result = client.call_tool(qualified_name, payload)
+    try:
+        client = mcp_client or build_default_mcp_client()
+        result = client.call_tool(qualified_name, payload)
+    except Exception as exc:  # noqa: BLE001
+        result = build_error_envelope(
+            tool=selected_skill,
+            request=payload,
+            error="mcp_client_transport_error",
+            diagnostics={
+                "exception_type": type(exc).__name__,
+                "exception_message": str(exc),
+                "mcp_qualified_name": qualified_name,
+            },
+        )
+
     if result.tool != selected_skill:
         result.diagnostics["upstream_tool"] = result.tool
         result.tool = selected_skill
+
     result.diagnostics["miner_transport"] = "mcp"
     result.diagnostics["mcp_qualified_name"] = qualified_name
+
+    if result.status == "error" and _mcp_local_fallback_enabled() and _is_mcp_fallback_error(result.error):
+        local_result = skill_registry.execute(selected_skill, payload)
+        local_result.diagnostics.update(
+            {
+                "miner_transport": "local_fallback",
+                "fallback_from_transport": "mcp",
+                "fallback_reason": result.error,
+                "mcp_error_diagnostics": result.diagnostics,
+            }
+        )
+        return local_result
+
     return result
 
 

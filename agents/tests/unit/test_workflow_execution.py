@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from pydantic import BaseModel, Field
 
 from agents.core.skill_contracts import SkillEnvelope
@@ -269,6 +271,57 @@ def test_run_workflow_mcp_transport_with_fake_client() -> None:
     assert state["selected_skill"] == "query_news"
     assert "Retrieval summary:" in state["final_text"]
     assert state["evidence_urls"] == ["https://example.com/mcp"]
+
+
+def test_run_workflow_defaults_to_mcp_and_falls_back_to_local() -> None:
+    class _UnavailableMCPClient:
+        @staticmethod
+        def call_tool(_qualified_name: str, payload: dict) -> SkillEnvelope:
+            return SkillEnvelope(
+                tool="query_news",
+                status="error",
+                request=payload,
+                error="mcp_server_unavailable",
+                diagnostics={"detail": "server down"},
+            )
+
+    with patch("agents.graph.workflow.build_default_mcp_client", return_value=_UnavailableMCPClient()):
+        state = run_workflow(
+            user_message="OpenAI latest updates",
+            history=[],
+            registry=_registry_with_query_and_trend(),
+        )
+
+    assert state["miner_transport"] == "mcp"
+    assert state["miner_result"].status == "ok"
+    assert state["miner_result"].diagnostics["miner_transport"] == "local_fallback"
+    assert state["miner_result"].diagnostics["fallback_from_transport"] == "mcp"
+
+
+def test_run_workflow_can_disable_mcp_local_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("AGENT_MCP_FALLBACK_LOCAL", "0")
+
+    class _UnavailableMCPClient:
+        @staticmethod
+        def call_tool(_qualified_name: str, payload: dict) -> SkillEnvelope:
+            return SkillEnvelope(
+                tool="query_news",
+                status="error",
+                request=payload,
+                error="mcp_server_unavailable",
+                diagnostics={},
+            )
+
+    state = run_workflow(
+        user_message="OpenAI latest updates",
+        history=[],
+        registry=_registry_with_query_and_trend(),
+        miner_transport="mcp",
+        mcp_client=_UnavailableMCPClient(),
+    )
+
+    assert state["miner_result"].status == "error"
+    assert state["miner_result"].error == "mcp_server_unavailable"
 
 
 def test_role_allowlist_override_denies_router() -> None:
