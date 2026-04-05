@@ -170,6 +170,20 @@ def test_build_workflow_graph_reuses_compiled_instance() -> None:
     assert app_a is app_b
 
 
+def test_build_workflow_graph_reuses_compiled_instance_for_equivalent_runtime() -> None:
+    app_a = build_workflow_graph(
+        registry=_registry_with_query_and_trend(),
+        hook_runner=ToolHookRunner(),
+        role_allowlists={"router": {"query_news", "trend_analysis"}},
+    )
+    app_b = build_workflow_graph(
+        registry=_registry_with_query_and_trend(),
+        hook_runner=ToolHookRunner(),
+        role_allowlists={"router": {"query_news", "trend_analysis"}},
+    )
+    assert app_a is app_b
+
+
 def test_run_workflow_honors_post_hook_deny() -> None:
     def _deny_post(_tool: str, _payload: dict, _output: SkillEnvelope) -> HookDecision:
         return HookDecision(action="deny", reason="audit_failed", diagnostics={"rule": "post_guard"})
