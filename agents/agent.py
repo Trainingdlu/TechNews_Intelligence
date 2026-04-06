@@ -384,68 +384,61 @@ def _build_react_prompt_kwargs() -> tuple[dict[str, str], str]:
     )
 
 
-def _get_model_provider() -> str:
-    """Normalize AGENT_MODEL_PROVIDER into supported provider keys."""
-    provider = os.getenv("AGENT_MODEL_PROVIDER", "gemini_api").strip().lower()
-    if provider in {"gemini", "gemini_api", "google_ai_studio", "developer_api"}:
-        return "gemini_api"
-    if provider in {"vertex", "vertex_ai", "gcp"}:
-        return "vertex"
-    raise ValueError(
-        "AGENT_MODEL_PROVIDER must be one of: "
-        "gemini_api (default), vertex."
-    )
-
-
 def _build_chat_model() -> Any:
-    """Create the chat model client from environment configuration."""
+    """Create the chat model client, defaulting to Vertex AI but falling back to Gemini API."""
     temperature = float(os.getenv("AGENT_TEMPERATURE", "0.1"))
-    provider = _get_model_provider()
+    provider = os.getenv("AGENT_MODEL_PROVIDER", "vertex").strip().lower()
 
-    if provider == "gemini_api":
+    # Helper function to initialize the Gemini API fallback
+    def _build_gemini():
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key:
-            raise ValueError("GEMINI_API_KEY is not set.")
+            raise ValueError("GEMINI_API_KEY is not set or empty.")
         return ChatGoogleGenerativeAI(
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-pro"),
             google_api_key=api_key,
             temperature=temperature,
         )
 
-    project = os.getenv("VERTEX_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", "")).strip()
-    if not project:
-        raise ValueError(
-            "VERTEX_PROJECT is not set. "
-            "You can also use GOOGLE_CLOUD_PROJECT."
-        )
+    # 1. 明确指定只用通用 API 的情况
+    if provider in {"gemini", "gemini_api", "google_ai_studio", "developer_api"}:
+        return _build_gemini()
 
+    # 2. 默认走 Vertex AI（或明确指定 provider="vertex" 的情况）
+    project = os.getenv("VERTEX_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", "")).strip()
     location = os.getenv("VERTEX_LOCATION", os.getenv("GOOGLE_CLOUD_LOCATION", "global")).strip()
     model_name = os.getenv(
         "VERTEX_MODEL",
         os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
     ).strip()
-
     credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-    if credentials_path and not os.path.exists(credentials_path):
-        raise ValueError(
-            "GOOGLE_APPLICATION_CREDENTIALS points to a missing file: "
-            f"{credentials_path}"
-        )
 
     try:
-        from langchain_google_vertexai import ChatVertexAI
-    except ImportError as exc:
-        raise RuntimeError(
-            "Vertex provider requires 'langchain-google-vertexai'. "
-            "Install dependencies with: pip install -r agents/requirements.txt"
-        ) from exc
+        if not project:
+            raise ValueError("VERTEX_PROJECT is not set.")
+        if credentials_path and not os.path.exists(credentials_path):
+            raise ValueError(f"GOOGLE_APPLICATION_CREDENTIALS points to a missing file: {credentials_path}")
 
-    return ChatVertexAI(
-        model=model_name,
-        project=project,
-        location=location,
-        temperature=temperature,
-    )
+        try:
+            from langchain_google_vertexai import ChatVertexAI
+        except ImportError as exc:
+            raise RuntimeError("langchain-google-vertexai is not installed.") from exc
+
+        return ChatVertexAI(
+            model=model_name,
+            project=project,
+            location=location,
+            temperature=temperature,
+        )
+    except Exception as exc:
+        print(f"[Agent][Warn] Vertex AI initialization failed ({exc}). Falling back to Gemini API...")
+        try:
+            return _build_gemini()
+        except Exception as fallback_exc:
+            raise RuntimeError(
+                f"Failed to initialize any chat model. "
+                f"Vertex error: {exc}. Gemini API fallback error: {fallback_exc}"
+            ) from fallback_exc
 
 
 def _get_react_agent():
