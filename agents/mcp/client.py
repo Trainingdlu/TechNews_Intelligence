@@ -410,14 +410,15 @@ def _project_root() -> str:
 
 
 def build_default_mcp_client() -> MCPClient:
-    """Build default MCP client with stdio-backed NewsDB server."""
+    """Build default MCP client with NewsDB server (local by default)."""
 
     global _DEFAULT_CLIENT
     if _DEFAULT_CLIENT is not None:
         return _DEFAULT_CLIENT
 
     server_name = str(os.getenv("AGENT_MCP_SERVER_NAME", "newsdb")).strip() or "newsdb"
-    mode = str(os.getenv("AGENT_MCP_CLIENT_MODE", "stdio")).strip().lower()
+    # Safe default: keep in-process transport unless explicitly opting into stdio.
+    mode = str(os.getenv("AGENT_MCP_CLIENT_MODE", "local")).strip().lower()
 
     client = MCPClient()
     if mode in {"local", "inprocess"}:

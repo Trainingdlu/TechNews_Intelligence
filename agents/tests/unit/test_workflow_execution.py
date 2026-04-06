@@ -290,7 +290,7 @@ def test_run_workflow_mcp_transport_with_fake_client() -> None:
     assert state["evidence_urls"] == ["https://example.com/mcp"]
 
 
-def test_run_workflow_defaults_to_mcp_and_falls_back_to_local() -> None:
+def test_run_workflow_mcp_mode_falls_back_to_local() -> None:
     class _UnavailableMCPClient:
         @staticmethod
         def call_tool(_qualified_name: str, payload: dict) -> SkillEnvelope:
@@ -307,6 +307,7 @@ def test_run_workflow_defaults_to_mcp_and_falls_back_to_local() -> None:
             user_message="OpenAI latest updates",
             history=[],
             registry=_registry_with_query_and_trend(),
+            miner_transport="mcp",
         )
 
     assert state["miner_transport"] == "mcp"

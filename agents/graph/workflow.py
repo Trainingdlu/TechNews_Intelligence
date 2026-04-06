@@ -186,7 +186,8 @@ def build_default_hook_runner() -> ToolHookRunner:
 
 
 def _workflow_llm_enabled() -> bool:
-    raw = str(os.getenv("AGENT_WORKFLOW_V2_LLM", "auto")).strip().lower()
+    # Safe default for production: v2 LLM path is opt-in.
+    raw = str(os.getenv("AGENT_WORKFLOW_V2_LLM", "0")).strip().lower()
     if raw in {"0", "false", "off", "no"}:
         return False
     if raw in {"1", "true", "on", "yes"}:
@@ -693,7 +694,7 @@ def _extract_urls(envelope: SkillEnvelope) -> list[str]:
 
 
 def _resolve_miner_transport(miner_transport: str | None = None) -> str:
-    raw = (miner_transport or os.getenv("AGENT_MINER_TRANSPORT", "mcp")).strip().lower()
+    raw = (miner_transport or os.getenv("AGENT_MINER_TRANSPORT", "local")).strip().lower()
     if raw in {"mcp", "mcp_stdio", "remote_mcp"}:
         return "mcp"
     return "local"
