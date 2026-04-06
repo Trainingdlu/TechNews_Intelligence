@@ -213,3 +213,20 @@ python cli.py
 
 ## 5. 开源协议
 本项目采用 GNU AGPLv3 协议。
+
+---
+
+## Runtime Layout (main)
+
+Current `main` branch uses a **single ReAct runtime path**.
+
+- Request entry: `agents/api.py` / `agents/bot.py`
+- Core runtime: `agents/agent.py`
+- Shared runtime components: `agents/core/runtime_factories.py`, `agents/core/skill_registry.py`, `agents/core/tool_hooks.py`
+- Tool implementations: `agents/tools.py`
+- Evidence/citation post-processing: `agents/core/evidence.py`
+
+Notes:
+
+- `agents/graph/workflow.py` is now a compatibility shim for older imports.
+- `agents/mcp/*` remains available as an extension layer (local/stdio), but is not the required default request path.

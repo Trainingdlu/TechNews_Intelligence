@@ -1,43 +1,41 @@
-"""Role-level skill allowlist policy for multi-agent orchestration."""
+"""Role-level skill allowlist policy.
+
+In the unified ReAct architecture, the primary role is 'agent' which has
+access to all registered skills. The multi-role definitions (router, miner,
+analyst, formatter) are preserved as extension points for future multi-agent
+orchestration scenarios.
+"""
 
 from __future__ import annotations
 
+# ---------------------------------------------------------------------------
+# Unified agent role — full skill access
+# ---------------------------------------------------------------------------
+_ALL_SKILLS: set[str] = {
+    "query_news",
+    "trend_analysis",
+    "search_news",
+    "compare_sources",
+    "compare_topics",
+    "build_timeline",
+    "analyze_landscape",
+    "fulltext_batch",
+}
+
 ROLE_ALLOWED_SKILLS: dict[str, set[str]] = {
+    # Primary role — used by the ReAct agent
+    "agent": set(_ALL_SKILLS),
+    # Subagent roles — reserved for future multi-agent evolution
     "router": {
         "classify_intent",
         "extract_entities",
-        "query_news",
-        "trend_analysis",
-        "search_news",
-        "compare_sources",
-        "compare_topics",
-        "build_timeline",
-        "analyze_landscape",
-        "fulltext_batch",
-    },
-    "miner": {
-        "query_news",
-        "trend_analysis",
-        "search_news",
-        "compare_sources",
-        "compare_topics",
-        "build_timeline",
-        "analyze_landscape",
-        "fulltext_batch",
-    },
+    } | _ALL_SKILLS,
+    "miner": set(_ALL_SKILLS),
     "analyst": {
         "compute_momentum",
         "compare_entities",
         "synthesize_findings",
-        "query_news",
-        "trend_analysis",
-        "search_news",
-        "compare_sources",
-        "compare_topics",
-        "build_timeline",
-        "analyze_landscape",
-        "fulltext_batch",
-    },
+    } | _ALL_SKILLS,
     "formatter": {
         "format_answer",
     },

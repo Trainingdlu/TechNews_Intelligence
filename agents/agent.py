@@ -1,7 +1,8 @@
-"""Agent runtime — ReAct-native architecture.
+"""Agent runtime — ReAct-native architecture with Skill infrastructure.
 
 Single runtime: LangGraph ReAct agent with full tool autonomy.
-No hardcoded routing, no secondary LLM analysis, no legacy fallback.
+Tool wrappers execute through SkillRegistry + ToolHookRunner for
+structured validation, pre/post guards, and evidence tracking.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import inspect
 import os
 import re
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,7 +20,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 
 try:
-    from graph.workflow import run_workflow_text
+    from core.runtime_factories import build_default_hook_runner, build_default_registry
     from prompts import SYSTEM_INSTRUCTION
     from core.evidence import (
         decorate_response_with_sources as _decorate_response_with_sources_core,
@@ -28,22 +30,15 @@ try:
         metrics_inc as _metrics_inc,
         reset_route_metrics,
     )
+    from core.skill_contracts import SkillEnvelope
     from tools import (
-        analyze_landscape,
-        build_timeline,
-        compare_topics,
-        compare_sources,
-        fulltext_batch,
         get_db_stats,
         list_topics,
         lookup_url_titles,
-        query_news,
         read_news_content,
-        search_news,
-        trend_analysis,
     )
 except ImportError:  # package-style import fallback
-    from .graph.workflow import run_workflow_text
+    from .core.runtime_factories import build_default_hook_runner, build_default_registry
     from .prompts import SYSTEM_INSTRUCTION
     from .core.evidence import (
         decorate_response_with_sources as _decorate_response_with_sources_core,
@@ -53,24 +48,161 @@ except ImportError:  # package-style import fallback
         metrics_inc as _metrics_inc,
         reset_route_metrics,
     )
+    from .core.skill_contracts import SkillEnvelope
     from .tools import (
-        analyze_landscape,
-        build_timeline,
-        compare_topics,
-        compare_sources,
-        fulltext_batch,
         get_db_stats,
         list_topics,
         lookup_url_titles,
-        query_news,
         read_news_content,
-        search_news,
-        trend_analysis,
     )
 
 
 # ---------------------------------------------------------------------------
-# LangChain tool wrappers
+# Skill infrastructure (lazy-initialized singletons)
+# ---------------------------------------------------------------------------
+_registry = None
+_hook_runner = None
+
+
+def _get_registry():
+    global _registry
+    if _registry is None:
+        _registry = build_default_registry()
+    return _registry
+
+
+def _get_hook_runner():
+    global _hook_runner
+    if _hook_runner is None:
+        _hook_runner = build_default_hook_runner()
+    return _hook_runner
+
+
+# ---------------------------------------------------------------------------
+# Per-request evidence accumulator (thread-safe)
+# ---------------------------------------------------------------------------
+_local = threading.local()
+
+
+def _reset_evidence():
+    """Reset per-request evidence accumulator."""
+    _local.evidence_urls = []
+
+
+def _accumulate_evidence(urls: list[str]):
+    """Collect evidence URLs from SkillEnvelope during tool execution."""
+    store = getattr(_local, "evidence_urls", None)
+    if store is None:
+        _local.evidence_urls = []
+        store = _local.evidence_urls
+    for url in urls:
+        url = str(url or "").strip()
+        if url and url not in store:
+            store.append(url)
+
+
+def _get_accumulated_evidence() -> set[str]:
+    """Return all evidence URLs collected during the current request."""
+    return set(getattr(_local, "evidence_urls", []))
+
+
+# ---------------------------------------------------------------------------
+# Unified skill dispatch (SkillRegistry + ToolHookRunner)
+# ---------------------------------------------------------------------------
+def _envelope_to_tool_text(envelope: SkillEnvelope) -> str:
+    """Convert SkillEnvelope to text for the ReAct LLM.
+
+    For tools that returned raw text in their data, we pass that through.
+    For structured data, we format a summary the LLM can reason over.
+    """
+    if envelope.status == "error":
+        return f"[Error] {envelope.error or 'skill execution failed'}"
+
+    if envelope.status == "empty":
+        return "No matching records found."
+
+    # If the skill stored raw_output text, use it directly (preserves URLs)
+    data = envelope.data
+    if isinstance(data, dict):
+        raw = data.get("raw_output")
+        if isinstance(raw, str) and raw.strip():
+            return raw
+
+        # For query_news / trend_analysis with structured data, format records
+        records = data.get("records")
+        if isinstance(records, list) and records:
+            lines = []
+            for idx, item in enumerate(records[:15], 1):
+                title = item.get("title_cn") or item.get("title") or "(untitled)"
+                url = item.get("url", "")
+                source = item.get("source") or item.get("source_type") or ""
+                points = item.get("points", 0)
+                created = str(item.get("created_at", ""))[:16].replace("T", " ")
+                summary = str(item.get("summary", ""))[:220]
+                lines.append(
+                    f"{idx}. [{source}] {title}\n"
+                    f"   time={created}, points={points}\n"
+                    f"   url={url}\n"
+                    f"   summary={summary}"
+                )
+            return "\n".join(lines)
+
+        # Trend analysis data
+        if "topic" in data and "recent_count" in data:
+            topic = data.get("topic", "")
+            recent = data.get("recent_count", 0)
+            prev = data.get("previous_count", 0)
+            delta = data.get("count_delta", 0)
+            daily = data.get("daily", [])
+            lines = [
+                f"Trend for topic: {topic}",
+                f"Recent count: {recent}, Previous count: {prev}, Delta: {delta:+d}",
+            ]
+            if daily:
+                lines.append("Daily breakdown:")
+                for d in daily[:14]:
+                    lines.append(f"  {d.get('day', '')}: count={d.get('count', 0)}")
+            return "\n".join(lines)
+
+    return str(data) if data else "No data returned."
+
+
+def _execute_skill(skill_name: str, payload: dict[str, Any]) -> str:
+    """Unified skill dispatch: Registry → Hooks → Execute → Evidence collect.
+
+    Returns the text representation for the ReAct LLM to consume.
+    """
+    hooks = _get_hook_runner()
+
+    # Pre-hook guard
+    pre = hooks.pre_tool_use(skill_name, payload)
+    if pre.action == "deny":
+        return f"[Blocked] {pre.reason or 'pre-hook denied'}"
+    effective_payload = pre.updated_payload if pre.updated_payload is not None else payload
+
+    # Execute via registry
+    registry = _get_registry()
+    envelope = registry.execute(skill_name, effective_payload)
+
+    # Post-hook guard
+    post = hooks.post_tool_use(skill_name, effective_payload, envelope)
+    if post.action == "deny":
+        return f"[Blocked] {post.reason or 'post-hook denied'}"
+
+    # Collect structured evidence URLs
+    evidence_urls = [
+        str(e.url).strip()
+        for e in (envelope.evidence or [])
+        if str(e.url or "").strip()
+    ]
+    _accumulate_evidence(evidence_urls)
+
+    # Convert to text for LLM
+    return _envelope_to_tool_text(envelope)
+
+
+# ---------------------------------------------------------------------------
+# LangChain tool wrappers (LLM-facing interface unchanged)
 # ---------------------------------------------------------------------------
 @tool("search_news")
 def search_news_tool(query: str, days: int = 21) -> str:
@@ -79,7 +211,7 @@ def search_news_tool(query: str, days: int = 21) -> str:
     Best for exploratory queries. Returns up to 5 results ranked by relevance.
     If no results, try broader query or larger days window.
     """
-    return search_news(query=query, days=days)
+    return _execute_skill("search_news", {"query": query, "days": days})
 
 
 @tool("read_news_content")
@@ -116,42 +248,50 @@ def query_news_tool(
     sentiment, and sorting by time or heat (points). If no results, try broader
     query or larger time window.
     """
-    return query_news(
-        query=query,
-        source=source,
-        days=days,
-        category=category,
-        sentiment=sentiment,
-        sort=sort,
-        limit=limit,
-    )
+    return _execute_skill("query_news", {
+        "query": query,
+        "source": source,
+        "days": days,
+        "category": category,
+        "sentiment": sentiment,
+        "sort": sort,
+        "limit": limit,
+    })
 
 
 @tool("trend_analysis")
 def trend_analysis_tool(topic: str, window: int = 7) -> str:
     """Analyze topic momentum: compare article count and points in recent
     N days vs previous N days. Includes daily breakdown."""
-    return trend_analysis(topic=topic, window=window)
+    return _execute_skill("trend_analysis", {"topic": topic, "window": window})
 
 
 @tool("compare_sources")
 def compare_sources_tool(topic: str, days: int = 14) -> str:
     """Compare HackerNews vs TechCrunch coverage and sentiment for a topic."""
-    return compare_sources(topic=topic, days=days)
+    return _execute_skill("compare_sources", {"topic": topic, "days": days})
 
 
 @tool("compare_topics")
 def compare_topics_tool(topic_a: str, topic_b: str, days: int = 14) -> str:
     """Compare two entities side-by-side (e.g., OpenAI vs Anthropic) with
     DB-backed metrics, momentum, source mix, and evidence URLs."""
-    return compare_topics(topic_a=topic_a, topic_b=topic_b, days=days)
+    return _execute_skill("compare_topics", {
+        "topic_a": topic_a,
+        "topic_b": topic_b,
+        "days": days,
+    })
 
 
 @tool("build_timeline")
 def build_timeline_tool(topic: str, days: int = 30, limit: int = 12) -> str:
     """Build chronological event timeline for a topic/company/product.
     Auto-retries with wider window if no data found initially."""
-    return build_timeline(topic=topic, days=days, limit=limit)
+    return _execute_skill("build_timeline", {
+        "topic": topic,
+        "days": days,
+        "limit": limit,
+    })
 
 
 @tool("analyze_landscape")
@@ -166,15 +306,21 @@ def analyze_landscape_tool(
     Use for landscape/structure/role questions. Set topic='AI' for AI landscape.
     If confidence is Low, try wider time window or more entities.
     """
-    return analyze_landscape(
-        topic=topic, days=days, entities=entities, limit_per_entity=limit_per_entity
-    )
+    return _execute_skill("analyze_landscape", {
+        "topic": topic,
+        "days": days,
+        "entities": entities,
+        "limit_per_entity": limit_per_entity,
+    })
 
 
 @tool("fulltext_batch")
 def fulltext_batch_tool(urls: str, max_chars_per_article: int = 4000) -> str:
     """Batch read full article text. Accepts URLs or keyword query for auto-selection."""
-    return fulltext_batch(urls=urls, max_chars_per_article=max_chars_per_article)
+    return _execute_skill("fulltext_batch", {
+        "urls": urls,
+        "max_chars_per_article": max_chars_per_article,
+    })
 
 
 LANGCHAIN_TOOLS = [
@@ -325,13 +471,6 @@ def _get_react_agent():
     return _react_agent
 
 
-def _get_workflow_mode() -> str:
-    mode = os.getenv("AGENT_WORKFLOW", "v1").strip().lower()
-    if mode in {"v2", "graph", "skills", "subagents"}:
-        return "v2"
-    return "v1"
-
-
 # ---------------------------------------------------------------------------
 # Message conversion utilities
 # ---------------------------------------------------------------------------
@@ -450,10 +589,13 @@ def _decorate_response_with_sources(text: str, user_message: str, valid_urls: se
 
 
 # ---------------------------------------------------------------------------
-# Core generation functions
+# Core generation
 # ---------------------------------------------------------------------------
 def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[str]]:
-    """Run the ReAct agent loop."""
+    """Run the ReAct agent loop with Skill infrastructure."""
+    # Reset per-request evidence accumulator
+    _reset_evidence()
+
     agent = _get_react_agent()
     messages = _history_to_messages(history)
     messages.append(HumanMessage(content=user_message))
@@ -467,15 +609,19 @@ def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[st
     text = _extract_final_text(result)
     if not text:
         raise RuntimeError("ReAct agent returned empty response.")
-        
-    valid_urls: set[str] = set()
+
+    # Collect evidence from two sources:
+    # 1. Structured evidence from SkillEnvelope (accumulated during tool calls)
+    valid_urls: set[str] = _get_accumulated_evidence()
+
+    # 2. URLs parsed from ToolMessage content (fallback for non-skill tools)
     if isinstance(result, dict) and "messages" in result:
         from langchain_core.messages import ToolMessage
         try:
             from core.evidence import extract_urls
         except ImportError:
             from .core.evidence import extract_urls
-            
+
         for msg in result.get("messages", []):
             if isinstance(msg, ToolMessage):
                 content_str = _coerce_to_text(getattr(msg, "content", ""))
@@ -484,41 +630,27 @@ def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[st
     return text, valid_urls
 
 
-def _generate_workflow_v2(history: list[dict], user_message: str) -> tuple[str, set[str]]:
-    """Run structured Router->Miner->Analyst workflow."""
-
-    text, valid_urls = run_workflow_text(user_message=user_message, history=history)
-    if not text:
-        raise AgentGenerationError(
-            "抱歉，针对该问题，系统未能检索到相关的新闻。",
-            code="workflow_v2_empty_response",
-        )
-    return text, set(valid_urls or set())
-
-
 def _generate_response_core(history: list[dict], user_message: str) -> tuple[str, set[str]]:
     """Core generation: invoke ReAct agent with metrics tracking."""
     _metrics_inc("requests_total")
-    workflow_mode = _get_workflow_mode()
-    generator = _generate_react if workflow_mode == "v1" else _generate_workflow_v2
 
     try:
         _metrics_inc("react_attempts")
-        result, valid_urls = generator(history, user_message)
-        
+        result, valid_urls = _generate_react(history, user_message)
+
         if not valid_urls:
             raise AgentGenerationError(
                 "抱歉，针对该问题，系统未能检索到相关的新闻。",
                 code="react_empty_evidence_blocked"
             )
-            
+
         _metrics_inc("react_success")
         return result, valid_urls
     except Exception as exc:
         _metrics_inc("react_error")
         if isinstance(exc, AgentGenerationError):
             raise exc
-            
+
         exc_name = type(exc).__name__.lower()
         exc_str = str(exc).lower()
         recursion_hit = (
@@ -559,15 +691,6 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
             "抱歉，本次分析未能完成。请尝试更换关键词或缩小时间范围。",
             code="react_unexpected_runtime_error",
         )
-
-
-def generate_response_v2(history: list[dict], user_message: str) -> str:
-    """Direct entrypoint for the v2 structured workflow path."""
-
-    core_text, valid_urls = _generate_workflow_v2(history, user_message)
-    core_text = _strip_generic_analysis_leadin(core_text)
-    final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
-    return final_text
 
 
 def generate_response(history: list[dict], user_message: str) -> str:

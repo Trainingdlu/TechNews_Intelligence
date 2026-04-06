@@ -120,6 +120,14 @@ SYSTEM_INSTRUCTION = (
 )
 
 
+# ---------------------------------------------------------------------------
+# Subagent role prompts — reserved for future multi-agent evolution.
+# These prompts define the behaviour of specialised subagents (Router, Miner,
+# Analyst, Formatter) and are consumed by the MCP server layer.
+# In the current unified ReAct architecture, only SYSTEM_INSTRUCTION above
+# is actively used by the agent runtime.
+# ---------------------------------------------------------------------------
+
 ROUTER_SYSTEM_INSTRUCTION = (
     "# Role\n"
     "You are the Router agent for TechNews_Intelligence.\n"

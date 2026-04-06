@@ -1,75 +1,74 @@
-# TechNews 项目结构（2026-03 ReAct 架构）
+# TechNews Project Structure (2026-04, Unified ReAct Runtime)
 
-本文档描述当前仓库的目录职责。已删除的旧模块（如 `agents/core/router.py`、`agents/core/pipelines.py`）不再属于运行路径。
+This document describes the current `main` branch layout and ownership.
 
-## 1. 仓库根目录
+## 1) Repository root
 
-| 路径 | 作用 |
+| Path | Purpose |
 | --- | --- |
-| `.github/workflows/` | CI 与手动评测工作流 |
-| `agents/` | Agent 服务端代码（核心运行时、工具、评测、单测） |
-| `deployment/` | Docker Compose、数据库脚本与部署配置 |
-| `docs/` | 项目文档与测试说明 |
-| `etl_workflow/` | n8n 工作流 JSON |
-| `frontend/` | 前端页面代码 |
-| `sql/` | 数据库结构与分析 SQL |
-| `README.md` | 项目总览 |
-| `Dockerfile` | API/Bot 镜像构建入口 |
+| `.github/workflows/` | CI and manual evaluation workflows |
+| `agents/` | Agent service code (runtime, tools, tests) |
+| `deployment/` | Docker Compose and deployment configs |
+| `docs/` | Project and testing documentation |
+| `etl_workflow/` | n8n workflow JSON files |
+| `frontend/` | Web frontend code |
+| `sql/` | Database schema and analytics SQL |
+| `assets/` | Screenshots and static assets |
 
-## 2. Agent 模块（`agents/`）
+## 2) `agents/` package
 
-### 2.1 运行时入口
+### 2.1 Runtime entrypoints
 
-| 文件 | 作用 |
+| File | Purpose |
 | --- | --- |
-| `agents/agent.py` | ReAct 主运行时（工具调用、后处理、引用装饰、异常兜底） |
-| `agents/prompts.py` | ReAct 系统指令与输出约束 |
-| `agents/tools.py` | 数据检索与分析工具（query/timeline/landscape 等） |
-| `agents/api.py` | FastAPI 服务入口 |
-| `agents/bot.py` | Telegram Bot 入口 |
-| `agents/cli.py` | 本地 CLI 调试入口 |
-| `agents/db.py` | PostgreSQL 连接池 |
-| `agents/mail.py` | 邮件通知模块 |
-| `agents/__init__.py` | 包导出入口 |
+| `agents/agent.py` | Main runtime (ReAct loop, tools, evidence gate, post-processing) |
+| `agents/api.py` | FastAPI entrypoint (web) |
+| `agents/bot.py` | Telegram bot entrypoint |
+| `agents/cli.py` | Local CLI entrypoint |
+| `agents/prompts.py` | System prompts and output constraints |
+| `agents/tools.py` | Retrieval and analysis tool implementations |
+| `agents/db.py` | PostgreSQL pool and DB helpers |
+| `agents/mail.py` | Notification mail helpers |
 
-### 2.2 Core 公共模块（`agents/core/`）
+### 2.2 Shared runtime components (`agents/core/`)
 
-| 文件 | 作用 |
+| File | Purpose |
 | --- | --- |
-| `agents/core/evidence.py` | URL 提取、引用归一化、来源段落拼装 |
-| `agents/core/metrics.py` | ReAct 指标统计（`react_*`） |
-| `agents/core/__init__.py` | Core 导出入口 |
+| `skill_contracts.py` | `SkillEnvelope` and output contract |
+| `skill_registry.py` | Typed skill registration and dispatch |
+| `tool_hooks.py` | Pre/post hook validation and auditing |
+| `runtime_factories.py` | Default builders for registry and hook runner |
+| `evidence.py` | URL extraction, citation normalization, sources section |
+| `metrics.py` | In-memory route metrics for ReAct runtime |
+| `role_policy.py` | Role/skill allowlist for extension points |
 
-## 3. 测试与评测
+### 2.3 Graph compatibility layer (`agents/graph/`)
 
-| 路径 | 作用 |
+| File | Purpose |
 | --- | --- |
-| `agents/tests/unit/` | 单元测试（pytest） |
-| `agents/eval/run_eval.py` | 批量评测入口 |
-| `agents/eval/eval_core.py` | 评测指标计算与质量门禁 |
-| `agents/eval/datasets/` | 评测题库 |
-| `agents/eval/reports/` | 评测输出目录（运行产物） |
+| `workflow.py` | Compatibility shim that re-exports runtime factories |
+| `__init__.py` | Compatibility exports |
 
-## 4. 部署（`deployment/`）
+### 2.4 MCP extension layer (`agents/mcp/`)
 
-| 文件 | 作用 |
+| File | Purpose |
 | --- | --- |
-| `deployment/docker-compose.yml` | 服务编排 |
-| `deployment/.env.example` | 部署环境变量模板 |
-| `deployment/scripts/db/*.sh` | 数据库迁移/写入/质检脚本 |
-| `deployment/data/*.sql` | 初始 SQL 数据文件 |
+| `client.py` | MCP client (local/stdio, namespaced tool routing) |
+| `server.py` | In-process MCP server for newsdb tools |
+| `stdio_server.py` | Standalone stdio MCP server entrypoint |
 
-## 5. 文档（`docs/`）
+Note: MCP is preserved as an extension layer. The default online request path remains ReAct + local skill dispatch in `agents/agent.py`.
 
-| 路径 | 作用 |
+## 3) Tests
+
+| Path | Purpose |
 | --- | --- |
-| `docs/testing/` | 测试与评测文档 |
-| `docs/data_quality_checks.md` | 数据质量检查说明 |
-| `docs/minimal_source_refactor_checklist.md` | 来源框架改造清单 |
-| `docs/project_structure.md` | 当前文档 |
+| `agents/tests/unit/` | Unit tests for runtime, tools, MCP, hooks, metrics |
+| `docs/testing/` | Testing and evaluation documentation |
 
-## 6. 维护约定
+## 4) Runtime summary
 
-1. 运行时默认只有 ReAct 主链路，不再维护旧路由/旧管线说明。
-2. 指标命名以 `react_*` 为准，评测门禁与 CI 必须和该命名对齐。
-3. 测试命令以 `pytest agents/tests -v` 为标准入口。
+1. `main` uses a single ReAct runtime path.
+2. Skill registry, hooks, and evidence processing are unified in that path.
+3. `agents/graph/` is a compatibility namespace, not an active DAG orchestrator.
+4. MCP remains optional and is not a required default dependency for each request.
