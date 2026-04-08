@@ -137,10 +137,3 @@ ReAct 路由指标：
 3. `avg_min_url_hit_rate` 下降：检查工具输出 URL 数量与引用后处理链路。
 4. `avg_pairwise_similarity` 过低：检查 prompt 漂移或工具返回字段不稳定。
 
-## 10. 维护规则
-
-当 `agent/agent.py`、`eval/eval_core.py`、`eval/run_eval.py` 行为或参数变化时，需同步更新：
-
-- 本指南
-- CI/评测脚本
-- 对应单元测试
