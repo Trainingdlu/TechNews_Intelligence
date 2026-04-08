@@ -1,35 +1,36 @@
-# Eval Notes
+﻿# 评测说明
 
-Evaluation docs were moved to `docs/testing`:
-- [Testing Index](../docs/testing/README.md)
-- [Agent Eval Structure](../docs/testing/agent-eval-structure.md)
-- [Agent Testing Guide](../docs/testing/agent-testing-guide.md)
+评测相关文档已迁移至 `docs/testing/` 目录：
 
-Runtime reports under `eval/reports/` are generated artifacts and are not tracked.
+- [测试文档索引](../docs/testing/README.md)
+- [智能体评测结构说明](../docs/testing/agent-eval-structure.md)
+- [智能体测试与评测指南](../docs/testing/agent-testing-guide.md)
 
-## Dataset fields
+`eval/reports/` 下的运行报告为生成产物，不纳入版本跟踪。
 
-Each JSONL case supports:
-- `id`, `category`, `capability`, `question`
-- `min_urls`, `must_contain`
-- `expected_facts` (optional): phrase list used for `fact_hit_rate`
-- `expected_fact_groups` (optional): grouped phrase aliases used for `fact_group_hit_rate`
-- `required_tools` (optional): expected tool list used for `tool_path_hit_rate`
-- `acceptable_tool_paths` (optional): alternative acceptable tool combinations used for `tool_path_accept_hit_rate`
-- `must_not_contain` (optional): forbidden phrase list used for `forbidden_claim_rate`
-- `expected_source_domains` (optional): expected citation domains used for `source_domain_hit_rate`
-- `tags`, `enabled`
+## 数据集字段
 
-If `required_tools` is omitted, loader uses a capability-based default map
-(`compare_topics -> compare_topics`, `timeline -> build_timeline`, etc.).
+每条 JSONL 用例支持以下字段：
 
-## Quick commands
+- `id`、`category`、`capability`、`question`
+- `min_urls`、`must_contain`
+- `expected_facts`（可选）：用于 `fact_hit_rate` 的短语列表
+- `expected_fact_groups`（可选）：用于 `fact_group_hit_rate` 的分组短语别名
+- `required_tools`（可选）：用于 `tool_path_hit_rate` 的期望工具列表
+- `acceptable_tool_paths`（可选）：用于 `tool_path_accept_hit_rate` 的可接受工具组合
+- `must_not_contain`（可选）：用于 `forbidden_claim_rate` 的禁用短语列表
+- `expected_source_domains`（可选）：用于 `source_domain_hit_rate` 的期望引用域名
+- `tags`、`enabled`
+
+若未提供 `required_tools`，加载器会根据能力字段使用默认映射（例如：`compare_topics -> compare_topics`、`timeline -> build_timeline`）。
+
+## 常用命令
 
 ```bash
-# smoke
+# 冒烟评测
 python eval/run_eval.py --suite smoke --runs-per-question 1 --output eval/reports/smoke.json
 
-# default + quality gates
+# 默认题集 + 质量门禁
 python eval/run_eval.py \
   --suite default \
   --runs-per-question 3 \

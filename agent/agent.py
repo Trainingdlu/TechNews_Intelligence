@@ -445,7 +445,7 @@ def _build_chat_model() -> Any:
     except ImportError as exc:
         raise RuntimeError(
             "Vertex provider requires 'langchain-google-vertexai'. "
-            "Install dependencies with: pip install -r agent/requirements.txt"
+            "Install dependencies with: pip install -r requirements.txt"
         ) from exc
 
     return ChatVertexAI(
