@@ -105,6 +105,7 @@ services:
       dockerfile: Dockerfile
     container_name: tech_news_bot
     restart: always
+    command: [ "python", "-m", "app.bot" ]
     environment:
       <<: *agent-common-env
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}

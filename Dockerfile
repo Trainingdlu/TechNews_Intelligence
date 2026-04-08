@@ -10,4 +10,4 @@ COPY app/ ./app/
 COPY services/ ./services/
 COPY eval/ ./eval/
 
-CMD ["python", "app/bot.py"]
+CMD ["python", "-m", "app.bot"]
