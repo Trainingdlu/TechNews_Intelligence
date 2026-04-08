@@ -434,9 +434,9 @@ def _build_chat_model() -> Any:
     ).strip()
 
     credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-    if credentials_path and not os.path.exists(credentials_path):
+    if credentials_path and not os.path.isfile(credentials_path):
         raise ValueError(
-            "GOOGLE_APPLICATION_CREDENTIALS points to a missing file: "
+            "GOOGLE_APPLICATION_CREDENTIALS must point to an existing JSON file: "
             f"{credentials_path}"
         )
 
