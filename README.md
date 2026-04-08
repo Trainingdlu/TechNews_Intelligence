@@ -18,7 +18,7 @@
 ---
 
 # 1. 系统架构
-项目基于 ELT 架构，使用 Docker Compose 编排，包含五个核心服务：n8n（工作流与向量化）、PostgreSQL（存储与向量检索）、Metabase（可视化）、Web 网页（前端交互入口）、Telegram Bot（应用交互入口），同时提供本地 CLI 入口。
+项目基于 ELT 架构，使用 Docker Compose 编排，包含五个核心容器服务：n8n（工作流与向量化）、PostgreSQL（存储与向量检索）、Metabase（可视化）、Agent API（前端/程序调用入口）、Telegram Bot（应用交互入口），同时提供本地 CLI 入口。Web 网页为 `frontend/` 下的静态资源，不作为独立容器默认启动。
 
 ![Architecture](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/architecture.svg)
 
@@ -29,7 +29,7 @@
 ## 2.1 数据采集与处理
 系统通过 n8n 编排三条工作流实现全自动化采集与结构化处理
 
-**主工作流**：每小时自动触发，获取新闻数据后通过 Jina Reader 提取全文，再调用 LLM 输出结构化 JSON (标题翻译、摘要、情感、分类)。写入成功后自动调用 Jina Embeddings 生成 1024 维语义向量并存入 `news_embeddings` ，确保语义搜索始终覆盖最新数据分析。已有数据仅更新热度值。处理失败的新闻数据存入`tech_news_failed` 表防止重复尝试。<br>
+**主工作流**：每小时自动触发，获取新闻数据后通过 Jina Reader 提取全文，再调用 LLM 输出结构化 JSON（标题翻译、摘要、情感、标签化分类）。写入成功后自动调用 Jina Embeddings 生成 1024 维语义向量并存入 `news_embeddings` ，确保语义搜索始终覆盖最新数据分析。已有数据仅更新热度值。处理失败的新闻数据存入`tech_news_failed` 表防止重复尝试。<br>
 
 ![Main](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/screenshots/Main_workflow.png)
 
@@ -46,12 +46,11 @@
 #### 主工作流核心处理流程
 **输入内容**：n8n 先调用 Jina Reader API 将原始 HTML 页面去噪（剔除导航、广告、脚注等无关元素），转为较为干净的 Markdown 格式全文（包含标题 + 正文），作为 LLM 的 Prompt 输入，能够显著提升摘要质量。<br>
 **输出 JSON 的完整字段**：
-  `title_cn`：中文标题
+  `title_cn`：中文标题（可包含分类前缀标签）
   `summary`：摘要
-  `sentiment`：情绪标签
-  `category`：分类标签<br>
+  `sentiment`：情绪标签<br>
 **情感分类**：三个情绪分类 —— Positive（正面）、Neutral（中性）、Negative（负面）。<br>
-**新闻分类**：六个分类标签 —— AI、安全、硬件、开发、商业、生态。<br>
+**新闻分类**：六个标签体系 —— AI、安全、硬件、开发、商业、生态（用于标题前缀与检索过滤，非独立数据库列）。<br>
 **失败记录存储**：失败记录进入 `tech_news_failed` 死信队列，避免重复处理。<br>
 **向量写入机制**：主工作流采用同步执行。当新闻成功写入 `tech_news` 表后，立即调用 Jina Embeddings API 生成 1024 维语义向量，随后存入 `news_embeddings` 表，确保 Agent 检索始终覆盖最新数据。
 
@@ -78,9 +77,10 @@
 | `jina_raw_logs`    | Jina Reader 返回的新闻原始内容                 |
 | `subscribers`      | 日报接收用户邮箱列表                            |
 | `access_tokens`    | Web 前端 Token 管理表，存储用户邮箱、Token、配额与使用量  |
+| `source_registry`  | 数据源注册表，控制订阅可选的新闻源                     |
 | `system_logs`      | 系统运行日志                                |
 
-视图 `view_dashboard_news` 封装了时区转换（UTC → UTC+8）、来源分类（HackerNews / TechCrunch）、hours_ago 计算和 HN 讨论链接生成，分析查询层不重复这些逻辑。
+视图 `view_dashboard_news` 封装了时区转换（UTC → UTC+8）、来源归一化（优先 `source_registry`，并回退 `tech_news` 字段与 legacy 规则）、hours_ago 计算和 HN 讨论链接生成，分析查询层不重复这些逻辑。
 
 ## 2.3 数据分析与可视化
 系统通过 Metabase 进行对新闻数据的简单分析与展示
@@ -109,73 +109,182 @@
 >**发布热力图**：单个最高热度时段为周一 14:00（316），次高峰出现在周四 13:00（295）；此外，周六 08:00（258）与周日 09:00（269）等周末早间时段，以及大部分的深夜（22:00-23:00）均出现了显著的活跃高峰，体现了HN社区的热度分布呈现高度碎片化。
 
 ## 2.4 深度分析 Agent
-基于 Gemini 2.5 Pro 构建的交互式 Agent，支持 Web 前端、Telegram Bot、本地 CLI 三种接入方式。
+基于 LangGraph ReAct 架构构建的交互式分析 Agent，支持 Vertex AI ，与 Gemini API 。提供 Web 前端、Telegram Bot、本地 CLI 三种接入方式。
 
-### 核心能力
+### 运行时架构
 
-**混合搜索**：同时查询 pgvector 语义相似度与关键词精确匹配，合并去重后返回结果。纯向量检索在公司名、产品名等专有名词上容易召回偏移，关键词匹配作为兜底保证精确查询的稳定性。<br>
-**全文阅读**：从 `jina_raw_logs` 提取新闻原文，基于全文而非摘要进行分析。<br>
-**时效感知**：首次交互时主动获取数据库最新文章时间与近 21 天数据分布，在回复中标注数据截止时间。<br>
-**多轮上下文**：支持追问，对话上下文自动保持。<br>
-**Token 配额**：Agent 调用 Gemini API 有实际成本，配额机制防止意外账单，额度耗尽后自动触发管理员审批邮件。<br>
-**对话历史存储**：<br>
-  Telegram Bot：进程内 `conversation_histories` 字典（按 `chat_id` 隔离）<br>
-  Web 前端：无状态 API，历史由客户端携带在 `/chat` 请求的 `history` 参数中传入<br>
-**时间衰减因子**：**非 pgvector 内置**，而是在 `tools.py` 的查询 SQL 中手动实现：<br>
-  `0.1 * EXP(-EXTRACT(EPOCH FROM (NOW() - t.created_at)) / 86400.0 / 21)`<br>
-**配额成本控制**：系统内置配额机制，额度耗尽后自动触发管理员审批邮件。
+系统采用统一的 ReAct Agent 单循环架构，LLM 拥有完全的工具调用自主权。工具执行通过 SkillRegistry（技能注册中心）统一分发，并由 ToolHookRunner 在执行前后插入参数校验与证据审计守卫。
+
+```text
+请求入口 (api.py / bot.py / cli.py)
+  ↓
+agent.py → LangGraph create_react_agent
+  ↓  ↑ (tool calls)
+ToolHookRunner.pre_tool_use()  ── 参数校验
+  ↓
+SkillRegistry.execute()        ── tools.py (DB / Jina API)
+  ↓
+ToolHookRunner.post_tool_use() ── 证据审计
+  ↓
+SkillEnvelope → Evidence 累积
+  ↓
+LLM 生成最终回复
+  ↓
+后处理管道 (evidence.py)       ── 引用归一化 + 来源列表
+```
+
+### 工具体系
+
+Agent 拥有 11 个工具，其中 8 个通过 SkillRegistry 分发，均有 Pydantic 输入验证和 SkillEnvelope 结构化输出：
+
+| 工具 | 分发 | 用途 |
+| :--- | :--- | :--- |
+| `search_news` | Registry | 混合检索（pgvector 语义相似度 + 关键词精确匹配），合并去重 |
+| `query_news` | Registry | 结构化过滤查询（来源、分类、情感、时间窗口、排序） |
+| `trend_analysis` | Registry | 话题动量分析：近 N 天 vs 前 N 天的数据量与热度对比 |
+| `compare_sources` | Registry | HackerNews vs TechCrunch 双源覆盖与情感差异对比 |
+| `compare_topics` | Registry | A vs B 实体对比（如 OpenAI vs Anthropic），含指标与证据 |
+| `build_timeline` | Registry | 时间线构建：按时间排列的事件编年，自动扩展窗口 |
+| `analyze_landscape` | Registry | 竞争格局分析：实体维度统计 + 信号分类（Compute / Algorithm / Data / GTM / Policy） |
+| `fulltext_batch` | Registry | 批量全文阅读，支持 URL 列表或关键词自动选取 |
+| `read_news_content` | 直接 | 单篇新闻原文读取（从 `jina_raw_logs` 提取） |
+| `get_db_stats` | 直接 | 数据库新鲜度与文章总量 |
+| `list_topics` | 直接 | 近 21 天每日发文量分布 |
+
+**混合检索机制**：纯向量检索在公司名、产品名等专有名词上容易召回偏移，关键词匹配作为兜底保证精确查询的稳定性。检索评分融合了语义相似度、关键词命中、热度归一化和时间衰减因子 `0.1 × EXP(-age_seconds / 86400 / 21)`。
+
+### 基础设施层
+
+| 组件 | 文件 | 职责 |
+| :--- | :--- | :--- |
+| SkillRegistry | `core/skill_registry.py` | 技能注册与执行：Pydantic 输入验证 → handler 调用 → SkillEnvelope 输出标准化 |
+| SkillEnvelope | `core/skill_contracts.py` | 统一输出信封：`status`(ok/empty/error) + `data` + `evidence[]` + `diagnostics` |
+| ToolHookRunner | `core/tool_hooks.py` | Pre-hook 参数守卫（时间窗口范围、topic 非空、去重校验）；Post-hook 证据完整性审计 |
+| Evidence Pipeline | `core/evidence.py` | URL 提取 → 内联引用编号 → 来源列表渲染 → 无效引用清洗 |
+| Metrics | `core/metrics.py` | 运行时指标：请求量、成功率、错误率、递归超限率，自动日志输出 |
+| Role Policy | `core/role_policy.py` | 角色-技能 ACL 策略（预留多 Agent 扩展点） |
+| MCP 协议层 | `mcp/` | In-Process + Stdio 双传输后端的 MCP 抽象，作为扩展层保留，非默认请求路径 |
+
+### System Prompt 与分析框架
+
+Agent 根据用户意图自动选择输出模式，避免同质化回答：
+
+| 模式 | 适用场景 | 输出模板 |
+| :--- | :--- | :--- |
+| Quick Brief | "最近发生了什么" | 今日概览 → 判断 |
+| Compare View | A vs B、来源差异 | 对比结论 → 关键变量 → 变迁判断 → 决策影响 |
+| Timeline View | 事件演变、里程碑 | 事件时间线 → 转折点 → 后续关注 |
+| Deep Dive | 特定事件深度解读 | 核心事件 → 关键变量 → 深度解读 → 关键洞察 |
+| Landscape View | 全局格局、竞争结构 | 结论 → 关键变量与转折点 → 公司角色 → 供需-生态位分析 |
+
+分析框架（Compare / Deep Dive / Landscape 模式强制应用）：<br>
+**Signal vs Noise**：优先识别改变竞争均衡的事件。<br>
+**变量分解**：将证据映射至 Compute/Cost、Algorithm/Efficiency、Data/Moat 三维度。<br>
+**变迁判定**：区分"工程优化"（同一范式的改良）与"范式转移"（新规则的确立）。<br>
+**供需-生态评估**：评估供给壁垒、需求强度、生态位层级。<br>
+**前瞻推演**：给出 6-18 个月的条件性推演（非确定性预测），事实/推断/情景假设显式分层。
+
+### 接入方式
+
+| 入口 | 实现 | 部署 | 对话历史 |
+| :--- | :--- | :--- | :--- |
+| Web 前端 | FastAPI (`api.py`) + Bearer Token | Docker 容器 `tech_news_api` | 客户端携带 `history` 参数，API 无状态 |
+| Telegram Bot | python-telegram-bot (`bot.py`) | Docker 容器 `tech_news_bot` | 进程内字典，按 `chat_id` 隔离 |
+| 本地 CLI | `cli.py` | 本地 Python | `_SessionChat` 对象持有 |
+
+**Token 配额机制**：Web 前端通过邮箱自动获取 Token（默认 10 次），配额耗尽后自动触发管理员审批邮件，管理员一键批准可提升至 50 次。<br>
+**限流**：Web API 按 IP 限流（默认 5 次/分钟）；Telegram Bot 按 chat_id 限流（默认 3 次/10 秒）。
+
+### 质量保障
+
+- **单元测试**（`tests/unit/`）：覆盖 agent 路由指标、MCP 适配器、工具结构化输出、runtime factories、eval core 等模块
+- **Eval 框架**（`eval/`）：JSONL 格式测试数据集，支持按 category / capability 筛选；多次运行计算输出稳定性；quality gate 阈值检测与 baseline 回归对比
 
 ---
 
 ## 3. 目录结构
 ```text
 TechNews_Intelligence/
-├── etl_workflow/                   # n8n 工作流配置
-│   ├── Tech_Intelligence.json      # 主采集流程（含向量化节点）
-│   ├── System_Alert_Service.json   # 异常捕获流程
-│   └── Daily_Tech_Brief.json       # 日报推送流程
+├── .github/
+│   └── workflows/
+│       ├── ci.yml
+│       ├── deploy.yml
+│       └── eval-manual.yml
 │
-├── agents/                         # AI 深度分析 Agent
-│   ├── db.py                       # 数据库连接池
-│   ├── tools.py                    # Agent 工具函数（搜索、全文读取等）
-│   ├── prompts.py                  # System Prompt 模板
-│   ├── agent.py                    # LLM 客户端、Chat 工厂
-│   ├── api.py                      # Web API 入口（FastAPI + Token 管理）
-│   ├── mail.py                     # 邮件发送（Token 发放、审批通知）
-│   ├── bot.py                      # Telegram Bot 入口（Docker 部署）
-│   ├── cli.py                      # 本地终端交互入口
-│   └── requirements.txt            # Python 依赖
+├── agents/                          # AI 深度分析 Agent
+│   ├── agent.py                     # ReAct 运行时：LLM 客户端、工具调度、后处理管道
+│   ├── api.py                       # Web API（FastAPI + Token 鉴权 + 限额管理）
+│   ├── bot.py                       # Telegram Bot（chat_id 隔离 + Markdown→HTML 渲染）
+│   ├── cli.py                       # 本地终端交互
+│   ├── tools.py                     # 11 个工具函数（DB 查询、Jina 向量检索、全文读取）
+│   ├── prompts.py                   # System Prompt（分析框架 + 5 种输出模式）
+│   ├── db.py                        # PostgreSQL 连接池
+│   ├── mail.py                      # 邮件（Token 发放、审批通知）
+│   ├── core/                        # 运行时基础设施
+│   ├── mcp/                         # MCP 协议层（扩展，非默认路径）
+│   ├── eval/                        # 评估框架
+│   ├── tests/
+│   │   ├── unit/                    # 单元测试
+│   │   └── utils/                   # 测试工具
+│   └── requirements.txt             # Python 依赖
 │
-├── frontend/                       # Web 前端（静态页面）
-│   ├── index.html                  # 页面结构
-│   ├── style.css                   # 样式
-│   └── app.js                      # 交互逻辑
+├── assets/
+│   ├── previews/                    # 展示图
+│   ├── screenshots/                 # 工作流 / UI 截图
+│   └── svg/                         # 标题与架构图
+│
+├── deployment/                      # Docker 与运维脚本
+│   ├── data/                        # 备份/样例 SQL
+│   ├── scripts/
+│   │   └── db/                      # 数据库维护脚本
+│   ├── .env.example
+│   └── docker-compose.yml
+│
+├── docs/
+│   ├── testing/                     # 测试与评估文档
+│   ├── data_quality_checks.md
+│   ├── first_batch_official_sources.md
+│   ├── minimal_source_refactor_checklist.md
+│   └── project_structure.md
+│
+├── etl_workflow/                    # n8n 工作流配置
+│   ├── Tech_Intelligence.json       # 主采集流程（含向量化节点）
+│   ├── System_Alert_Service.json    # 异常捕获流程
+│   └── Daily_Tech_Brief.json        # 日报推送流程
+│
+├── frontend/                        # Web 前端（静态页面）
+│   ├── index.html                   # Agent 对话页面
+│   ├── subscribe.html               # 日报订阅页面
+│   ├── style.css / app.js           # 对话交互样式与逻辑
+│   └── subscribe.css / subscribe.js # 订阅交互样式与逻辑
 │
 ├── sql/
-│   ├── infrastructure/             # DDL：建表与视图
-│   │   ├── schema_ddl.sql          # 表结构定义
-│   │   └── view_logic.sql          # 视图逻辑（时区转换、来源分类、指标计算）
-│   │
-│   └── analytics/                  # DML：Metabase 分析查询
+│   ├── analytics/                   # Metabase 分析查询 SQL（14 个）
+│   └── infrastructure/
+│       ├── checks/
+│       │   └── data_quality_checks.sql
+│       ├── schema/
+│       │   └── schema_ddl.sql
+│       ├── seeds/
+│       │   └── seed_source_official.sql
+│       └── views/
+│           └── view_dashboard_news.sql
 │
-├── deployment/                     # Docker 部署配置
-│   ├── docker-compose.yml
-│   └── .env.example
-│
-└── assets/
-    ├── docs/                       # Metabase 仪表盘 PDF
-    ├── screenshots/                # 工作流截图
-    └── svg/                        # 架构图
+├── .gitattributes
+├── .gitignore
+├── Dockerfile
+├── LICENSE
+└── README.md
 ```
 
 ---
 
 ## 4. 部署
-项目已容器化，可通过 Docker Compose 部署。
+项目已容器化，可通过 Docker Compose 部署。Agent 在 Docker 中拆分为 `tech_news_bot`（Telegram Bot）和 `tech_news_api`（Web API）两个独立容器。
 
 ### 前置条件
 已安装 Docker<br>
-已获取 LLM API Key（阿里通义 / Gemini）及 Jina API Key<br>
+已获取 LLM API Key 或 Vertex AI 凭证，及 Jina API Key<br>
 已创建 Telegram Bot 并获取 Bot Token（通过 @BotFather）<br>
 ### 步骤
 ```bash
@@ -185,7 +294,13 @@ cd TechNews_Intelligence
 
 # 2. 配置环境变量
 cp deployment/.env.example deployment/.env
-# 编辑 deployment/.env，填入数据库密码、API Key 和 TELEGRAM_BOT_TOKEN
+# 编辑 deployment/.env，填入数据库密码、API Key、TELEGRAM_BOT_TOKEN 等
+# 关键变量：
+#   AGENT_MODEL_PROVIDER           — 模型后端
+#   GEMINI_API_KEY                 — Gemini API Key
+#   VERTEX_PROJECT                 — GCP 项目 ID
+#   GOOGLE_APPLICATION_CREDENTIALS — Vertex AI 服务账号凭证路径
+#   JINA_API_KEY                   — Jina Embeddings API Key
 
 # 3. 启动服务
 cd deployment
@@ -228,5 +343,5 @@ Current `main` branch uses a **single ReAct runtime path**.
 
 Notes:
 
-- `agents/graph/workflow.py` is now a compatibility shim for older imports.
+- `agents/graph/*` is not part of the current repository layout; runtime orchestration lives in `agents/agent.py`.
 - `agents/mcp/*` remains available as an extension layer (local/stdio), but is not the required default request path.

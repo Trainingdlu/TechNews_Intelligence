@@ -44,6 +44,8 @@ class EvalDatasetLoaderTests(unittest.TestCase):
         self.assertEqual(len(cases), 2)
         self.assertEqual(cases[0]["capability"], "compare_topics")
         self.assertEqual(cases[1]["capability"], "timeline")
+        self.assertEqual(cases[0]["required_tools"], ["compare_topics"])
+        self.assertEqual(cases[1]["required_tools"], ["build_timeline"])
 
     def test_load_cases_resolve_capability_from_category(self) -> None:
         path = _write_jsonl(
@@ -73,6 +75,23 @@ class EvalDatasetLoaderTests(unittest.TestCase):
         )
         cases = load_eval_cases(path, strict_capability_check=False)
         self.assertEqual(cases[0]["capability"], "general_qa")
+        self.assertEqual(cases[0]["required_tools"], [])
+
+    def test_optional_accuracy_fields_are_normalized(self) -> None:
+        path = _write_jsonl(
+            [
+                (
+                    '{"id":"c1","category":"query","question":"Q",'
+                    '"expected_facts":"openai,anthropic",'
+                    '"required_tools":"query_news",'
+                    '"must_not_contain":["hallucination"]}'
+                ),
+            ]
+        )
+        cases = load_eval_cases(path)
+        self.assertEqual(cases[0]["expected_facts"], ["openai", "anthropic"])
+        self.assertEqual(cases[0]["required_tools"], ["query_news"])
+        self.assertEqual(cases[0]["must_not_contain"], ["hallucination"])
 
     def test_filter_and_matrix(self) -> None:
         cases = [

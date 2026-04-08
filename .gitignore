@@ -22,3 +22,9 @@ docker-data/
 # Eval reports (generated artifacts)
 agents/eval/reports/*
 !agents/eval/reports/.gitkeep
+
+# Local development artifacts
+.venv/
+.tmp/
+.pytest_cache/
+agents/.pytest_cache/

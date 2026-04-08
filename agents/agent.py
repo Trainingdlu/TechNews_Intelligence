@@ -89,6 +89,29 @@ def _reset_evidence():
     _local.evidence_urls = []
 
 
+def _reset_tool_calls():
+    """Reset per-request tool-call accumulator."""
+    _local.tool_calls = []
+
+
+def _accumulate_tool_call(tool_name: str):
+    """Collect unique tool names used during a request."""
+    name = str(tool_name or "").strip()
+    if not name:
+        return
+    store = getattr(_local, "tool_calls", None)
+    if store is None:
+        _local.tool_calls = []
+        store = _local.tool_calls
+    if name not in store:
+        store.append(name)
+
+
+def _get_accumulated_tool_calls() -> set[str]:
+    """Return all tool names used during the current request."""
+    return set(getattr(_local, "tool_calls", []))
+
+
 def _accumulate_evidence(urls: list[str]):
     """Collect evidence URLs from SkillEnvelope during tool execution."""
     store = getattr(_local, "evidence_urls", None)
@@ -183,6 +206,7 @@ def _execute_skill(skill_name: str, payload: dict[str, Any]) -> str:
     # Execute via registry
     registry = _get_registry()
     envelope = registry.execute(skill_name, effective_payload)
+    _accumulate_tool_call(skill_name)
 
     # Post-hook guard
     post = hooks.post_tool_use(skill_name, effective_payload, envelope)
@@ -217,18 +241,21 @@ def search_news_tool(query: str, days: int = 21) -> str:
 @tool("read_news_content")
 def read_news_content_tool(url: str) -> str:
     """Read full article content by URL. Only works for URLs from other tools."""
+    _accumulate_tool_call("read_news_content")
     return read_news_content(url=url)
 
 
 @tool("get_db_stats")
 def get_db_stats_tool() -> str:
     """Get database freshness stats and total article count."""
+    _accumulate_tool_call("get_db_stats")
     return get_db_stats()
 
 
 @tool("list_topics")
 def list_topics_tool() -> str:
     """Get daily article volume distribution for recent 21 days."""
+    _accumulate_tool_call("list_topics")
     return list_topics()
 
 
@@ -384,61 +411,68 @@ def _build_react_prompt_kwargs() -> tuple[dict[str, str], str]:
     )
 
 
-def _build_chat_model() -> Any:
-    """Create the chat model client, defaulting to Vertex AI but falling back to Gemini API."""
-    temperature = float(os.getenv("AGENT_TEMPERATURE", "0.1"))
-    provider = os.getenv("AGENT_MODEL_PROVIDER", "vertex").strip().lower()
+def _get_model_provider() -> str:
+    """Normalize AGENT_MODEL_PROVIDER into supported provider keys."""
+    provider = os.getenv("AGENT_MODEL_PROVIDER", "gemini_api").strip().lower()
+    if provider in {"gemini", "gemini_api", "google_ai_studio", "developer_api"}:
+        return "gemini_api"
+    if provider in {"vertex", "vertex_ai", "gcp"}:
+        return "vertex"
+    raise ValueError(
+        "AGENT_MODEL_PROVIDER must be one of: "
+        "gemini_api (default), vertex."
+    )
 
-    # Helper function to initialize the Gemini API fallback
-    def _build_gemini():
+
+def _build_chat_model() -> Any:
+    """Create the chat model client from environment configuration."""
+    temperature = float(os.getenv("AGENT_TEMPERATURE", "0.1"))
+    provider = _get_model_provider()
+
+    if provider == "gemini_api":
         api_key = os.getenv("GEMINI_API_KEY", "").strip()
         if not api_key:
-            raise ValueError("GEMINI_API_KEY is not set or empty.")
+            raise ValueError("GEMINI_API_KEY is not set.")
         return ChatGoogleGenerativeAI(
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-pro"),
             google_api_key=api_key,
             temperature=temperature,
         )
 
-    # 1. 明确指定只用通用 API 的情况
-    if provider in {"gemini", "gemini_api", "google_ai_studio", "developer_api"}:
-        return _build_gemini()
-
-    # 2. 默认走 Vertex AI（或明确指定 provider="vertex" 的情况）
     project = os.getenv("VERTEX_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", "")).strip()
+    if not project:
+        raise ValueError(
+            "VERTEX_PROJECT is not set. "
+            "You can also use GOOGLE_CLOUD_PROJECT."
+        )
+
     location = os.getenv("VERTEX_LOCATION", os.getenv("GOOGLE_CLOUD_LOCATION", "global")).strip()
     model_name = os.getenv(
         "VERTEX_MODEL",
         os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
     ).strip()
+
     credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if credentials_path and not os.path.exists(credentials_path):
+        raise ValueError(
+            "GOOGLE_APPLICATION_CREDENTIALS points to a missing file: "
+            f"{credentials_path}"
+        )
 
     try:
-        if not project:
-            raise ValueError("VERTEX_PROJECT is not set.")
-        if credentials_path and not os.path.exists(credentials_path):
-            raise ValueError(f"GOOGLE_APPLICATION_CREDENTIALS points to a missing file: {credentials_path}")
+        from langchain_google_vertexai import ChatVertexAI
+    except ImportError as exc:
+        raise RuntimeError(
+            "Vertex provider requires 'langchain-google-vertexai'. "
+            "Install dependencies with: pip install -r agents/requirements.txt"
+        ) from exc
 
-        try:
-            from langchain_google_vertexai import ChatVertexAI
-        except ImportError as exc:
-            raise RuntimeError("langchain-google-vertexai is not installed.") from exc
-
-        return ChatVertexAI(
-            model=model_name,
-            project=project,
-            location=location,
-            temperature=temperature,
-        )
-    except Exception as exc:
-        print(f"[Agent][Warn] Vertex AI initialization failed ({exc}). Falling back to Gemini API...")
-        try:
-            return _build_gemini()
-        except Exception as fallback_exc:
-            raise RuntimeError(
-                f"Failed to initialize any chat model. "
-                f"Vertex error: {exc}. Gemini API fallback error: {fallback_exc}"
-            ) from fallback_exc
+    return ChatVertexAI(
+        model=model_name,
+        project=project,
+        location=location,
+        temperature=temperature,
+    )
 
 
 def _get_react_agent():
@@ -588,6 +622,7 @@ def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[st
     """Run the ReAct agent loop with Skill infrastructure."""
     # Reset per-request evidence accumulator
     _reset_evidence()
+    _reset_tool_calls()
 
     agent = _get_react_agent()
     messages = _history_to_messages(history)
@@ -616,7 +651,12 @@ def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[st
             from .core.evidence import extract_urls
 
         for msg in result.get("messages", []):
+            if isinstance(msg, AIMessage):
+                for call in (getattr(msg, "tool_calls", None) or []):
+                    if isinstance(call, dict):
+                        _accumulate_tool_call(str(call.get("name", "")).strip())
             if isinstance(msg, ToolMessage):
+                _accumulate_tool_call(str(getattr(msg, "name", "")).strip())
                 content_str = _coerce_to_text(getattr(msg, "content", ""))
                 valid_urls.update(extract_urls(content_str))
 
@@ -708,6 +748,23 @@ def generate_response_payload(history: list[dict], user_message: str) -> dict[st
         "text": final_text,
         "url_title_map": title_map,
     }
+
+
+def generate_response_eval_payload(history: list[dict], user_message: str) -> dict[str, Any]:
+    """Structured response for eval with tool trace and URL evidence."""
+    core_text, valid_urls = _generate_response_core(history, user_message)
+    core_text = _strip_generic_analysis_leadin(core_text)
+    final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+    return {
+        "text": final_text,
+        "valid_urls": sorted(valid_urls),
+        "tool_calls": sorted(_get_accumulated_tool_calls()),
+    }
+
+
+def get_last_tool_calls_snapshot() -> list[str]:
+    """Return current request-local tool call set (best-effort for diagnostics)."""
+    return sorted(_get_accumulated_tool_calls())
 
 
 # ---------------------------------------------------------------------------

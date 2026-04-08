@@ -109,6 +109,8 @@ services:
       <<: *agent-common-env
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS}
+    volumes:
+      - /run/secrets/gcp-sa.json:/run/secrets/gcp-sa.json:ro
     networks:
       - app_network
     depends_on:
@@ -133,6 +135,8 @@ services:
       SMTP_PASS: ${SMTP_PASS}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8000}
+    volumes:
+      - /run/secrets/gcp-sa.json:/run/secrets/gcp-sa.json:ro
     networks:
       - app_network
     depends_on:

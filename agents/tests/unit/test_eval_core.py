@@ -49,6 +49,28 @@ class EvalCoreTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["phrase_hit_rate"], 1.0, places=6)
         self.assertEqual(metrics["error_count"], 0)
 
+    def test_evaluate_case_outputs_accuracy_metrics(self) -> None:
+        outputs = [
+            "OpenAI and Anthropic both announced updates. No uncertainty here.",
+            "Only OpenAI appears in this summary. rumor included.",
+        ]
+        run_tool_calls = [
+            ["query_news", "compare_topics"],
+            ["query_news"],
+        ]
+        metrics = evaluate_case_outputs(
+            outputs=outputs,
+            expected_facts=["openai", "anthropic"],
+            required_tools=["compare_topics"],
+            must_not_contain=["rumor"],
+            run_tool_calls=run_tool_calls,
+        )
+        self.assertAlmostEqual(metrics["fact_hit_rate"], 0.75, places=6)
+        self.assertAlmostEqual(metrics["tool_path_hit_rate"], 0.5, places=6)
+        self.assertAlmostEqual(metrics["forbidden_claim_rate"], 0.5, places=6)
+        self.assertEqual(metrics["runs_with_required_tools"], 1)
+        self.assertEqual(metrics["forbidden_claim_violations"], 1)
+
     def test_summarize_case_results(self) -> None:
         case_a = {"metrics": evaluate_case_outputs(["A", "A"], min_urls=0)}
         case_b = {"metrics": evaluate_case_outputs(["A", "B"], min_urls=0)}
@@ -57,6 +79,9 @@ class EvalCoreTests(unittest.TestCase):
         self.assertEqual(summary["run_count_total"], 4)
         self.assertGreaterEqual(summary["avg_pairwise_similarity"], 0.0)
         self.assertLessEqual(summary["avg_pairwise_similarity"], 1.0)
+        self.assertIn("avg_fact_hit_rate", summary)
+        self.assertIn("avg_tool_path_hit_rate", summary)
+        self.assertIn("avg_forbidden_claim_rate", summary)
 
     def test_build_baseline_comparison(self) -> None:
         current = {

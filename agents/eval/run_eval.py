@@ -47,40 +47,58 @@ except ImportError:  # package-style import fallback
 ROUTE_METRICS_SCHEMA_VERSION = 3
 
 
-def _bootstrap_imports() -> tuple[Any, Any, Any]:
+def _bootstrap_imports() -> tuple[Any, Any, Any, Any]:
     agents_dir = Path(__file__).resolve().parents[1]
     if str(agents_dir) not in sys.path:
         sys.path.insert(0, str(agents_dir))
 
     from agent import (  # pylint: disable=import-outside-toplevel
-        generate_response,
+        generate_response_eval_payload,
+        get_last_tool_calls_snapshot,
         get_route_metrics_snapshot,
         reset_route_metrics,
     )
 
-    return generate_response, get_route_metrics_snapshot, reset_route_metrics
+    return (
+        generate_response_eval_payload,
+        get_last_tool_calls_snapshot,
+        get_route_metrics_snapshot,
+        reset_route_metrics,
+    )
 
 
 def _run_case(
     case: dict[str, Any],
     runs_per_question: int,
     sleep_seconds: float,
-    generate_response: Any,
+    generate_response_eval_payload: Any,
+    get_last_tool_calls_snapshot: Any,
     include_outputs: bool,
 ) -> dict[str, Any]:
     outputs: list[str] = []
     output_meta: list[dict[str, Any]] = []
+    tool_calls_by_run: list[list[str]] = []
     for idx in range(1, runs_per_question + 1):
         try:
-            text = generate_response([], case["question"])
+            payload = generate_response_eval_payload([], case["question"])
+            text = str(payload.get("text", ""))
+            tools = payload.get("tool_calls", [])
+            if not isinstance(tools, list):
+                tools = []
         except Exception as exc:  # noqa: BLE001 - eval should continue on failures
             text = f"[EVAL_ERROR] {type(exc).__name__}: {exc}"
+            try:
+                tools = get_last_tool_calls_snapshot()
+            except Exception:
+                tools = []
 
         outputs.append(text)
+        tool_calls_by_run.append([str(t).strip() for t in tools if str(t).strip()])
         output_meta.append(
             {
                 "run_index": idx,
                 "url_count": len(extract_urls(text)),
+                "tool_calls": tool_calls_by_run[-1],
             }
         )
 
@@ -91,6 +109,10 @@ def _run_case(
         outputs=outputs,
         min_urls=case.get("min_urls", 0),
         must_contain=case.get("must_contain", []),
+        expected_facts=case.get("expected_facts", []),
+        required_tools=case.get("required_tools", []),
+        must_not_contain=case.get("must_not_contain", []),
+        run_tool_calls=tool_calls_by_run,
     )
 
     item: dict[str, Any] = {
@@ -101,6 +123,9 @@ def _run_case(
         "constraints": {
             "min_urls": case.get("min_urls", 0),
             "must_contain": case.get("must_contain", []),
+            "expected_facts": case.get("expected_facts", []),
+            "required_tools": case.get("required_tools", []),
+            "must_not_contain": case.get("must_not_contain", []),
         },
         "tags": case.get("tags", []),
         "metrics": metrics,
@@ -232,6 +257,24 @@ def _build_arg_parser(eval_dir: Path) -> argparse.ArgumentParser:
         default=None,
         help="Fail if summary.avg_pairwise_similarity is lower than this threshold.",
     )
+    parser.add_argument(
+        "--fail-on-avg-fact-hit-rate",
+        type=float,
+        default=None,
+        help="Fail if summary.avg_fact_hit_rate is lower than this threshold.",
+    )
+    parser.add_argument(
+        "--fail-on-avg-tool-path-hit-rate",
+        type=float,
+        default=None,
+        help="Fail if summary.avg_tool_path_hit_rate is lower than this threshold.",
+    )
+    parser.add_argument(
+        "--fail-on-avg-forbidden-claim-rate",
+        type=float,
+        default=None,
+        help="Fail if summary.avg_forbidden_claim_rate is greater than this threshold.",
+    )
     return parser
 
 
@@ -275,6 +318,24 @@ def _build_gate_specs(args: argparse.Namespace) -> list[dict[str, Any]]:
         "summary.avg_pairwise_similarity",
         "min",
         args.fail_on_avg_pairwise_similarity,
+    )
+    _add(
+        "avg_fact_hit_rate_min",
+        "summary.avg_fact_hit_rate",
+        "min",
+        args.fail_on_avg_fact_hit_rate,
+    )
+    _add(
+        "avg_tool_path_hit_rate_min",
+        "summary.avg_tool_path_hit_rate",
+        "min",
+        args.fail_on_avg_tool_path_hit_rate,
+    )
+    _add(
+        "avg_forbidden_claim_rate_max",
+        "summary.avg_forbidden_claim_rate",
+        "max",
+        args.fail_on_avg_forbidden_claim_rate,
     )
     _add(
         "react_success_rate_min",
@@ -345,7 +406,12 @@ def main() -> int:
         "strict_capability_check": bool(args.strict_capability_check),
     }
 
-    generate_response, get_route_metrics_snapshot, reset_route_metrics = _bootstrap_imports()
+    (
+        generate_response_eval_payload,
+        get_last_tool_calls_snapshot,
+        get_route_metrics_snapshot,
+        reset_route_metrics,
+    ) = _bootstrap_imports()
 
     reset_route_metrics()
 
@@ -357,7 +423,8 @@ def main() -> int:
                 case=case,
                 runs_per_question=args.runs_per_question,
                 sleep_seconds=max(0.0, float(args.sleep_seconds)),
-                generate_response=generate_response,
+                generate_response_eval_payload=generate_response_eval_payload,
+                get_last_tool_calls_snapshot=get_last_tool_calls_snapshot,
                 include_outputs=bool(args.include_outputs),
             )
         )
@@ -418,6 +485,9 @@ def main() -> int:
         f"avg_similarity={summary['avg_pairwise_similarity']:.3f} "
         f"avg_unique_ratio={summary['avg_unique_response_ratio']:.3f} "
         f"avg_url_hit={summary['avg_min_url_hit_rate']:.3f} "
+        f"avg_fact_hit={summary['avg_fact_hit_rate']:.3f} "
+        f"avg_tool_path_hit={summary['avg_tool_path_hit_rate']:.3f} "
+        f"avg_forbidden_claim={summary['avg_forbidden_claim_rate']:.3f} "
         f"avg_error={summary['avg_error_rate']:.3f}"
     )
     print(

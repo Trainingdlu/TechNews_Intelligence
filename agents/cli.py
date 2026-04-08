@@ -35,7 +35,7 @@ def main():
     from agent import create_agent_chat
     from db import close_db_pool
 
-    print("Initializing agent...")
+    print("Initializing agent")
 
     try:
         chat = create_agent_chat()

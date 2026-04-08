@@ -12,6 +12,18 @@ except ImportError:  # package-style import fallback
     from .capabilities import CAPABILITY_CATALOG, resolve_capability, supported_capabilities
 
 
+DEFAULT_REQUIRED_TOOLS_BY_CAPABILITY: dict[str, list[str]] = {
+    "compare_topics": ["compare_topics"],
+    "timeline": ["build_timeline"],
+    "landscape": ["analyze_landscape"],
+    "trend_analysis": ["trend_analysis"],
+    "compare_sources": ["compare_sources"],
+    "query_news": ["query_news"],
+    "fulltext_batch": ["fulltext_batch"],
+    "general_qa": [],
+}
+
+
 def _normalize_str_list(value: Any) -> list[str]:
     if value is None:
         return []
@@ -94,6 +106,10 @@ def load_eval_cases(
             default_min_urls = int(CAPABILITY_CATALOG[capability].get("default_min_urls", 0))
             min_urls = max(0, _safe_int(item.get("min_urls", default_min_urls), default_min_urls))
 
+            required_tools = _normalize_str_list(item.get("required_tools", []))
+            if not required_tools:
+                required_tools = list(DEFAULT_REQUIRED_TOOLS_BY_CAPABILITY.get(capability, []))
+
             case = {
                 "id": case_id,
                 "category": category,
@@ -101,6 +117,9 @@ def load_eval_cases(
                 "question": question,
                 "min_urls": min_urls,
                 "must_contain": _normalize_str_list(item.get("must_contain", [])),
+                "expected_facts": _normalize_str_list(item.get("expected_facts", [])),
+                "required_tools": required_tools,
+                "must_not_contain": _normalize_str_list(item.get("must_not_contain", [])),
                 "tags": _normalize_str_list(item.get("tags", [])),
                 "enabled": enabled,
             }
@@ -151,4 +170,3 @@ def summarize_case_matrix(cases: list[dict[str, Any]]) -> dict[str, Any]:
         "categories": by_category,
         "capabilities": by_capability,
     }
-
