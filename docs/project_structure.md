@@ -7,7 +7,11 @@ This document describes the current `main` branch layout and ownership.
 | Path | Purpose |
 | --- | --- |
 | `.github/workflows/` | CI and manual evaluation workflows |
-| `agents/` | Agent service code (runtime, tools, tests) |
+| `agent/` | Agent runtime core (engine, tools, prompts, skill infra, MCP adapter) |
+| `app/` | Runtime entrypoints (`api.py`, `bot.py`, `cli.py`) |
+| `services/` | Shared service adapters (`db.py`, `mail.py`) |
+| `eval/` | Evaluation engine, datasets, reports |
+| `tests/` | Unit tests and test helpers |
 | `deployment/` | Docker Compose and deployment configs |
 | `docs/` | Project and testing documentation |
 | `etl_workflow/` | n8n workflow JSON files |
@@ -15,60 +19,43 @@ This document describes the current `main` branch layout and ownership.
 | `sql/` | Database schema and analytics SQL |
 | `assets/` | Screenshots and static assets |
 
-## 2) `agents/` package
+## 2) Runtime code ownership
 
-### 2.1 Runtime entrypoints
+### 2.1 Agent core (`agent/`)
+
+| File / Path | Purpose |
+| --- | --- |
+| `agent/agent.py` | Main runtime (ReAct loop, tools, evidence gate, post-processing) |
+| `agent/prompts.py` | System prompts and output constraints |
+| `agent/tools.py` | Retrieval and analysis tool implementations |
+| `agent/core/` | Skill contracts/registry, tool hooks, metrics, evidence pipeline |
+| `agent/mcp/` | MCP client/server/stdio adapters |
+
+### 2.2 Entrypoints (`app/`)
 
 | File | Purpose |
 | --- | --- |
-| `agents/agent.py` | Main runtime (ReAct loop, tools, evidence gate, post-processing) |
-| `agents/api.py` | FastAPI entrypoint (web) |
-| `agents/bot.py` | Telegram bot entrypoint |
-| `agents/cli.py` | Local CLI entrypoint |
-| `agents/prompts.py` | System prompts and output constraints |
-| `agents/tools.py` | Retrieval and analysis tool implementations |
-| `agents/db.py` | PostgreSQL pool and DB helpers |
-| `agents/mail.py` | Notification mail helpers |
+| `app/api.py` | FastAPI entrypoint (web) |
+| `app/bot.py` | Telegram bot entrypoint |
+| `app/cli.py` | Local CLI entrypoint |
 
-### 2.2 Shared runtime components (`agents/core/`)
+### 2.3 Service adapters (`services/`)
 
 | File | Purpose |
 | --- | --- |
-| `skill_contracts.py` | `SkillEnvelope` and output contract |
-| `skill_registry.py` | Typed skill registration and dispatch |
-| `tool_hooks.py` | Pre/post hook validation and auditing |
-| `runtime_factories.py` | Default builders for registry and hook runner |
-| `evidence.py` | URL extraction, citation normalization, sources section |
-| `metrics.py` | In-memory route metrics for ReAct runtime |
-| `role_policy.py` | Role/skill allowlist for extension points |
+| `services/db.py` | PostgreSQL pool and DB helpers |
+| `services/mail.py` | Notification mail helpers |
 
-### 2.3 Graph compatibility layer (`agents/graph/`)
-
-| File | Purpose |
-| --- | --- |
-| `workflow.py` | Compatibility shim that re-exports runtime factories |
-| `__init__.py` | Compatibility exports |
-
-### 2.4 MCP extension layer (`agents/mcp/`)
-
-| File | Purpose |
-| --- | --- |
-| `client.py` | MCP client (local/stdio, namespaced tool routing) |
-| `server.py` | In-process MCP server for newsdb tools |
-| `stdio_server.py` | Standalone stdio MCP server entrypoint |
-
-Note: MCP is preserved as an extension layer. The default online request path remains ReAct + local skill dispatch in `agents/agent.py`.
-
-## 3) Tests
+## 3) Quality and evaluation
 
 | Path | Purpose |
 | --- | --- |
-| `agents/tests/unit/` | Unit tests for runtime, tools, MCP, hooks, metrics |
+| `eval/` | Eval runner, metric core, dataset loader, datasets, reports |
+| `tests/unit/` | Unit tests for runtime, tools, MCP, hooks, and eval components |
 | `docs/testing/` | Testing and evaluation documentation |
 
 ## 4) Runtime summary
 
 1. `main` uses a single ReAct runtime path.
 2. Skill registry, hooks, and evidence processing are unified in that path.
-3. `agents/graph/` is a compatibility namespace, not an active DAG orchestrator.
-4. MCP remains optional and is not a required default dependency for each request.
+3. MCP is preserved as an extension layer, not the mandatory default request path.

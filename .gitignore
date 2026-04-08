@@ -20,11 +20,22 @@ news_data_readable.sql
 docker-data/
 
 # Eval reports (generated artifacts)
-agents/eval/reports/*
-!agents/eval/reports/.gitkeep
+eval/reports/*
+!eval/reports/.gitkeep
+tests/reports/*
+!tests/reports/.gitkeep
+tests/_test_output.txt
+tests/unit/.tmp_mcp_stdio/
 
 # Local development artifacts
 .venv/
 .tmp/
 .pytest_cache/
+agent/.pytest_cache/
 agents/.pytest_cache/
+agents/__pycache__/
+
+# Editor / IDE
+.idea/
+.vscode/*
+!.vscode/settings.json

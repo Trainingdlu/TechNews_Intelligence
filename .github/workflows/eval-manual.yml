@@ -30,25 +30,25 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: "agents/requirements.txt"
+          cache-dependency-path: "agent/requirements.txt"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r agents/requirements.txt
+          pip install -r agent/requirements.txt
 
       - name: Run eval smoke (manual only)
         run: |
-          python agents/eval/run_eval.py \
+          python eval/run_eval.py \
             --suite "${{ github.event.inputs.suite }}" \
             --max-cases "${{ github.event.inputs.max_cases }}" \
             --runs-per-question "${{ github.event.inputs.runs_per_question }}" \
-            --output agents/eval/reports/ci_smoke.json
+            --output eval/reports/ci_smoke.json
 
       - name: Upload eval report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: eval-report-ci-smoke
-          path: agents/eval/reports/ci_smoke.json
+          path: eval/reports/ci_smoke.json
           if-no-files-found: warn

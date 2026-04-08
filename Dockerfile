@@ -1,10 +1,13 @@
 FROM python:3.11-slim
 
-WORKDIR /app/agents
+WORKDIR /app
 
-COPY agents/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY agent/requirements.txt ./agent/requirements.txt
+RUN pip install --no-cache-dir -r agent/requirements.txt
 
-COPY agents/ .
+COPY agent/ ./agent/
+COPY app/ ./app/
+COPY services/ ./services/
+COPY eval/ ./eval/
 
-CMD ["python", "bot.py"]
+CMD ["python", "app/bot.py"]

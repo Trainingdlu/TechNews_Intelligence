@@ -1,4 +1,4 @@
-<div align="center">
+﻿<div align="center">
   <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/title.svg" alt="TechNews Intelligence" width="700">
   <img src="https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_Agent-blue?style=flat-square" alt="Stack">
   <img src="https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square" alt="License">
@@ -328,20 +328,3 @@ python cli.py
 
 ## 5. 开源协议
 本项目采用 GNU AGPLv3 协议。
-
----
-
-## Runtime Layout (main)
-
-Current `main` branch uses a **single ReAct runtime path**.
-
-- Request entry: `agents/api.py` / `agents/bot.py`
-- Core runtime: `agents/agent.py`
-- Shared runtime components: `agents/core/runtime_factories.py`, `agents/core/skill_registry.py`, `agents/core/tool_hooks.py`
-- Tool implementations: `agents/tools.py`
-- Evidence/citation post-processing: `agents/core/evidence.py`
-
-Notes:
-
-- `agents/graph/*` is not part of the current repository layout; runtime orchestration lives in `agents/agent.py`.
-- `agents/mcp/*` remains available as an extension layer (local/stdio), but is not the required default request path.
