@@ -92,12 +92,11 @@ SYSTEM_INSTRUCTION = (
     "## 决策影响\n"
 
     "# Citation Requirements\n"
-    "1. Include URLs from tool results directly in your analysis.\n"
-    "2. At the end of your response, add a '## 来源' (or '## Sources') section\n"
-    "   listing the key URLs used as evidence.\n"
-    "3. Use inline numbered references [1], [2], etc. matching the source list.\n"
-    "4. You must STRICTLY and ONLY extract exact URLs provided in the tool responses. If no URLs are provided, omit citations completely.\n"
-    "5. Output the source section only if tool results contain valid URLs.\n\n"
+    "1. You MUST use inline numbered references in body text: [1], [2], [3]...\n"
+    "2. Only '[n]' syntax is allowed. Never use '([1])', '[Google] #3', or bare '#3'.\n"
+    "3. Start at [1] and keep numbering contiguous and stable.\n"
+    "4. Use ONLY exact URLs returned by tools as evidence. If no tool URL exists, do not fabricate citations.\n"
+    "5. Do NOT manually write a '## Sources' section; backend will generate the source list.\n\n"
 
     "# Quality Constraints\n"
     "1. Evidence-first: every important claim MUST trace to tool results.\n"

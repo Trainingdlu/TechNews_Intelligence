@@ -1,6 +1,7 @@
 ﻿"""Web API 入口：FastAPI + Token 自动发放 + 限额管理"""
 
 import os
+import json
 import secrets
 import time
 import asyncio
@@ -12,7 +13,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr
 from psycopg2.extras import Json
 
@@ -212,6 +213,25 @@ class SubscriptionResponse(BaseModel):
     timezone: str
 
 
+def _sse_event(event: str, data: dict) -> str:
+    """Encode one SSE event payload."""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _status_text_from_progress(payload: dict) -> str | None:
+    """Map runtime progress payload to UI-facing status text."""
+    stage = str(payload.get("stage", "")).strip().lower()
+    if stage == "understanding":
+        return "正在理解问题"
+    if stage == "retrieving":
+        return "正在检索相关新闻"
+    if stage == "analyzing":
+        return "正在整理关键信息"
+    if stage == "finalizing":
+        return "正在生成回复"
+    return None
+
+
 def _normalize_sources(sources: list[str] | None) -> list[str]:
     allowed_sources = _fetch_active_source_names()
 
@@ -263,6 +283,38 @@ def _fetch_active_source_names() -> list[str]:
         return DEFAULT_SUBSCRIPTION_SOURCES.copy()
     except Exception:
         return DEFAULT_SUBSCRIPTION_SOURCES.copy()
+    finally:
+        put_conn(conn)
+
+
+def _consume_quota_after_success(token_info: dict) -> tuple[int, int]:
+    """扣减额度并在耗尽时触发通知。"""
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE access_tokens SET used = used + 1 WHERE id = %s RETURNING used, quota, notified",
+            (token_info["id"],),
+        )
+        row = cur.fetchone()
+        new_used, quota, notified = row
+        remaining = quota - new_used
+
+        if remaining <= 0 and not notified:
+            cur.execute(
+                "UPDATE access_tokens SET status = 'exhausted', notified = TRUE WHERE id = %s",
+                (token_info["id"],),
+            )
+            approve_url = f"{API_BASE_URL}/approve/{token_info['id']}"
+            send_quota_exhausted_to_admin(
+                ADMIN_EMAIL, token_info["email"], token_info["id"], approve_url,
+            )
+            send_quota_exhausted_to_user(token_info["email"])
+            logger.info(f"额度耗尽通知已发送: {token_info['email']}")
+
+        conn.commit()
+        cur.close()
+        return int(remaining), int(quota)
     finally:
         put_conn(conn)
 
@@ -526,37 +578,7 @@ async def chat(
         reply = await asyncio.to_thread(
             generate_response, body.history, body.message,
         )
-
-        # 扣减额度
-        conn = get_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute(
-                "UPDATE access_tokens SET used = used + 1 WHERE id = %s RETURNING used, quota, notified",
-                (token_info["id"],),
-            )
-            row = cur.fetchone()
-            new_used, quota, notified = row
-            remaining = quota - new_used
-
-            # 额度耗尽时触发通知
-            if remaining <= 0 and not notified:
-                cur.execute(
-                    "UPDATE access_tokens SET status = 'exhausted', notified = TRUE WHERE id = %s",
-                    (token_info["id"],),
-                )
-                approve_url = f"{API_BASE_URL}/approve/{token_info['id']}"
-                send_quota_exhausted_to_admin(
-                    ADMIN_EMAIL, token_info["email"], token_info["id"], approve_url,
-                )
-                send_quota_exhausted_to_user(token_info["email"])
-                logger.info(f"额度耗尽通知已发送: {token_info['email']}")
-
-            conn.commit()
-            cur.close()
-        finally:
-            put_conn(conn)
-
+        remaining, quota = _consume_quota_after_success(token_info)
         return ChatResponse(reply=reply, remaining=max(remaining, 0), quota=int(quota))
 
     except HTTPException:
@@ -567,4 +589,95 @@ async def chat(
     except Exception as e:
         logger.error(f"[{token_info['email']}] 处理失败: {e}")
         raise HTTPException(status_code=500, detail="服务暂时不可用，请稍后重试")
+
+
+@app.post("/chat-stream")
+async def chat_stream(
+    body: ChatRequest,
+    request: Request,
+    token_info: dict = Depends(_verify_token),
+):
+    """SSE chat endpoint: emits status updates then final payload."""
+    client_ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(client_ip)
+
+    if token_info["used"] >= token_info["quota"]:
+        raise HTTPException(status_code=403, detail="quota_exhausted")
+
+    logger.info(f"[{token_info['email']}] 对话(流式): {body.message[:50]}...")
+
+    async def event_generator():
+        loop = asyncio.get_running_loop()
+        progress_queue: asyncio.Queue[dict] = asyncio.Queue()
+        done_event = asyncio.Event()
+        result_holder: dict[str, str] = {}
+        error_holder: dict[str, Exception] = {}
+
+        def progress_callback(payload: dict[str, str]):
+            stage = str(payload.get("stage", "")).strip()
+            if not stage:
+                return
+            loop.call_soon_threadsafe(progress_queue.put_nowait, payload)
+
+        def worker():
+            try:
+                result_holder["reply"] = generate_response(
+                    body.history,
+                    body.message,
+                    progress_callback=progress_callback,
+                )
+            except Exception as exc:
+                error_holder["exc"] = exc
+            finally:
+                loop.call_soon_threadsafe(done_event.set)
+
+        worker_task = asyncio.create_task(asyncio.to_thread(worker))
+        last_status = ""
+
+        while True:
+            if done_event.is_set() and progress_queue.empty():
+                break
+            try:
+                payload = await asyncio.wait_for(progress_queue.get(), timeout=0.25)
+            except asyncio.TimeoutError:
+                continue
+
+            status_text = _status_text_from_progress(payload)
+            if status_text and status_text != last_status:
+                last_status = status_text
+                yield _sse_event("status", {"text": status_text})
+
+        await worker_task
+
+        if "exc" in error_holder:
+            exc = error_holder["exc"]
+            if isinstance(exc, AgentGenerationError):
+                logger.warning(f"[{token_info['email']}] generation blocked: {exc}")
+                yield _sse_event("error", {"detail": str(exc), "status_code": 503})
+                return
+            logger.error(f"[{token_info['email']}] 处理失败: {exc}")
+            yield _sse_event("error", {"detail": "服务暂时不可用，请稍后重试", "status_code": 500})
+            return
+
+        try:
+            remaining, quota = _consume_quota_after_success(token_info)
+        except Exception as exc:
+            logger.error(f"[{token_info['email']}] 扣减额度失败: {exc}")
+            yield _sse_event("error", {"detail": "服务暂时不可用，请稍后重试", "status_code": 500})
+            return
+
+        yield _sse_event("final", {
+            "reply": result_holder.get("reply", ""),
+            "remaining": max(remaining, 0),
+            "quota": int(quota),
+        })
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 

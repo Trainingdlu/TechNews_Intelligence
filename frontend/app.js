@@ -10,6 +10,7 @@
     let history = [];
     let isLoading = false;
     let remaining = null;
+    const defaultLoadingStatus = '正在理解问题';
 
     // == DOM refs ==
     const authView = document.getElementById('auth-view');
@@ -205,6 +206,110 @@
         sendBtn.disabled = chatInput.disabled || !chatInput.value.trim() || isLoading;
     }
 
+    function applyChatSuccess(text, data) {
+        history.push({ role: 'user', parts: [{ text }] });
+        history.push({ role: 'model', parts: [{ text: data.reply }] });
+
+        appendMessage('agent', data.reply);
+        const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
+        const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
+        updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
+    }
+
+    async function handleChatHttpError(res) {
+        if (res.status === 401) {
+            handleInvalidToken();
+            return true;
+        }
+        if (res.status === 403) {
+            showQuotaExhausted();
+            return true;
+        }
+        if (res.status === 429) {
+            appendMessage('agent', '请求过于频繁，请稍后再试。');
+            return true;
+        }
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            appendMessage('agent', '出错了：' + (err.detail || '未知错误'));
+            return true;
+        }
+        return false;
+    }
+
+    function updateTypingStatus(typingEl, statusText) {
+        const labelEl = typingEl?.querySelector('.typing-label');
+        if (labelEl && statusText) {
+            labelEl.textContent = statusText;
+        }
+    }
+
+    async function consumeChatStream(res, typingEl) {
+        if (!res.body) return { final: null, error: null };
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let finalPayload = null;
+        let errorPayload = null;
+
+        const processBlock = (block) => {
+            const lines = block.split(/\r?\n/);
+            let eventName = 'message';
+            const dataLines = [];
+            for (const line of lines) {
+                if (line.startsWith('event:')) {
+                    eventName = line.slice(6).trim();
+                } else if (line.startsWith('data:')) {
+                    dataLines.push(line.slice(5).trim());
+                }
+            }
+            if (!dataLines.length) return;
+
+            let payload = {};
+            try {
+                payload = JSON.parse(dataLines.join('\n'));
+            } catch {
+                return;
+            }
+
+            if (eventName === 'status' && payload.text) {
+                updateTypingStatus(typingEl, payload.text);
+                return;
+            }
+            if (eventName === 'final') {
+                finalPayload = payload;
+                return;
+            }
+            if (eventName === 'error') {
+                errorPayload = payload;
+            }
+        };
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            let splitAt = buffer.indexOf('\n\n');
+            while (splitAt !== -1) {
+                const block = buffer.slice(0, splitAt).trim();
+                buffer = buffer.slice(splitAt + 2);
+                if (block) processBlock(block);
+                splitAt = buffer.indexOf('\n\n');
+            }
+
+            if (finalPayload || errorPayload) {
+                try {
+                    await reader.cancel();
+                } catch { /* ignore */ }
+                break;
+            }
+        }
+
+        return { final: finalPayload, error: errorPayload };
+    }
+
     // == Send Message ==
     async function sendMessage() {
         const text = chatInput.value.trim();
@@ -213,7 +318,6 @@
         isLoading = true;
         updateSendBtn();
 
-        // Clear welcome if first message
         const welcome = messagesEl.querySelector('.welcome-msg');
         if (welcome) welcome.remove();
 
@@ -221,48 +325,65 @@
         chatInput.value = '';
         chatInput.style.height = 'auto';
 
-        const typingEl = showTyping();
+        const typingEl = showTyping(defaultLoadingStatus);
+        let streamRes = null;
 
         try {
-            const res = await apiFetch('/chat', {
+            streamRes = await apiFetch('/chat-stream', {
                 method: 'POST',
                 body: JSON.stringify({ message: text, history }),
             });
 
-            removeTyping(typingEl);
-
-            if (res.status === 401) {
-                handleInvalidToken();
-                return;
-            }
-            if (res.status === 403) {
-                showQuotaExhausted();
-                return;
-            }
-            if (res.status === 429) {
-                appendMessage('agent', '请求过于频繁，请稍后再试。');
-                return;
-            }
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                appendMessage('agent', '出错了：' + (err.detail || '未知错误'));
-                return;
+            // Compatibility fallback: older backend may not have /chat-stream yet.
+            if (streamRes.status === 404 || streamRes.status === 405) {
+                streamRes = await apiFetch('/chat', {
+                    method: 'POST',
+                    body: JSON.stringify({ message: text, history }),
+                });
             }
 
-            const data = await res.json();
+            const streamType = (streamRes.headers.get('content-type') || '').toLowerCase();
+            const canUseStream = streamRes.ok
+                && streamType.includes('text/event-stream')
+                && !!streamRes.body;
 
-            // Update history
-            history.push({ role: 'user', parts: [{ text }] });
-            history.push({ role: 'model', parts: [{ text: data.reply }] });
+            if (canUseStream) {
+                const streamed = await consumeChatStream(streamRes, typingEl);
+                if (streamed.error) {
+                    appendMessage('agent', '出错了：' + (streamed.error.detail || '未知错误'));
+                    return;
+                }
+                if (!streamed.final) {
+                    appendMessage('agent', '出错了：未收到完整回复');
+                    return;
+                }
+                applyChatSuccess(text, streamed.final);
+                return;
+            }
 
-            appendMessage('agent', data.reply);
-            const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
-            const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
-            updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
+            if (await handleChatHttpError(streamRes)) return;
+            const fallbackData = await streamRes.json();
+            applyChatSuccess(text, fallbackData);
         } catch {
-            removeTyping(typingEl);
+            // If streaming request itself failed before getting a response object,
+            // fallback to non-streaming chat once.
+            if (!streamRes) {
+                try {
+                    const nonStreamRes = await apiFetch('/chat', {
+                        method: 'POST',
+                        body: JSON.stringify({ message: text, history }),
+                    });
+                    if (await handleChatHttpError(nonStreamRes)) return;
+                    const nonStreamData = await nonStreamRes.json();
+                    applyChatSuccess(text, nonStreamData);
+                    return;
+                } catch {
+                    // continue to unified network error below
+                }
+            }
             appendMessage('agent', '网络错误，请检查连接后重试。');
         } finally {
+            removeTyping(typingEl);
             isLoading = false;
             updateSendBtn();
             chatInput.focus();
@@ -303,7 +424,7 @@
     }
 
     // == Typing Indicator ==
-    function showTyping() {
+    function showTyping(statusText = defaultLoadingStatus) {
         const el = document.createElement('div');
         el.className = 'msg agent';
 
@@ -316,7 +437,10 @@
 
         const indicator = document.createElement('div');
         indicator.className = 'typing-indicator';
-        indicator.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+        indicator.innerHTML = `
+            <span class="typing-spinner" aria-hidden="true"></span>
+            <div class="typing-label" role="status" aria-live="polite">${statusText}</div>
+        `;
 
         el.appendChild(avatar);
         el.appendChild(indicator);

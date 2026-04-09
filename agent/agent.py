@@ -12,7 +12,7 @@ import os
 import re
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
@@ -23,6 +23,7 @@ from .core.runtime_factories import build_default_hook_runner, build_default_reg
 from .prompts import SYSTEM_INSTRUCTION
 from .core.evidence import (
     decorate_response_with_sources as _decorate_response_with_sources_core,
+    has_inline_citation_in_body as _has_inline_citation_in_body_core,
 )
 from .core.metrics import (
     get_route_metrics_snapshot,
@@ -73,6 +74,26 @@ def _reset_evidence():
 def _reset_tool_calls():
     """Reset per-request tool-call accumulator."""
     _local.tool_calls = []
+
+
+def _set_progress_callback(callback: Callable[[dict[str, str]], None] | None):
+    """Set per-request progress callback used by transport layers (e.g., web stream)."""
+    _local.progress_callback = callback
+
+
+def _emit_progress(stage: str, tool_name: str = ""):
+    """Emit runtime progress events (best-effort, never blocks generation)."""
+    callback = getattr(_local, "progress_callback", None)
+    if not callable(callback):
+        return
+    payload: dict[str, str] = {"stage": str(stage or "").strip()}
+    if tool_name:
+        payload["tool"] = str(tool_name).strip()
+    try:
+        callback(payload)
+    except Exception:
+        # Progress emission must not affect core generation path.
+        pass
 
 
 def _accumulate_tool_call(tool_name: str):
@@ -186,6 +207,12 @@ def _execute_skill(skill_name: str, payload: dict[str, Any]) -> str:
 
     # Execute via registry
     registry = _get_registry()
+    if skill_name in {"search_news", "query_news", "trend_analysis", "fulltext_batch"}:
+        _emit_progress("retrieving", skill_name)
+    elif skill_name in {"compare_sources", "compare_topics", "build_timeline", "analyze_landscape"}:
+        _emit_progress("analyzing", skill_name)
+    else:
+        _emit_progress("retrieving", skill_name)
     envelope = registry.execute(skill_name, effective_payload)
     _accumulate_tool_call(skill_name)
 
@@ -222,6 +249,7 @@ def search_news_tool(query: str, days: int = 21) -> str:
 @tool("read_news_content")
 def read_news_content_tool(url: str) -> str:
     """Read full article content by URL. Only works for URLs from other tools."""
+    _emit_progress("retrieving", "read_news_content")
     _accumulate_tool_call("read_news_content")
     return read_news_content(url=url)
 
@@ -229,6 +257,7 @@ def read_news_content_tool(url: str) -> str:
 @tool("get_db_stats")
 def get_db_stats_tool() -> str:
     """Get database freshness stats and total article count."""
+    _emit_progress("retrieving", "get_db_stats")
     _accumulate_tool_call("get_db_stats")
     return get_db_stats()
 
@@ -236,6 +265,7 @@ def get_db_stats_tool() -> str:
 @tool("list_topics")
 def list_topics_tool() -> str:
     """Get daily article volume distribution for recent 21 days."""
+    _emit_progress("retrieving", "list_topics")
     _accumulate_tool_call("list_topics")
     return list_topics()
 
@@ -596,6 +626,35 @@ def _decorate_response_with_sources(text: str, user_message: str, valid_urls: se
     )
 
 
+def _contains_cjk(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+
+def _strict_inline_citations_enabled() -> bool:
+    return os.getenv("AGENT_STRICT_INLINE_CITATIONS", "true").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _enforce_inline_citation_guard(final_text: str, user_message: str, valid_urls: set[str] | None) -> None:
+    """Block response when evidence exists but body-level [n] citations are missing."""
+    if not _strict_inline_citations_enabled():
+        return
+    if not valid_urls:
+        return
+    if _has_inline_citation_in_body_core(final_text):
+        return
+
+    _metrics_inc("react_inline_citation_blocked")
+    if _contains_cjk(user_message):
+        raise AgentGenerationError(
+            "抱歉，本次回答缺少正文引用标注（如 [1]）。为避免无证据结论，系统已阻断该输出，请重试。",
+            code="react_inline_citation_missing",
+        )
+    raise AgentGenerationError(
+        "The response was blocked because inline citations ([1], [2], ...) were missing in the answer body.",
+        code="react_inline_citation_missing",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Core generation
 # ---------------------------------------------------------------------------
@@ -704,24 +763,58 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
         )
 
 
-def generate_response(history: list[dict], user_message: str) -> str:
+def _run_generation_core(
+    history: list[dict],
+    user_message: str,
+    progress_callback: Callable[[dict[str, str]], None] | None = None,
+) -> tuple[str, set[str]]:
+    """Run core generation with optional progress callback lifecycle."""
+    _set_progress_callback(progress_callback)
+    try:
+        _emit_progress("understanding")
+        core_text, valid_urls = _generate_response_core(history, user_message)
+        _emit_progress("finalizing")
+        return core_text, valid_urls
+    finally:
+        _set_progress_callback(None)
+
+
+def generate_response(
+    history: list[dict],
+    user_message: str,
+    progress_callback: Callable[[dict[str, str]], None] | None = None,
+) -> str:
     """Public generation entrypoint with post-processing safety net.
 
     Post-processing includes:
     1. Strip generic analysis lead-in phrases
     2. Normalize citations and attach source section
     """
-    core_text, valid_urls = _generate_response_core(history, user_message)
+    core_text, valid_urls = _run_generation_core(
+        history,
+        user_message,
+        progress_callback=progress_callback,
+    )
     core_text = _strip_generic_analysis_leadin(core_text)
     final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+    _enforce_inline_citation_guard(final_text, user_message, valid_urls)
     return final_text
 
 
-def generate_response_payload(history: list[dict], user_message: str) -> dict[str, Any]:
+def generate_response_payload(
+    history: list[dict],
+    user_message: str,
+    progress_callback: Callable[[dict[str, str]], None] | None = None,
+) -> dict[str, Any]:
     """Structured response for transport layers (e.g., Telegram bot)."""
-    core_text, valid_urls = _generate_response_core(history, user_message)
+    core_text, valid_urls = _run_generation_core(
+        history,
+        user_message,
+        progress_callback=progress_callback,
+    )
     core_text = _strip_generic_analysis_leadin(core_text)
     final_text, title_map = _decorate_response_with_sources(core_text, user_message, valid_urls)
+    _enforce_inline_citation_guard(final_text, user_message, valid_urls)
     return {
         "text": final_text,
         "url_title_map": title_map,
@@ -733,6 +826,7 @@ def generate_response_eval_payload(history: list[dict], user_message: str) -> di
     core_text, valid_urls = _generate_response_core(history, user_message)
     core_text = _strip_generic_analysis_leadin(core_text)
     final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+    _enforce_inline_citation_guard(final_text, user_message, valid_urls)
     return {
         "text": final_text,
         "valid_urls": sorted(valid_urls),

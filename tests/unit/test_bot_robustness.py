@@ -155,9 +155,10 @@ class BotRobustnessTests(unittest.TestCase):
         async def _to_thread(func, *args, **kwargs):
             return func(*args, **kwargs)
 
+        reply_mock = AsyncMock(return_value=thinking)
         with (
             patch.object(bot_mod, "_consume_chat_rate_token", return_value=(True, 0)),
-            patch.object(bot_mod, "_reply_text_with_retry", new=AsyncMock(return_value=thinking)),
+            patch.object(bot_mod, "_reply_text_with_retry", new=reply_mock),
             patch.object(bot_mod.asyncio, "to_thread", new=AsyncMock(side_effect=_to_thread)),
             patch.object(
                 bot_mod,
@@ -168,5 +169,6 @@ class BotRobustnessTests(unittest.TestCase):
             asyncio.run(bot_mod.handle_message(update, context))
 
         self.assertEqual(bot_mod.conversation_histories.get(chat_id, []), [])
-        self.assertEqual(thinking.edits, ["抱歉，当前模型服务暂时不可用。"])
+        sent_texts = [str(call.args[1]) for call in reply_mock.await_args_list if len(call.args) >= 2]
+        self.assertIn("抱歉，当前模型服务暂时不可用。", sent_texts)
 

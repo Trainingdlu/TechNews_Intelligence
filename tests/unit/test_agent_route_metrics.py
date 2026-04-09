@@ -113,6 +113,32 @@ class TestEvidence:
         assert result == text
         assert title_map == {}
 
+    def test_normalize_parenthesized_citation(self):
+        from agent.core.evidence import normalize_inline_citation_styles
+
+        text = "Key finding ([1]) and another（[2]）."
+        out = normalize_inline_citation_styles(text)
+        assert "([1])" not in out
+        assert "（[2]）" not in out
+        assert "[1]" in out
+        assert "[2]" in out
+
+    def test_normalize_source_hash_citation(self):
+        from agent.core.evidence import normalize_inline_citation_styles
+
+        text = "Evidence [Google] #3 and [Meta] ＃12 are both cited."
+        out = normalize_inline_citation_styles(text)
+        assert "[Google] #3" not in out
+        assert "[Meta] ＃12" not in out
+        assert "[3]" in out
+        assert "[12]" in out
+
+    def test_has_inline_citation_in_body_ignores_sources_section(self):
+        from agent.core.evidence import has_inline_citation_in_body
+
+        text = "Main content without refs.\n\n## Sources\n- [1] https://example.com"
+        assert not has_inline_citation_in_body(text)
+
 
 # ---------------------------------------------------------------------------
 # Tests: agent module structure
@@ -313,3 +339,31 @@ class TestAgentSafety:
         snapshot = get_route_metrics_snapshot()
         assert snapshot["react_error"] == 1
 
+
+
+    def test_generate_response_blocks_when_body_has_no_inline_citations(self):
+        from agent.agent import AgentGenerationError, generate_response
+        from agent.core.metrics import get_route_metrics_snapshot, reset_route_metrics
+
+        reset_route_metrics()
+        with patch("agent.agent._run_generation_core", return_value=("Main analysis body.", {"https://a.example.com"})):
+            with patch(
+                "agent.agent._decorate_response_with_sources",
+                return_value=("Main analysis body.\n\n## Sources\n- [1] https://a.example.com", {}),
+            ):
+                with patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}):
+                    with pytest.raises(AgentGenerationError) as ei:
+                        generate_response([], "最近AI动态")
+        assert ei.value.code == "react_inline_citation_missing"
+        snapshot = get_route_metrics_snapshot()
+        assert snapshot.get("react_inline_citation_blocked", 0) == 1
+
+    def test_generate_response_allows_when_body_has_inline_citations(self):
+        from agent.agent import generate_response
+
+        expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
+        with patch("agent.agent._run_generation_core", return_value=("Main analysis [1].", {"https://a.example.com"})):
+            with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
+                with patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}):
+                    out = generate_response([], "最近AI动态")
+        assert out == expected

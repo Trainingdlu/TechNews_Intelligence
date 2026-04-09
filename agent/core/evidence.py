@@ -56,6 +56,32 @@ def apply_inline_citations(text: str, ordered_urls: list[str]) -> str:
     return out
 
 
+_PAREN_CITATION_RE = re.compile(r"[（(]\s*\[(\d{1,3})\]\s*[）)]")
+_SOURCE_HASH_CITATION_RE = re.compile(r"\[[^\]\n]{1,80}\]\s*[#＃]\s*(\d{1,3})")
+
+
+def normalize_inline_citation_styles(text: str) -> str:
+    """Normalize citation marker variants into canonical [n] form.
+
+    Examples:
+    - ([1]) / （[1]） -> [1]
+    - [Google] #3 / [Google] ＃3 -> [3]
+    """
+    body = text or ""
+    if not body:
+        return body
+    body = _PAREN_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
+    body = _SOURCE_HASH_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
+    return body
+
+
+def has_inline_citation_in_body(text: str) -> bool:
+    """Return True if the main body (excluding source section) contains [n]."""
+    normalized = normalize_inline_citation_styles(text or "")
+    body = strip_existing_source_section(normalized)
+    return bool(_INLINE_CITATION_RE.search(body))
+
+
 def max_inline_citation_index(text: str) -> int:
     maximum = 0
     for m in _INLINE_CITATION_RE.finditer(text or ""):
@@ -218,7 +244,7 @@ def decorate_response_with_sources(
     valid_urls: set[str] | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Normalize output into citation style + source section."""
-    raw = (text or "").strip()
+    raw = normalize_inline_citation_styles((text or "").strip())
     if not raw:
         return raw, {}
 
@@ -245,7 +271,7 @@ def decorate_response_with_sources(
             print(f"[Warn] lookup_url_titles in evidence helper failed: {exc}")
             title_map = {}
 
-    render_body = body if body else raw
+    render_body = normalize_inline_citation_styles(body if body else raw)
     cited_body = apply_inline_citations(render_body, ordered_urls)
     compact_body, compact_urls = compact_citations_and_urls(cited_body, ordered_urls, valid_urls=valid_urls)
     final_urls = compact_urls if compact_urls else ordered_urls
