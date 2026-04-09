@@ -7,25 +7,8 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ValidationError
 
+from ..core.skill_catalog import SkillDefinition, iter_skill_definitions
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
-from ..tools import (
-    QueryNewsSkillInput,
-    TrendAnalysisSkillInput,
-    SearchNewsSkillInput,
-    CompareSourcesSkillInput,
-    CompareTopicsSkillInput,
-    BuildTimelineSkillInput,
-    AnalyzeLandscapeSkillInput,
-    FulltextBatchSkillInput,
-    query_news_skill,
-    trend_analysis_skill,
-    search_news_skill,
-    compare_sources_skill,
-    compare_topics_skill,
-    build_timeline_skill,
-    analyze_landscape_skill,
-    fulltext_batch_skill,
-)
 
 MCPToolHandler = Callable[[BaseModel], SkillEnvelope]
 
@@ -128,104 +111,25 @@ class InProcessMCPServer:
         return envelope
 
 
-def _query_news_vector_handler(payload: QueryNewsSkillInput) -> SkillEnvelope:
-    envelope = query_news_skill(payload)
-    envelope.diagnostics["delegated_skill"] = "query_news"
-    return envelope
+def _build_delegated_handler(definition: SkillDefinition) -> MCPToolHandler:
+    def _handler(payload: BaseModel) -> SkillEnvelope:
+        envelope = definition.handler(payload)
+        envelope.diagnostics["delegated_skill"] = definition.name
+        return envelope
 
-
-def _trend_analysis_handler(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
-    envelope = trend_analysis_skill(payload)
-    envelope.diagnostics["delegated_skill"] = "trend_analysis"
-    return envelope
-
-
-def _search_news_handler(payload: SearchNewsSkillInput) -> SkillEnvelope:
-    envelope = search_news_skill(payload)
-    envelope.diagnostics["delegated_skill"] = "search_news"
-    return envelope
-
-
-def _compare_sources_handler(payload: CompareSourcesSkillInput) -> SkillEnvelope:
-    envelope = compare_sources_skill(payload)
-    envelope.diagnostics["delegated_skill"] = "compare_sources"
-    return envelope
-
-
-def _compare_topics_handler(payload: CompareTopicsSkillInput) -> SkillEnvelope:
-    envelope = compare_topics_skill(payload)
-    envelope.diagnostics["delegated_skill"] = "compare_topics"
-    return envelope
-
-
-def _build_timeline_handler(payload: BuildTimelineSkillInput) -> SkillEnvelope:
-    envelope = build_timeline_skill(payload)
-    envelope.diagnostics["delegated_skill"] = "build_timeline"
-    return envelope
-
-
-def _analyze_landscape_handler(payload: AnalyzeLandscapeSkillInput) -> SkillEnvelope:
-    envelope = analyze_landscape_skill(payload)
-    envelope.diagnostics["delegated_skill"] = "analyze_landscape"
-    return envelope
-
-
-def _fulltext_batch_handler(payload: FulltextBatchSkillInput) -> SkillEnvelope:
-    envelope = fulltext_batch_skill(payload)
-    envelope.diagnostics["delegated_skill"] = "fulltext_batch"
-    return envelope
+    return _handler
 
 
 def build_newsdb_server(server_name: str = "newsdb") -> InProcessMCPServer:
     """Build local NewsDB MCP server with namespaced tool contracts."""
 
     server = InProcessMCPServer(server_name=server_name)
-    server.register_tool(
-        name="query_news_vector",
-        input_model=QueryNewsSkillInput,
-        handler=_query_news_vector_handler,
-        description="Hybrid retrieval over local news DB (vector + keyword)",
-    )
-    server.register_tool(
-        name="trend_analysis",
-        input_model=TrendAnalysisSkillInput,
-        handler=_trend_analysis_handler,
-        description="Topic momentum analysis over local news DB",
-    )
-    server.register_tool(
-        name="search_news",
-        input_model=SearchNewsSkillInput,
-        handler=_search_news_handler,
-        description="Semantic + keyword hybrid news search",
-    )
-    server.register_tool(
-        name="compare_sources",
-        input_model=CompareSourcesSkillInput,
-        handler=_compare_sources_handler,
-        description="HackerNews vs TechCrunch source comparison",
-    )
-    server.register_tool(
-        name="compare_topics",
-        input_model=CompareTopicsSkillInput,
-        handler=_compare_topics_handler,
-        description="A-vs-B entity comparison with evidence",
-    )
-    server.register_tool(
-        name="build_timeline",
-        input_model=BuildTimelineSkillInput,
-        handler=_build_timeline_handler,
-        description="Chronological event timeline construction",
-    )
-    server.register_tool(
-        name="analyze_landscape",
-        input_model=AnalyzeLandscapeSkillInput,
-        handler=_analyze_landscape_handler,
-        description="Competitive landscape analysis with entity stats",
-    )
-    server.register_tool(
-        name="fulltext_batch",
-        input_model=FulltextBatchSkillInput,
-        handler=_fulltext_batch_handler,
-        description="Batch full-text article reading",
-    )
+    for definition in iter_skill_definitions():
+        if definition.expose_in_mcp:
+            server.register_tool(
+                name=definition.mcp_name or definition.name,
+                input_model=definition.input_model,
+                handler=_build_delegated_handler(definition),
+                description=definition.description,
+            )
     return server

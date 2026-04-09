@@ -15,9 +15,14 @@ import pytest
 def _setup_stubs():
     """Create stub modules for dependencies that need real infrastructure."""
     # Stub services.db module
-    services_mod = types.ModuleType("services")
-    services_mod.__path__ = []  # mark as package
-    sys.modules.setdefault("services", services_mod)
+    if "services" not in sys.modules:
+        try:
+            import importlib
+            importlib.import_module("services")
+        except Exception:
+            services_mod = types.ModuleType("services")
+            services_mod.__path__ = []  # mark as package
+            sys.modules.setdefault("services", services_mod)
 
     db_mod = types.ModuleType("services.db")
     db_mod.get_conn = MagicMock()
@@ -367,3 +372,40 @@ class TestAgentSafety:
                 with patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}):
                     out = generate_response([], "最近AI动态")
         assert out == expected
+
+
+    def test_generate_response_core_allows_smalltalk_without_evidence_when_no_tools(self):
+        from agent.agent import _generate_response_core
+
+        with patch("agent.agent._generate_react", return_value=("Hello, I can help with tech intelligence analysis.", set())):
+            with patch("agent.agent._get_accumulated_tool_calls", return_value=set()):
+                text, urls = _generate_response_core([], "hello")
+        assert "help" in text.lower()
+        assert urls == set()
+
+    def test_generate_response_core_allows_capability_question_without_evidence_when_no_tools(self):
+        from agent.agent import _generate_response_core
+
+        with patch("agent.agent._generate_react", return_value=("I can do trend, comparison, timeline and landscape analysis.", set())):
+            with patch("agent.agent._get_accumulated_tool_calls", return_value=set()):
+                text, urls = _generate_response_core([], "assistant what can you do")
+        assert "compar" in text.lower()
+        assert urls == set()
+
+    def test_generate_response_core_blocks_analysis_without_evidence_when_no_tools(self):
+        from agent.agent import AgentGenerationError, _generate_response_core
+
+        with patch("agent.agent._generate_react", return_value=("analysis result", set())):
+            with patch("agent.agent._get_accumulated_tool_calls", return_value=set()):
+                with pytest.raises(AgentGenerationError) as ei:
+                    _generate_response_core([], "analyze recent 30 days AI trend")
+        assert ei.value.code == "react_empty_evidence_blocked"
+
+    def test_generate_response_core_blocks_when_tools_used_but_no_evidence(self):
+        from agent.agent import AgentGenerationError, _generate_response_core
+
+        with patch("agent.agent._generate_react", return_value=("tool output empty", set())):
+            with patch("agent.agent._get_accumulated_tool_calls", return_value={"query_news"}):
+                with pytest.raises(AgentGenerationError) as ei:
+                    _generate_response_core([], "hello")
+        assert ei.value.code == "react_empty_evidence_blocked"

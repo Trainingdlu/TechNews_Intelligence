@@ -122,7 +122,7 @@ agent.py → LangGraph create_react_agent
   ↓  ↑ (tool calls)
 ToolHookRunner.pre_tool_use()  ── 参数校验
   ↓
-SkillRegistry.execute()        ── tools.py (DB / Jina API)
+SkillRegistry.execute()        ── agent/skills/... (DB / Jina API / 知识库能力)
   ↓
 ToolHookRunner.post_tool_use() ── 证据审计
   ↓
@@ -147,9 +147,9 @@ LLM 生成最终回复
 | `build_timeline` | Registry | 时间线构建：按时间排列的事件编年，自动扩展窗口 |
 | `analyze_landscape` | Registry | 竞争格局分析：实体维度统计 + 信号分类（Compute / Algorithm / Data / GTM / Policy） |
 | `fulltext_batch` | Registry | 批量全文阅读，支持 URL 列表或关键词自动选取 |
-| `read_news_content` | 直接 | 单篇新闻原文读取（从 `jina_raw_logs` 提取） |
-| `get_db_stats` | 直接 | 数据库新鲜度与文章总量 |
-| `list_topics` | 直接 | 近 21 天每日发文量分布 |
+| `read_news_content` | Registry | 单篇新闻原文读取（从 `jina_raw_logs` 提取） |
+| `get_db_stats` | Registry | 数据库新鲜度与文章总量 |
+| `list_topics` | Registry | 近 21 天每日发文量分布 |
 
 **混合检索机制**：纯向量检索在公司名、产品名等专有名词上容易召回偏移，关键词匹配作为兜底保证精确查询的稳定性。检索评分融合了语义相似度、关键词命中、热度归一化和时间衰减因子 `0.1 × EXP(-age_seconds / 86400 / 21)`。
 
@@ -213,8 +213,8 @@ TechNews_Intelligence/
 │
 ├── agent/                           # 智能体核心逻辑
 │   ├── agent.py                     # ReAct 运行时主入口
-│   ├── tools.py                     # 工具定义与技能实现
 │   ├── prompts.py                   # 系统提示词与约束
+│   ├── skills/                      # 具体技能实现代码
 │   ├── core/                        # skill registry / hooks / evidence / metrics
 │   ├── mcp/                         # MCP 扩展层
 │   ├── .env.example

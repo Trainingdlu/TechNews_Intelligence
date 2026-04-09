@@ -6,14 +6,19 @@ import secrets
 import time
 import asyncio
 import logging
-from collections import defaultdict
+import html
+import hmac
+import hashlib
+from threading import Lock
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, Request, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import HTMLResponse, StreamingResponse
+from cachetools import TTLCache
 from pydantic import BaseModel, EmailStr
 from psycopg2.extras import Json
 
@@ -36,6 +41,8 @@ logger = logging.getLogger(__name__)
 
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://agentapi.trainingcqy.com")
+APPROVE_LINK_SECRET = os.getenv("APPROVE_LINK_SECRET", os.getenv("SECRET_KEY", ""))
+APPROVE_LINK_TTL_SEC = max(60, int(os.getenv("APPROVE_LINK_TTL_SEC", "86400")))
 DEFAULT_QUOTA = 10
 UPGRADED_QUOTA = 50
 LEGACY_TRIAL_QUOTA = 15
@@ -50,17 +57,71 @@ SUBSCRIPTION_FREQUENCIES = ["daily"]
 # ---------------------------------------------------------------------------
 RATE_LIMIT = int(os.getenv("API_RATE_LIMIT", "5"))
 RATE_WINDOW = 60
+RATE_TRACK_MAX_IPS = max(100, int(os.getenv("API_RATE_TRACK_MAX_IPS", "10000")))
 
-_request_log: dict[str, list[float]] = defaultdict(list)
+def _new_rate_log_cache(*, maxsize: int | None = None, ttl: int | None = None) -> TTLCache[str, list[float]]:
+    cache_maxsize = maxsize if maxsize is not None else RATE_TRACK_MAX_IPS
+    cache_ttl = ttl if ttl is not None else RATE_WINDOW
+    return TTLCache(maxsize=max(1, cache_maxsize), ttl=max(1, cache_ttl), timer=time.time)
+
+
+_request_log: TTLCache[str, list[float]] = _new_rate_log_cache()
+_rate_lock = Lock()
 
 
 def _check_rate_limit(client_ip: str):
     now = time.time()
-    timestamps = _request_log[client_ip]
-    _request_log[client_ip] = [t for t in timestamps if now - t < RATE_WINDOW]
-    if len(_request_log[client_ip]) >= RATE_LIMIT:
-        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后重试")
-    _request_log[client_ip].append(now)
+    with _rate_lock:
+        timestamps = [t for t in _request_log.get(client_ip, []) if now - t < RATE_WINDOW]
+        if len(timestamps) >= RATE_LIMIT:
+            _request_log[client_ip] = timestamps
+            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后重试")
+        timestamps.append(now)
+        _request_log[client_ip] = timestamps
+
+
+def _build_approve_signature(record_id: int, exp: int) -> str:
+    secret = APPROVE_LINK_SECRET.strip().encode("utf-8")
+    if not secret:
+        raise RuntimeError("APPROVE_LINK_SECRET is empty")
+    payload = f"{record_id}:{exp}".encode("utf-8")
+    return hmac.new(secret, payload, hashlib.sha256).hexdigest()
+
+
+def _build_signed_approve_url(record_id: int) -> str | None:
+    if not APPROVE_LINK_SECRET.strip():
+        return None
+    exp = int(time.time()) + APPROVE_LINK_TTL_SEC
+    sig = _build_approve_signature(record_id, exp)
+    return f"{API_BASE_URL}/approve/{record_id}?exp={exp}&sig={sig}"
+
+
+def _is_valid_approve_signature(record_id: int, exp: int | None, sig: str | None) -> bool:
+    if exp is None or not sig:
+        return False
+    if not APPROVE_LINK_SECRET.strip():
+        return False
+    if exp < int(time.time()):
+        return False
+    try:
+        expected = _build_approve_signature(record_id, exp)
+    except Exception:
+        return False
+    return hmac.compare_digest(expected, sig)
+
+
+def _render_approve_confirmation_page(record_id: int, exp: int, sig: str) -> str:
+    safe_sig = html.escape(sig, quote=True)
+    action = f"/approve/{record_id}?exp={exp}&sig={safe_sig}"
+    return (
+        "<html><body style=\"font-family:sans-serif;max-width:560px;margin:32px auto;\">"
+        "<h2>审批确认</h2>"
+        "<p>请确认是否将该用户额度提升至升级配额。</p>"
+        f"<form method=\"post\" action=\"{action}\">"
+        "<button type=\"submit\" style=\"padding:8px 16px;cursor:pointer;\">确认批准</button>"
+        "</form>"
+        "</body></html>"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -145,7 +206,18 @@ def _verify_token(credentials: HTTPAuthorizationCredentials = Depends(_bearer_sc
 # ---------------------------------------------------------------------------
 # FastAPI App
 # ---------------------------------------------------------------------------
-app = FastAPI(title="TechNews Agent API", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db_pool()
+    logger.info("数据库连接池已初始化")
+    try:
+        yield
+    finally:
+        close_db_pool()
+        logger.info("数据库连接池已关闭")
+
+
+app = FastAPI(title="TechNews Agent API", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -153,18 +225,6 @@ app.add_middleware(
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def startup():
-    init_db_pool()
-    logger.info("数据库连接池已初始化")
-
-
-@app.on_event("shutdown")
-def shutdown():
-    close_db_pool()
-    logger.info("数据库连接池已关闭")
 
 
 # ---------------------------------------------------------------------------
@@ -287,36 +347,118 @@ def _fetch_active_source_names() -> list[str]:
         put_conn(conn)
 
 
-def _consume_quota_after_success(token_info: dict) -> tuple[int, int]:
-    """扣减额度并在耗尽时触发通知。"""
+def _reserve_quota_or_403(token_info: dict) -> dict:
+    """Atomically reserve one quota unit. Returns reservation snapshot."""
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE access_tokens SET used = used + 1 WHERE id = %s RETURNING used, quota, notified",
+            """
+            UPDATE access_tokens
+            SET used = used + 1
+            WHERE id = %s AND used < quota
+            RETURNING used, quota, notified
+            """,
             (token_info["id"],),
         )
         row = cur.fetchone()
-        new_used, quota, notified = row
-        remaining = quota - new_used
+        if not row:
+            conn.rollback()
+            cur.close()
+            raise HTTPException(status_code=403, detail="quota_exhausted")
 
-        if remaining <= 0 and not notified:
-            cur.execute(
-                "UPDATE access_tokens SET status = 'exhausted', notified = TRUE WHERE id = %s",
-                (token_info["id"],),
-            )
-            approve_url = f"{API_BASE_URL}/approve/{token_info['id']}"
-            send_quota_exhausted_to_admin(
-                ADMIN_EMAIL, token_info["email"], token_info["id"], approve_url,
-            )
-            send_quota_exhausted_to_user(token_info["email"])
-            logger.info(f"额度耗尽通知已发送: {token_info['email']}")
-
+        used, quota, notified = row
         conn.commit()
         cur.close()
-        return int(remaining), int(quota)
+        return {
+            "used": int(used),
+            "quota": int(quota),
+            "remaining": int(quota - used),
+            "notified": bool(notified),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"[{token_info['email']}] 额度预扣失败: {e}")
+        raise HTTPException(status_code=500, detail="服务暂时不可用，请稍后重试")
     finally:
         put_conn(conn)
+
+
+def _refund_reserved_quota(token_info: dict):
+    """Best-effort quota refund used when generation fails after reservation."""
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE access_tokens
+            SET used = GREATEST(used - 1, 0)
+            WHERE id = %s
+            RETURNING used, quota
+            """,
+            (token_info["id"],),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+        if row:
+            logger.info(
+                "[%s] quota refund applied: used=%s quota=%s",
+                token_info["email"],
+                int(row[0]),
+                int(row[1]),
+            )
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"[{token_info['email']}] 额度退款失败: {e}")
+    finally:
+        put_conn(conn)
+
+
+def _maybe_send_quota_exhausted_notifications(token_info: dict, reservation: dict):
+    """When remaining is 0, mark exhausted+notified once and send mail notifications."""
+    if int(reservation.get("remaining", 0)) > 0:
+        return
+
+    conn = get_conn()
+    row = None
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE access_tokens
+            SET status = 'exhausted', notified = TRUE
+            WHERE id = %s AND notified = FALSE AND used >= quota
+            RETURNING email
+            """,
+            (token_info["id"],),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"[{token_info['email']}] 标记额度耗尽失败: {e}")
+        return
+    finally:
+        put_conn(conn)
+
+    if not row:
+        return
+
+    email = str(row[0] or token_info["email"])
+    approve_url = _build_signed_approve_url(token_info["id"])
+    try:
+        if approve_url:
+            send_quota_exhausted_to_admin(ADMIN_EMAIL, email, token_info["id"], approve_url)
+        else:
+            logger.error("APPROVE_LINK_SECRET 未配置，跳过管理员审批邮件发送")
+        send_quota_exhausted_to_user(email)
+        logger.info(f"额度耗尽通知已发送: {email}")
+    except Exception as e:
+        logger.error(f"[{email}] 额度耗尽邮件发送失败: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -519,8 +661,33 @@ def get_quota(token: str):
 
 
 @app.get("/approve/{record_id}", response_class=HTMLResponse)
-def approve(record_id: int):
-    """管理员点击邮件链接，提升用户额度"""
+def approve_page(
+    record_id: int,
+    exp: int | None = Query(default=None),
+    sig: str | None = Query(default=None),
+):
+    """管理员打开审批页：仅展示确认按钮，不执行状态变更。"""
+    if not APPROVE_LINK_SECRET.strip():
+        logger.error("APPROVE_LINK_SECRET 未配置，拒绝审批请求")
+        return HTMLResponse("<h2>服务配置错误</h2><p>审批密钥未配置。</p>", status_code=503)
+    if not _is_valid_approve_signature(record_id, exp, sig):
+        return HTMLResponse("<h2>审批链接无效或已过期</h2>", status_code=403)
+    return HTMLResponse(_render_approve_confirmation_page(record_id, int(exp), str(sig)))
+
+
+@app.post("/approve/{record_id}", response_class=HTMLResponse)
+def approve(
+    record_id: int,
+    exp: int | None = Query(default=None),
+    sig: str | None = Query(default=None),
+):
+    """管理员确认后执行审批：提升用户额度。"""
+    if not APPROVE_LINK_SECRET.strip():
+        logger.error("APPROVE_LINK_SECRET 未配置，拒绝审批请求")
+        return HTMLResponse("<h2>服务配置错误</h2><p>审批密钥未配置。</p>", status_code=503)
+    if not _is_valid_approve_signature(record_id, exp, sig):
+        return HTMLResponse("<h2>审批链接无效或已过期</h2>", status_code=403)
+
     conn = get_conn()
     try:
         cur = conn.cursor()
@@ -565,30 +732,34 @@ async def chat(
 ):
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
-
-    # 检查额度
-    if token_info["used"] >= token_info["quota"]:
-        raise HTTPException(
-            status_code=403,
-            detail="quota_exhausted",
-        )
+    reservation = _reserve_quota_or_403(token_info)
 
     logger.info(f"[{token_info['email']}] 对话: {body.message[:50]}...")
     try:
         reply = await asyncio.to_thread(
             generate_response, body.history, body.message,
         )
-        remaining, quota = _consume_quota_after_success(token_info)
-        return ChatResponse(reply=reply, remaining=max(remaining, 0), quota=int(quota))
-
     except HTTPException:
+        _refund_reserved_quota(token_info)
+        raise
+    except asyncio.CancelledError:
+        _refund_reserved_quota(token_info)
         raise
     except AgentGenerationError as e:
+        _refund_reserved_quota(token_info)
         logger.warning(f"[{token_info['email']}] generation blocked: {e}")
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
+        _refund_reserved_quota(token_info)
         logger.error(f"[{token_info['email']}] 处理失败: {e}")
         raise HTTPException(status_code=500, detail="服务暂时不可用，请稍后重试")
+
+    _maybe_send_quota_exhausted_notifications(token_info, reservation)
+    return ChatResponse(
+        reply=reply,
+        remaining=max(int(reservation["remaining"]), 0),
+        quota=int(reservation["quota"]),
+    )
 
 
 @app.post("/chat-stream")
@@ -600,9 +771,7 @@ async def chat_stream(
     """SSE chat endpoint: emits status updates then final payload."""
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
-
-    if token_info["used"] >= token_info["quota"]:
-        raise HTTPException(status_code=403, detail="quota_exhausted")
+    reservation = _reserve_quota_or_403(token_info)
 
     logger.info(f"[{token_info['email']}] 对话(流式): {body.message[:50]}...")
 
@@ -612,6 +781,16 @@ async def chat_stream(
         done_event = asyncio.Event()
         result_holder: dict[str, str] = {}
         error_holder: dict[str, Exception] = {}
+        refunded = False
+        completed = False
+        worker_task: asyncio.Task | None = None
+
+        def refund_once():
+            nonlocal refunded
+            if refunded:
+                return
+            refunded = True
+            _refund_reserved_quota(token_info)
 
         def progress_callback(payload: dict[str, str]):
             stage = str(payload.get("stage", "")).strip()
@@ -631,46 +810,52 @@ async def chat_stream(
             finally:
                 loop.call_soon_threadsafe(done_event.set)
 
-        worker_task = asyncio.create_task(asyncio.to_thread(worker))
-        last_status = ""
-
-        while True:
-            if done_event.is_set() and progress_queue.empty():
-                break
-            try:
-                payload = await asyncio.wait_for(progress_queue.get(), timeout=0.25)
-            except asyncio.TimeoutError:
-                continue
-
-            status_text = _status_text_from_progress(payload)
-            if status_text and status_text != last_status:
-                last_status = status_text
-                yield _sse_event("status", {"text": status_text})
-
-        await worker_task
-
-        if "exc" in error_holder:
-            exc = error_holder["exc"]
-            if isinstance(exc, AgentGenerationError):
-                logger.warning(f"[{token_info['email']}] generation blocked: {exc}")
-                yield _sse_event("error", {"detail": str(exc), "status_code": 503})
-                return
-            logger.error(f"[{token_info['email']}] 处理失败: {exc}")
-            yield _sse_event("error", {"detail": "服务暂时不可用，请稍后重试", "status_code": 500})
-            return
-
         try:
-            remaining, quota = _consume_quota_after_success(token_info)
-        except Exception as exc:
-            logger.error(f"[{token_info['email']}] 扣减额度失败: {exc}")
-            yield _sse_event("error", {"detail": "服务暂时不可用，请稍后重试", "status_code": 500})
-            return
+            worker_task = asyncio.create_task(asyncio.to_thread(worker))
+            last_status = ""
 
-        yield _sse_event("final", {
-            "reply": result_holder.get("reply", ""),
-            "remaining": max(remaining, 0),
-            "quota": int(quota),
-        })
+            while True:
+                if done_event.is_set() and progress_queue.empty():
+                    break
+                try:
+                    payload = await asyncio.wait_for(progress_queue.get(), timeout=0.25)
+                except asyncio.TimeoutError:
+                    continue
+
+                status_text = _status_text_from_progress(payload)
+                if status_text and status_text != last_status:
+                    last_status = status_text
+                    yield _sse_event("status", {"text": status_text})
+
+            await worker_task
+
+            if "exc" in error_holder:
+                exc = error_holder["exc"]
+                refund_once()
+                if isinstance(exc, AgentGenerationError):
+                    logger.warning(f"[{token_info['email']}] generation blocked: {exc}")
+                    yield _sse_event("error", {"detail": str(exc), "status_code": 503})
+                    return
+                logger.error(f"[{token_info['email']}] 处理失败: {exc}")
+                yield _sse_event("error", {"detail": "服务暂时不可用，请稍后重试", "status_code": 500})
+                return
+
+            _maybe_send_quota_exhausted_notifications(token_info, reservation)
+            completed = True
+            yield _sse_event("final", {
+                "reply": result_holder.get("reply", ""),
+                "remaining": max(int(reservation["remaining"]), 0),
+                "quota": int(reservation["quota"]),
+            })
+        finally:
+            if worker_task is not None and not worker_task.done():
+                worker_task.cancel()
+                try:
+                    await worker_task
+                except Exception:
+                    pass
+            if not completed:
+                refund_once()
 
     return StreamingResponse(
         event_generator(),

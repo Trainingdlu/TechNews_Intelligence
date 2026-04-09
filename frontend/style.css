@@ -925,15 +925,18 @@ body {
 
 /* Typing Indicator */
 .typing-indicator {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 16px;
-    min-width: 210px;
-    border-radius: var(--radius-md);
-    border-bottom-left-radius: 4px;
-    background: var(--agent-bubble);
-    border: 1px solid var(--border-color);
+    padding: 2px 0;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    border-radius: 0;
+}
+
+.typing-msg {
+    max-width: 100%;
 }
 
 .typing-spinner {
@@ -942,7 +945,7 @@ body {
     border-radius: 50%;
     border: 2px solid color-mix(in srgb, var(--text-tertiary) 45%, transparent);
     border-top-color: var(--primary-blue);
-    animation: typingSpin 0.9s linear infinite;
+    animation: typingSpin 1.6s linear infinite;
     flex-shrink: 0;
 }
 

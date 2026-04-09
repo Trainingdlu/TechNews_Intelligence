@@ -8,6 +8,7 @@ import sys
 import types
 import unittest
 from unittest.mock import AsyncMock, patch
+from cachetools import TTLCache
 
 try:
     from tests.utils.bootstrap import ensure_agents_on_path
@@ -53,16 +54,22 @@ class _ThinkingMessage:
 class BotRobustnessTests(unittest.TestCase):
     def setUp(self) -> None:
         self._env = os.environ.copy()
+        self._orig_histories = bot_mod.conversation_histories
+        self._orig_history_limits = bot_mod.chat_history_limits
+        self._orig_request_log = bot_mod.chat_request_log
         bot_mod.chat_request_log.clear()
 
     def tearDown(self) -> None:
         os.environ.clear()
         os.environ.update(self._env)
+        bot_mod.conversation_histories = self._orig_histories
+        bot_mod.chat_history_limits = self._orig_history_limits
+        bot_mod.chat_request_log = self._orig_request_log
         bot_mod.chat_request_log.clear()
         bot_mod.conversation_histories.clear()
         bot_mod.chat_history_limits.clear()
         # Prevent stubbed modules from polluting subsequent test modules.
-        for name in ("agent", "services", "services.db", "telegram", "telegram.ext"):
+        for name in ("services.db", "telegram", "telegram.ext"):
             sys.modules.pop(name, None)
 
     def test_extract_urls_dedup_and_strip_punctuation(self) -> None:
@@ -143,6 +150,35 @@ class BotRobustnessTests(unittest.TestCase):
         self.assertFalse(allowed)
         self.assertGreaterEqual(retry_after, 1)
 
+    def test_session_cache_evicts_oldest_when_over_capacity(self) -> None:
+        bot_mod.conversation_histories = TTLCache(maxsize=2, ttl=3600)
+        bot_mod.chat_history_limits = TTLCache(maxsize=2, ttl=3600)
+
+        bot_mod.conversation_histories[1] = []
+        bot_mod.conversation_histories[2] = []
+        bot_mod.conversation_histories[3] = []
+
+        bot_mod.chat_history_limits[1] = 10
+        bot_mod.chat_history_limits[2] = 10
+        bot_mod.chat_history_limits[3] = 10
+
+        self.assertEqual(len(bot_mod.conversation_histories), 2)
+        self.assertNotIn(1, bot_mod.conversation_histories)
+        self.assertNotIn(1, bot_mod.chat_history_limits)
+
+    def test_rate_log_cache_evicts_oldest_chat(self) -> None:
+        os.environ["BOT_RATE_LIMIT"] = "10"
+        os.environ["BOT_RATE_WINDOW_SEC"] = "60"
+        bot_mod.chat_request_log = TTLCache(maxsize=2, ttl=3600)
+
+        with patch.object(bot_mod.time, "time", return_value=1000.0):
+            self.assertEqual(bot_mod._consume_chat_rate_token(1), (True, 0))  # pylint: disable=protected-access
+            self.assertEqual(bot_mod._consume_chat_rate_token(2), (True, 0))  # pylint: disable=protected-access
+            self.assertEqual(bot_mod._consume_chat_rate_token(3), (True, 0))  # pylint: disable=protected-access
+
+        self.assertEqual(len(bot_mod.chat_request_log), 2)
+        self.assertNotIn(1, bot_mod.chat_request_log)
+
     def test_handle_message_generation_error_not_pollute_history(self) -> None:
         chat_id = 999
         thinking = _ThinkingMessage()
@@ -155,10 +191,9 @@ class BotRobustnessTests(unittest.TestCase):
         async def _to_thread(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        reply_mock = AsyncMock(return_value=thinking)
         with (
             patch.object(bot_mod, "_consume_chat_rate_token", return_value=(True, 0)),
-            patch.object(bot_mod, "_reply_text_with_retry", new=reply_mock),
+            patch.object(bot_mod, "_reply_text_with_retry", new=AsyncMock(return_value=thinking)),
             patch.object(bot_mod.asyncio, "to_thread", new=AsyncMock(side_effect=_to_thread)),
             patch.object(
                 bot_mod,
@@ -169,6 +204,4 @@ class BotRobustnessTests(unittest.TestCase):
             asyncio.run(bot_mod.handle_message(update, context))
 
         self.assertEqual(bot_mod.conversation_histories.get(chat_id, []), [])
-        sent_texts = [str(call.args[1]) for call in reply_mock.await_args_list if len(call.args) >= 2]
-        self.assertIn("抱歉，当前模型服务暂时不可用。", sent_texts)
-
+        self.assertEqual(thinking.edits, ["抱歉，当前模型服务暂时不可用。"])

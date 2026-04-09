@@ -10,7 +10,6 @@ from __future__ import annotations
 import inspect
 import os
 import re
-import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -30,13 +29,16 @@ from .core.metrics import (
     metrics_inc as _metrics_inc,
     reset_route_metrics,
 )
-from .core.skill_contracts import SkillEnvelope
-from .tools import (
-    get_db_stats,
-    list_topics,
-    lookup_url_titles,
-    read_news_content,
+from .core.run_context import (
+    add_evidence_urls as _accumulate_evidence,
+    add_tool_call as _accumulate_tool_call,
+    agent_run_context,
+    emit_progress as _emit_progress,
+    get_evidence_urls as _get_accumulated_evidence,
+    get_tool_calls as _get_accumulated_tool_calls,
 )
+from .core.skill_contracts import SkillEnvelope
+from .skills.news_ops import lookup_url_titles
 
 
 # ---------------------------------------------------------------------------
@@ -58,77 +60,6 @@ def _get_hook_runner():
     if _hook_runner is None:
         _hook_runner = build_default_hook_runner()
     return _hook_runner
-
-
-# ---------------------------------------------------------------------------
-# Per-request evidence accumulator (thread-safe)
-# ---------------------------------------------------------------------------
-_local = threading.local()
-
-
-def _reset_evidence():
-    """Reset per-request evidence accumulator."""
-    _local.evidence_urls = []
-
-
-def _reset_tool_calls():
-    """Reset per-request tool-call accumulator."""
-    _local.tool_calls = []
-
-
-def _set_progress_callback(callback: Callable[[dict[str, str]], None] | None):
-    """Set per-request progress callback used by transport layers (e.g., web stream)."""
-    _local.progress_callback = callback
-
-
-def _emit_progress(stage: str, tool_name: str = ""):
-    """Emit runtime progress events (best-effort, never blocks generation)."""
-    callback = getattr(_local, "progress_callback", None)
-    if not callable(callback):
-        return
-    payload: dict[str, str] = {"stage": str(stage or "").strip()}
-    if tool_name:
-        payload["tool"] = str(tool_name).strip()
-    try:
-        callback(payload)
-    except Exception:
-        # Progress emission must not affect core generation path.
-        pass
-
-
-def _accumulate_tool_call(tool_name: str):
-    """Collect unique tool names used during a request."""
-    name = str(tool_name or "").strip()
-    if not name:
-        return
-    store = getattr(_local, "tool_calls", None)
-    if store is None:
-        _local.tool_calls = []
-        store = _local.tool_calls
-    if name not in store:
-        store.append(name)
-
-
-def _get_accumulated_tool_calls() -> set[str]:
-    """Return all tool names used during the current request."""
-    return set(getattr(_local, "tool_calls", []))
-
-
-def _accumulate_evidence(urls: list[str]):
-    """Collect evidence URLs from SkillEnvelope during tool execution."""
-    store = getattr(_local, "evidence_urls", None)
-    if store is None:
-        _local.evidence_urls = []
-        store = _local.evidence_urls
-    for url in urls:
-        url = str(url or "").strip()
-        if url and url not in store:
-            store.append(url)
-
-
-def _get_accumulated_evidence() -> set[str]:
-    """Return all evidence URLs collected during the current request."""
-    return set(getattr(_local, "evidence_urls", []))
 
 
 # ---------------------------------------------------------------------------
@@ -249,25 +180,19 @@ def search_news_tool(query: str, days: int = 21) -> str:
 @tool("read_news_content")
 def read_news_content_tool(url: str) -> str:
     """Read full article content by URL. Only works for URLs from other tools."""
-    _emit_progress("retrieving", "read_news_content")
-    _accumulate_tool_call("read_news_content")
-    return read_news_content(url=url)
+    return _execute_skill("read_news_content", {"url": url})
 
 
 @tool("get_db_stats")
 def get_db_stats_tool() -> str:
     """Get database freshness stats and total article count."""
-    _emit_progress("retrieving", "get_db_stats")
-    _accumulate_tool_call("get_db_stats")
-    return get_db_stats()
+    return _execute_skill("get_db_stats", {})
 
 
 @tool("list_topics")
 def list_topics_tool() -> str:
     """Get daily article volume distribution for recent 21 days."""
-    _emit_progress("retrieving", "list_topics")
-    _accumulate_tool_call("list_topics")
-    return list_topics()
+    return _execute_skill("list_topics", {})
 
 
 @tool("query_news")
@@ -630,6 +555,58 @@ def _contains_cjk(text: str) -> bool:
     return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
 
 
+_SMALLTALK_INTENT_RE = re.compile(
+    r"(?:^|\s)(?:hi|hello|hey|yo|thanks?|thank you|你好|您好|嗨|哈喽|在吗|早上好|下午好|晚上好|谢谢|辛苦了)(?:\s|$|[，。！？?!,])",
+    re.IGNORECASE,
+)
+_CAPABILITY_INTENT_RE = re.compile(
+    r"(?:你|您|机器人|助手|bot|assistant).*(?:能|可以|会|支持|can|able to).*(?:做什么|干什么|哪些功能|支持什么|怎么用|能做啥|what can you|how to use|capabilities|对比什么|分析什么)",
+    re.IGNORECASE,
+)
+_CAPABILITY_HINT_RE = re.compile(
+    r"(?:what can you|how can you help|your capabilities|你能做什么|你可以做什么|支持什么|怎么用|对比什么|分析什么)",
+    re.IGNORECASE,
+)
+_ANALYSIS_INTENT_RE = re.compile(
+    r"(?:最近|过去|近\d+天|近一周|近一个月|last\s*\d+\s*days?|recent|past|analy[sz]e|analysis|compare|vs|timeline|trend|outlook|landscape|"
+    r"分析|对比|比较|趋势|时间线|动态|格局|局势|复盘|汇总|梳理)",
+    re.IGNORECASE,
+)
+
+
+def _is_smalltalk_or_capability_intent(user_message: str) -> bool:
+    text = str(user_message or "").strip()
+    if not text:
+        return False
+    if _SMALLTALK_INTENT_RE.search(text):
+        return True
+    if _CAPABILITY_INTENT_RE.search(text):
+        return True
+    if _CAPABILITY_HINT_RE.search(text):
+        return True
+    return False
+
+
+def _is_analysis_intent(user_message: str) -> bool:
+    text = str(user_message or "").strip()
+    if not text:
+        return False
+    return bool(_ANALYSIS_INTENT_RE.search(text))
+
+
+def _should_block_empty_evidence(user_message: str, valid_urls: set[str], tool_calls: set[str]) -> bool:
+    """Decide whether empty-evidence outputs should be blocked."""
+    if valid_urls:
+        return False
+    if tool_calls:
+        return True
+    if _is_smalltalk_or_capability_intent(user_message):
+        return False
+    if _is_analysis_intent(user_message):
+        return True
+    return True
+
+
 def _strict_inline_citations_enabled() -> bool:
     return os.getenv("AGENT_STRICT_INLINE_CITATIONS", "true").strip().lower() not in {"0", "false", "no", "off"}
 
@@ -660,10 +637,6 @@ def _enforce_inline_citation_guard(final_text: str, user_message: str, valid_url
 # ---------------------------------------------------------------------------
 def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[str]]:
     """Run the ReAct agent loop with Skill infrastructure."""
-    # Reset per-request evidence accumulator
-    _reset_evidence()
-    _reset_tool_calls()
-
     agent = _get_react_agent()
     messages = _history_to_messages(history)
     messages.append(HumanMessage(content=user_message))
@@ -707,8 +680,9 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
     try:
         _metrics_inc("react_attempts")
         result, valid_urls = _generate_react(history, user_message)
+        tool_calls = _get_accumulated_tool_calls()
 
-        if not valid_urls:
+        if _should_block_empty_evidence(user_message, valid_urls, tool_calls):
             raise AgentGenerationError(
                 "抱歉，针对该问题，系统未能检索到相关的新闻。",
                 code="react_empty_evidence_blocked"
@@ -769,14 +743,11 @@ def _run_generation_core(
     progress_callback: Callable[[dict[str, str]], None] | None = None,
 ) -> tuple[str, set[str]]:
     """Run core generation with optional progress callback lifecycle."""
-    _set_progress_callback(progress_callback)
-    try:
+    with agent_run_context(progress_callback=progress_callback):
         _emit_progress("understanding")
         core_text, valid_urls = _generate_response_core(history, user_message)
         _emit_progress("finalizing")
         return core_text, valid_urls
-    finally:
-        _set_progress_callback(None)
 
 
 def generate_response(
@@ -823,15 +794,16 @@ def generate_response_payload(
 
 def generate_response_eval_payload(history: list[dict], user_message: str) -> dict[str, Any]:
     """Structured response for eval with tool trace and URL evidence."""
-    core_text, valid_urls = _generate_response_core(history, user_message)
-    core_text = _strip_generic_analysis_leadin(core_text)
-    final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
-    _enforce_inline_citation_guard(final_text, user_message, valid_urls)
-    return {
-        "text": final_text,
-        "valid_urls": sorted(valid_urls),
-        "tool_calls": sorted(_get_accumulated_tool_calls()),
-    }
+    with agent_run_context():
+        core_text, valid_urls = _generate_response_core(history, user_message)
+        core_text = _strip_generic_analysis_leadin(core_text)
+        final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+        _enforce_inline_citation_guard(final_text, user_message, valid_urls)
+        return {
+            "text": final_text,
+            "valid_urls": sorted(valid_urls),
+            "tool_calls": sorted(_get_accumulated_tool_calls()),
+        }
 
 
 def get_last_tool_calls_snapshot() -> list[str]:

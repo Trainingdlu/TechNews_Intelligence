@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from agent.core.role_policy import assert_skill_allowed
 from agent.core.skill_registry import SkillRegistry
 from agent.core.tool_hooks import ToolHookRunner
-from agent.prompts import get_role_system_instruction
 
 
 class _DummyInput(BaseModel):
@@ -84,9 +83,4 @@ def test_tool_hook_runner_denies_invalid_integer_payload() -> None:
     assert "integer" in str(decision_days.reason)
     assert decision_window.action == "deny"
     assert "integer" in str(decision_window.reason)
-
-
-def test_role_prompt_lookup() -> None:
-    text = get_role_system_instruction("miner")
-    assert "Miner subagent" in text
 

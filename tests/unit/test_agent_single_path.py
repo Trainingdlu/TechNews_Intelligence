@@ -14,9 +14,14 @@ import pytest
 
 
 def _setup_stubs() -> None:
-    services_mod = types.ModuleType("services")
-    services_mod.__path__ = []
-    sys.modules.setdefault("services", services_mod)
+    if "services" not in sys.modules:
+        try:
+            import importlib
+            importlib.import_module("services")
+        except Exception:
+            services_mod = types.ModuleType("services")
+            services_mod.__path__ = []
+            sys.modules.setdefault("services", services_mod)
 
     db_mod = types.ModuleType("services.db")
     db_mod.get_conn = MagicMock()

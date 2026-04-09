@@ -8,24 +8,7 @@ from __future__ import annotations
 
 from .skill_registry import SkillRegistry
 from .tool_hooks import ToolHookRunner
-from ..tools import (
-    AnalyzeLandscapeSkillInput,
-    BuildTimelineSkillInput,
-    CompareSourcesSkillInput,
-    CompareTopicsSkillInput,
-    FulltextBatchSkillInput,
-    QueryNewsSkillInput,
-    SearchNewsSkillInput,
-    TrendAnalysisSkillInput,
-    analyze_landscape_skill,
-    build_timeline_skill,
-    compare_sources_skill,
-    compare_topics_skill,
-    fulltext_batch_skill,
-    query_news_skill,
-    search_news_skill,
-    trend_analysis_skill,
-)
+from .skill_catalog import iter_skill_definitions
 
 
 _DEFAULT_REGISTRY: SkillRegistry | None = None
@@ -40,54 +23,13 @@ def build_default_registry() -> SkillRegistry:
         return _DEFAULT_REGISTRY
 
     registry = SkillRegistry()
-    registry.register(
-        name="query_news",
-        input_model=QueryNewsSkillInput,
-        handler=lambda payload: query_news_skill(payload),
-        description="Structured news retrieval",
-    )
-    registry.register(
-        name="trend_analysis",
-        input_model=TrendAnalysisSkillInput,
-        handler=lambda payload: trend_analysis_skill(payload),
-        description="Structured trend momentum analysis",
-    )
-    registry.register(
-        name="search_news",
-        input_model=SearchNewsSkillInput,
-        handler=lambda payload: search_news_skill(payload),
-        description="Hybrid semantic+keyword news search",
-    )
-    registry.register(
-        name="compare_sources",
-        input_model=CompareSourcesSkillInput,
-        handler=lambda payload: compare_sources_skill(payload),
-        description="HackerNews vs TechCrunch source comparison",
-    )
-    registry.register(
-        name="compare_topics",
-        input_model=CompareTopicsSkillInput,
-        handler=lambda payload: compare_topics_skill(payload),
-        description="A-vs-B entity comparison with evidence",
-    )
-    registry.register(
-        name="build_timeline",
-        input_model=BuildTimelineSkillInput,
-        handler=lambda payload: build_timeline_skill(payload),
-        description="Chronological event timeline construction",
-    )
-    registry.register(
-        name="analyze_landscape",
-        input_model=AnalyzeLandscapeSkillInput,
-        handler=lambda payload: analyze_landscape_skill(payload),
-        description="Competitive landscape analysis with entity stats",
-    )
-    registry.register(
-        name="fulltext_batch",
-        input_model=FulltextBatchSkillInput,
-        handler=lambda payload: fulltext_batch_skill(payload),
-        description="Batch full-text article reading",
-    )
+    for definition in iter_skill_definitions():
+        registry.register(
+            name=definition.name,
+            input_model=definition.input_model,
+            handler=definition.handler,
+            description=definition.description,
+        )
     _DEFAULT_REGISTRY = registry
     return registry
 

@@ -1,0 +1,6 @@
+{
+  "ai": ["AI", "人工智能", "大模型", "LLM", "智能体", "GPT", "Gemini", "Claude", "Copilot"],
+  "business": ["business", "commercial", "market", "finance", "enterprise", "商业", "市场", "金融", "营收", "盈利", "IPO", "并购"],
+  "security": ["security", "cyber", "cybersecurity", "vulnerability", "breach", "安全", "网络安全", "漏洞", "威胁", "攻防", "勒索"]
+}
+

@@ -10,9 +10,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from agent.core.skill_catalog import iter_skill_definitions
 from agent.core.skill_contracts import SkillEnvelope
 from agent.mcp.client import MCPClient, StdioMCPServer, qualify_tool_name
-from agent.mcp.server import InProcessMCPServer
+from agent.mcp.server import InProcessMCPServer, build_newsdb_server
 
 
 class _SimpleInput(BaseModel):
@@ -49,6 +50,17 @@ def test_mcp_client_unknown_tool_returns_error() -> None:
     envelope = client.call_tool("mcp__missing__tool", {"topic": "AI"})
     assert envelope.status == "error"
     assert envelope.error == "mcp_unknown_namespaced_tool"
+
+
+def test_newsdb_server_registration_matches_skill_catalog() -> None:
+    server = build_newsdb_server("newsdb")
+    listed = {row["name"] for row in server.list_tools()}
+    expected = {
+        definition.mcp_name or definition.name
+        for definition in iter_skill_definitions()
+        if definition.expose_in_mcp
+    }
+    assert listed == expected
 
 
 def test_mcp_client_with_stdio_backend() -> None:

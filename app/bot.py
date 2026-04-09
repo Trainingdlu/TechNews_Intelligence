@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse, unquote
 
 from dotenv import load_dotenv
+from cachetools import TTLCache
 from telegram import Update, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
@@ -31,17 +32,24 @@ logger = logging.getLogger(__name__)
 
 # 按 chat_id 存储对话历史
 # 格式: { chat_id: [{"role": "user"/"model", "parts": [{"text": "..."}]}, ...] }
-conversation_histories: dict[int, list[dict]] = {}
-chat_history_limits: dict[int, int] = {}
-chat_request_log: dict[int, list[float]] = {}
+SESSION_CACHE_MAX_CHATS = max(1, int(os.getenv("BOT_SESSION_MAX_CHATS", "5000")))
+SESSION_CACHE_TTL_SEC = max(60, int(os.getenv("BOT_SESSION_TTL_SEC", "86400")))
+RATE_TRACK_MAX_CHATS = max(100, int(os.getenv("BOT_RATE_TRACK_MAX_CHATS", str(SESSION_CACHE_MAX_CHATS))))
 
-MAX_HISTORY_TURNS = 20  # 保留最近20轮，防止 context 太长
-PROGRESS_STAGE_TEXT = {
-    "understanding": "正在理解问题",
-    "retrieving": "正在检索相关新闻",
-    "analyzing": "正在整理关键信息",
-    "finalizing": "正在生成回复",
-}
+conversation_histories: TTLCache[int, list[dict]] = TTLCache(
+    maxsize=SESSION_CACHE_MAX_CHATS,
+    ttl=SESSION_CACHE_TTL_SEC,
+)
+chat_history_limits: TTLCache[int, int] = TTLCache(
+    maxsize=SESSION_CACHE_MAX_CHATS,
+    ttl=SESSION_CACHE_TTL_SEC,
+)
+chat_request_log: TTLCache[int, list[float]] = TTLCache(
+    maxsize=RATE_TRACK_MAX_CHATS,
+    ttl=SESSION_CACHE_TTL_SEC,
+)
+
+MAX_HISTORY_TURNS = 20  # Keep only recent turns to cap context growth.
 
 
 def _trim_history(history: list[dict], max_turns: int | None = None) -> list[dict]:
@@ -102,12 +110,6 @@ def _consume_chat_rate_token(chat_id: int) -> tuple[bool, int]:
     logs.append(now)
     chat_request_log[chat_id] = logs
     return True, 0
-
-
-def _status_text_from_progress(payload: dict) -> str:
-    """Map agent runtime progress payload to user-facing Telegram status text."""
-    stage = str((payload or {}).get("stage", "")).strip().lower()
-    return PROGRESS_STAGE_TEXT.get(stage, "")
 
 
 def _parse_admin_ids() -> set[int]:
@@ -658,81 +660,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id not in conversation_histories:
         conversation_histories[chat_id] = []
 
-    history = conversation_histories[chat_id]
-    loop = asyncio.get_running_loop()
-    progress_queue: asyncio.Queue[str] = asyncio.Queue()
-    done_event = asyncio.Event()
-    result_holder: dict[str, dict] = {}
-    error_holder: dict[str, Exception] = {}
-    status_msg = None
-    last_status = ""
-
-    async def _delete_status_message():
-        nonlocal status_msg
-        if status_msg is None:
-            return
-        try:
-            await status_msg.delete()
-        except Exception:
-            pass
-        status_msg = None
-
-    def progress_callback(payload: dict[str, str]):
-        status_text = _status_text_from_progress(payload if isinstance(payload, dict) else {})
-        if not status_text:
-            return
-        loop.call_soon_threadsafe(progress_queue.put_nowait, status_text)
-
-    def worker():
-        try:
-            result_holder["payload"] = generate_response_payload(
-                history,
-                user_text,
-                progress_callback=progress_callback,
-            )
-        except Exception as exc:
-            error_holder["exc"] = exc
-        finally:
-            loop.call_soon_threadsafe(done_event.set)
-
-    worker_task = asyncio.create_task(asyncio.to_thread(worker))
+    # 发送“正在分析”提示
+    thinking_msg = await _reply_text_with_retry(update.message, "正在分析，请稍后")
 
     try:
-        # 实时消费状态：每次发新状态前，删除上一条状态消息
-        while True:
-            if done_event.is_set() and progress_queue.empty():
-                break
-            try:
-                status_text = await asyncio.wait_for(progress_queue.get(), timeout=0.25)
-            except asyncio.TimeoutError:
-                continue
-            if not status_text or status_text == last_status:
-                continue
-
-            last_status = status_text
-            await _delete_status_message()
-            try:
-                status_msg = await _reply_text_with_retry(update.message, status_text)
-            except Exception as send_exc:
-                logger.warning(f"[chat_id={chat_id}] status message send failed: {send_exc}")
-                status_msg = None
-
-        await worker_task
-        await _delete_status_message()
-
-        if "exc" in error_holder:
-            exc = error_holder["exc"]
-            if isinstance(exc, AgentGenerationError):
-                logger.warning(f"[chat_id={chat_id}] generation blocked: {exc}")
-                friendly = str(exc).strip() or "抱歉，本次分析暂时不可用，请稍后重试。"
-                await _reply_text_with_retry(update.message, friendly)
-                return
-
-            logger.error(f"[chat_id={chat_id}] message handling error: {exc}")
-            await _reply_text_with_retry(update.message, "抱歉，系统暂时不可用，请稍后重试。")
-            return
-
-        payload = result_holder.get("payload", {}) if isinstance(result_holder.get("payload"), dict) else {}
+        history = conversation_histories[chat_id]
+        payload = await asyncio.to_thread(generate_response_payload, history, user_text)
         reply = str(payload.get("text", "")).strip()
         title_map = payload.get("url_title_map", {}) if isinstance(payload, dict) else {}
 
@@ -742,9 +675,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         history_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
         conversation_histories[chat_id] = _trim_history(history, max_turns=history_limit)
 
+        # 删除“正在分析”，发送最终回复
+        try:
+            await thinking_msg.delete()
+        except Exception:
+            pass
         await _send_reply(update.message, reply, url_title_map=title_map if isinstance(title_map, dict) else {})
-    finally:
-        await _delete_status_message()
+    except AgentGenerationError as e:
+        logger.warning(f"[chat_id={chat_id}] generation blocked: {e}")
+        friendly = str(e).strip() or "抱歉，本次分析暂时不可用，请稍后重试。"
+        try:
+            await thinking_msg.edit_text(friendly)
+        except Exception:
+            await _reply_text_with_retry(update.message, friendly)
+    except Exception as e:
+        logger.error(f"[chat_id={chat_id}] message handling error: {e}")
+        fallback = "抱歉，系统暂时不可用，请稍后重试。"
+        try:
+            await thinking_msg.edit_text(fallback)
+        except Exception:
+            await _reply_text_with_retry(update.message, fallback)
 
 
 async def _post_shutdown(app) -> None:

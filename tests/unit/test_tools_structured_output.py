@@ -1,4 +1,4 @@
-"""Unit tests for structured tool outputs in tools.py."""
+"""Unit tests for structured outputs in skill modules."""
 
 from __future__ import annotations
 
@@ -14,7 +14,12 @@ except ModuleNotFoundError:
 
 ensure_agents_on_path()
 
-from agent import tools as tools_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills import fulltext_batch as fulltext_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills import helpers as helpers_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills import query_news as query_news_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills import sql_builders as sql_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills import trend_analysis as trend_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills.schemas import QueryNewsSkillInput, TrendAnalysisSkillInput  # noqa: E402  pylint: disable=wrong-import-position
 
 
 class _FakeCursor:
@@ -44,26 +49,26 @@ class ToolStructuredOutputTests(unittest.TestCase):
         cutoff = datetime(2026, 3, 29, 0, 0, 0, tzinfo=timezone.utc)
         naive_recent = datetime(2026, 3, 29, 1, 0, 0)
         naive_old = datetime(2026, 3, 28, 1, 0, 0)
-        self.assertTrue(tools_mod._is_recent_timestamp(naive_recent, cutoff))
-        self.assertFalse(tools_mod._is_recent_timestamp(naive_old, cutoff - timedelta(hours=1)))
+        self.assertTrue(helpers_mod._is_recent_timestamp(naive_recent, cutoff))
+        self.assertFalse(helpers_mod._is_recent_timestamp(naive_old, cutoff - timedelta(hours=1)))
 
     def test_is_recent_timestamp_normalizes_non_utc_offsets(self) -> None:
-        cutoff = datetime(2026, 3, 29, 0, 0, 0)  # naive UTC baseline in tool logic
+        cutoff = datetime(2026, 3, 29, 0, 0, 0)
         shanghai_tz = timezone(timedelta(hours=8))
-        aware_local = datetime(2026, 3, 29, 7, 30, 0, tzinfo=shanghai_tz)  # UTC: 2026-03-28 23:30
-        self.assertFalse(tools_mod._is_recent_timestamp(aware_local, cutoff))
+        aware_local = datetime(2026, 3, 29, 7, 30, 0, tzinfo=shanghai_tz)
+        self.assertFalse(helpers_mod._is_recent_timestamp(aware_local, cutoff))
 
     def test_is_recent_timestamp_accepts_iso8601_string(self) -> None:
         cutoff = datetime(2026, 3, 29, 0, 30, 0)
         iso_value = "2026-03-29T01:00:00Z"
-        self.assertTrue(tools_mod._is_recent_timestamp(iso_value, cutoff))
+        self.assertTrue(helpers_mod._is_recent_timestamp(iso_value, cutoff))
 
     def test_extract_time_window_days_supports_week_and_month(self) -> None:
-        self.assertEqual(tools_mod._extract_time_window_days("最近2周相关新闻", default=14), 14)
-        self.assertEqual(tools_mod._extract_time_window_days("past 1 month coverage", default=14), 30)
+        self.assertEqual(helpers_mod._extract_time_window_days("最近2周相关新闻", default=14), 14)
+        self.assertEqual(helpers_mod._extract_time_window_days("past 1 month coverage", default=14), 30)
 
     def test_expand_topic_terms_for_ai_domain(self) -> None:
-        terms = tools_mod._expand_topic_terms("AI")
+        terms = sql_mod._expand_topic_terms("AI")
         lowered = {t.lower() for t in terms}
         self.assertIn("ai", lowered)
         self.assertIn("gpt", lowered)
@@ -84,10 +89,10 @@ class ToolStructuredOutputTests(unittest.TestCase):
         ]
         fake_conn = _FakeConn(rows)
         with (
-            patch.object(tools_mod, "get_conn", lambda: fake_conn),
-            patch.object(tools_mod, "put_conn", lambda _conn: None),
+            patch.object(query_news_mod, "get_conn", lambda: fake_conn),
+            patch.object(query_news_mod, "put_conn", lambda _conn: None),
         ):
-            out = tools_mod.query_news(query="OpenAI", source="TechCrunch", days=7, response_format="json")
+            out = query_news_mod.query_news(query="OpenAI", source="TechCrunch", days=7, response_format="json")
 
         payload = json.loads(out)
         self.assertEqual(payload["tool"], "query_news")
@@ -96,8 +101,8 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(payload["records"][0]["url"], "https://a.com")
 
     def test_fulltext_batch_json_mode_empty_candidates(self) -> None:
-        with patch.object(tools_mod, "_lookup_urls_by_query", lambda **_kwargs: []):
-            out = tools_mod.fulltext_batch("OpenAI Voice Engine", response_format="json")
+        with patch.object(fulltext_mod, "_lookup_urls_by_query", lambda **_kwargs: []):
+            out = fulltext_mod.fulltext_batch("OpenAI Voice Engine", response_format="json")
         payload = json.loads(out)
         self.assertEqual(payload["tool"], "fulltext_batch")
         self.assertEqual(payload["status"], "empty")
@@ -109,10 +114,10 @@ class ToolStructuredOutputTests(unittest.TestCase):
             ("B title", "https://b.com", "HackerNews", datetime(2026, 3, 28, 9, 0, 0), 8, 1.876),
         ]
         with (
-            patch.object(tools_mod, "_lookup_urls_by_query", lambda **_kwargs: candidates),
-            patch.object(tools_mod, "read_news_content", lambda _url: "Full content:\nHello world"),
+            patch.object(fulltext_mod, "_lookup_urls_by_query", lambda **_kwargs: candidates),
+            patch.object(fulltext_mod, "read_news_content", lambda _url: "Full content:\nHello world"),
         ):
-            out = tools_mod.fulltext_batch("OpenAI recent 14 days", response_format="json")
+            out = fulltext_mod.fulltext_batch("OpenAI recent 14 days", response_format="json")
 
         payload = json.loads(out)
         self.assertEqual(payload["tool"], "fulltext_batch")
@@ -150,10 +155,8 @@ class ToolStructuredOutputTests(unittest.TestCase):
                 }
             ],
         }
-        with patch.object(tools_mod, "query_news", lambda **_kwargs: json.dumps(query_payload)):
-            envelope = tools_mod.query_news_skill(
-                tools_mod.QueryNewsSkillInput(query="OpenAI", days=7, limit=3)
-            )
+        with patch.object(query_news_mod, "query_news", lambda **_kwargs: json.dumps(query_payload)):
+            envelope = query_news_mod.query_news_skill(QueryNewsSkillInput(query="OpenAI", days=7, limit=3))
 
         self.assertEqual(envelope.tool, "query_news")
         self.assertEqual(envelope.status, "ok")
@@ -199,16 +202,13 @@ class ToolStructuredOutputTests(unittest.TestCase):
             ],
         }
         with (
-            patch.object(tools_mod, "trend_analysis", lambda **_kwargs: json.dumps(trend_payload)),
-            patch.object(tools_mod, "query_news", lambda **_kwargs: json.dumps(evidence_payload)),
+            patch.object(trend_mod, "trend_analysis", lambda **_kwargs: json.dumps(trend_payload)),
+            patch.object(trend_mod, "query_news", lambda **_kwargs: json.dumps(evidence_payload)),
         ):
-            envelope = tools_mod.trend_analysis_skill(
-                tools_mod.TrendAnalysisSkillInput(topic="OpenAI", window=7)
-            )
+            envelope = trend_mod.trend_analysis_skill(TrendAnalysisSkillInput(topic="OpenAI", window=7))
 
         self.assertEqual(envelope.tool, "trend_analysis")
         self.assertEqual(envelope.status, "ok")
         self.assertEqual(envelope.data["recent_count"], 8)
         self.assertEqual(len(envelope.evidence), 1)
         self.assertEqual(envelope.evidence[0].url, "https://example.com/evidence")
-

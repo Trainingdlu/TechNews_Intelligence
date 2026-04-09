@@ -426,14 +426,7 @@
     // == Typing Indicator ==
     function showTyping(statusText = defaultLoadingStatus) {
         const el = document.createElement('div');
-        el.className = 'msg agent';
-
-        const avatar = document.createElement('div');
-        avatar.className = 'msg-avatar';
-        const icon = document.createElement('span');
-        icon.className = 'material-symbols-outlined';
-        icon.textContent = 'smart_toy';
-        avatar.appendChild(icon);
+        el.className = 'msg agent typing-msg';
 
         const indicator = document.createElement('div');
         indicator.className = 'typing-indicator';
@@ -442,7 +435,6 @@
             <div class="typing-label" role="status" aria-live="polite">${statusText}</div>
         `;
 
-        el.appendChild(avatar);
         el.appendChild(indicator);
         messagesEl.appendChild(el);
 

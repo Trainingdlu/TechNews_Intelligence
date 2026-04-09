@@ -61,6 +61,7 @@ def install_bot_import_stubs() -> None:
             importlib.import_module("agent")
         except Exception:
             agent_mod = types.ModuleType("agent")
+            agent_mod.__path__ = [] # Mark as package so submodules can be loaded
             class AgentGenerationError(Exception):
                 pass
             agent_mod.AgentGenerationError = AgentGenerationError
@@ -69,9 +70,12 @@ def install_bot_import_stubs() -> None:
             sys.modules["agent"] = agent_mod
 
     if "services" not in sys.modules:
-        services_mod = types.ModuleType("services")
-        services_mod.__path__ = []  # mark as package
-        sys.modules["services"] = services_mod
+        try:
+            importlib.import_module("services")
+        except Exception:
+            services_mod = types.ModuleType("services")
+            services_mod.__path__ = []  # mark as package
+            sys.modules["services"] = services_mod
 
     if "services.db" not in sys.modules:
         db_mod = types.ModuleType("services.db")
@@ -80,4 +84,5 @@ def install_bot_import_stubs() -> None:
         db_mod.get_conn = lambda: None
         db_mod.put_conn = lambda _conn: None
         sys.modules["services.db"] = db_mod
+
 

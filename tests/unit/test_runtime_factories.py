@@ -7,6 +7,7 @@ used by the unified ReAct runtime.
 
 from __future__ import annotations
 
+from agent.core.skill_catalog import iter_skill_definitions
 from agent.core.skill_contracts import SkillEnvelope
 from agent.core.runtime_factories import build_default_hook_runner, build_default_registry
 
@@ -20,7 +21,15 @@ EXPECTED_SKILLS = {
     "build_timeline",
     "analyze_landscape",
     "fulltext_batch",
+    "get_db_stats",
+    "list_topics",
+    "read_news_content",
 }
+
+
+def test_skill_catalog_matches_expected_skill_set() -> None:
+    catalog_names = {definition.name for definition in iter_skill_definitions()}
+    assert catalog_names == EXPECTED_SKILLS
 
 
 def test_build_default_registry_is_singleton() -> None:
@@ -32,6 +41,13 @@ def test_build_default_registry_is_singleton() -> None:
 def test_build_default_registry_contains_expected_skills() -> None:
     registry = build_default_registry()
     assert set(registry.list_skills()) == EXPECTED_SKILLS
+
+
+def test_build_default_registry_matches_catalog_input_models() -> None:
+    registry = build_default_registry()
+    for definition in iter_skill_definitions():
+        spec = registry.get(definition.name)
+        assert spec.input_model is definition.input_model
 
 
 def test_build_default_registry_exposes_input_schema() -> None:
