@@ -30,7 +30,7 @@
 | 路径 | 职责 |
 | --- | --- |
 | `agent/agent.py` | ReAct 主调度、工具调用循环、证据后处理、响应生成 |
-| `agent/tools.py` | 检索/分析工具与技能实现 |
+| `agent/skills/` | 具体的检索与分析工具技能实现（已解耦） |
 | `agent/prompts.py` | Prompt 策略与输出约束 |
 | `agent/core/` | `skill_contracts`/`skill_registry`/`tool_hooks`/`runtime_factories`/`evidence`/`metrics` |
 | `agent/mcp/` | MCP client/server/stdio 扩展能力 |

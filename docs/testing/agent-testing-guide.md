@@ -24,7 +24,7 @@
 - `agent/agent.py`：ReAct 主流程、Prompt 注入、异常兜底
 - `agent/core/evidence.py`：URL 提取、引用重写、来源段构建
 - `agent/core/metrics.py`：`react_*` 计数与速率
-- `agent/tools.py`：结构化输出契约（JSON 分支）
+- `agent/skills/`：结构化工具实现与执行契约
 - `app/bot.py`：消息发送鲁棒性（重试、格式化、限流）
 - `eval/run_eval.py`：评测报告与门禁逻辑
 
