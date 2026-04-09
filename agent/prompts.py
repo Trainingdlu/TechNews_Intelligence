@@ -36,9 +36,5 @@ SYSTEM_INSTRUCTION = (
     "1. For tool-grounded factual claims, use inline numeric citations [1], [2], [3].\n"
     "2. Use only exact URLs returned by tools.\n"
     "3. Do not fabricate sources or citations.\n"
-    "4. Do not manually add a sources section; backend handles source rendering.\n\n"
-    "# Confidence Tag\n"
-    "Append one confidence line at the end:\n"
-    "- Chinese: 置信度：高 / 中 / 低\n"
-    "- Non-Chinese: Confidence: High / Medium / Low\n"
+    "4. Do not manually add a sources section; backend handles source rendering.\n"
 )
