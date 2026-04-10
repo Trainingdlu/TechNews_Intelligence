@@ -25,7 +25,7 @@ def extract_urls(text: str) -> list[str]:
 
 
 _SOURCE_HEADER_RE = re.compile(
-    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?.*",
     re.IGNORECASE,
 )
 _INLINE_CITATION_RE = re.compile(r"\[(\d{1,3})\]")
@@ -197,13 +197,13 @@ def dedupe_redundant_inline_citation_runs(text: str) -> str:
     return _INLINE_CITATION_LIST_RE.sub(_replace, body)
 
 
-def compact_citations_and_urls(cited_body: str, ordered_urls: list[str], valid_urls: set[str] | None = None) -> tuple[str, list[str]]:
+def compact_citations_and_urls(cited_body: str, ordered_urls: list[str], valid_urls: list[str] | set[str] | None = None) -> tuple[str, list[str]]:
     refs = citation_indices_in_order(cited_body)
     if not refs:
         return cited_body, ordered_urls
 
     compact_urls: list[str] = []
-    index_map: dict[int, int] = {}
+    index_map: dict[int, int] = {};
     for old_idx in refs:
         if 1 <= old_idx <= len(ordered_urls):
             url = ordered_urls[old_idx - 1]
@@ -241,7 +241,7 @@ def decorate_response_with_sources(
     text: str,
     user_message: str,
     lookup_url_titles: Callable[[list[str]], dict[str, str]] | None = None,
-    valid_urls: set[str] | None = None,
+    valid_urls: list[str] | set[str] | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Normalize output into citation style + source section."""
     raw = normalize_inline_citation_styles((text or "").strip())
@@ -254,7 +254,15 @@ def decorate_response_with_sources(
         urls = extract_urls(raw)
         
     if not urls and valid_urls:
-        urls = sorted(list(valid_urls))
+        if isinstance(valid_urls, list):
+            urls = []
+            seen = set()
+            for u in valid_urls:
+                if u not in seen:
+                    urls.append(u)
+                    seen.add(u)
+        else:
+            urls = list(valid_urls)
 
     if not urls:
         return raw, {}
