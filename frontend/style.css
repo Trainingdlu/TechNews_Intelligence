@@ -27,9 +27,9 @@
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
     --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.06);
     --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.08);
-    --bg-glow-1: rgba(11, 87, 208, 0.13);
-    --bg-glow-2: rgba(66, 133, 244, 0.09);
-    --bg-glow-3: rgba(11, 87, 208, 0.07);
+    --bg-glow-1: rgba(11, 87, 208, 0.17);
+    --bg-glow-2: rgba(66, 133, 244, 0.12);
+    --bg-glow-3: rgba(11, 87, 208, 0.09);
     --bg-grid: rgba(11, 87, 208, 0.03);
     --radius-sm: 12px;
     --radius-md: 20px;
@@ -61,9 +61,9 @@
         --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
         --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.3);
         --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.4);
-        --bg-glow-1: rgba(138, 180, 248, 0.2);
-        --bg-glow-2: rgba(66, 133, 244, 0.12);
-        --bg-glow-3: rgba(138, 180, 248, 0.08);
+        --bg-glow-1: rgba(138, 180, 248, 0.26);
+        --bg-glow-2: rgba(66, 133, 244, 0.16);
+        --bg-glow-3: rgba(138, 180, 248, 0.10);
         --bg-grid: rgba(138, 180, 248, 0.035);
     }
 }
@@ -72,9 +72,9 @@ body {
     font-family: 'Roboto', sans-serif;
     background-color: var(--bg-color);
     background-image:
-        radial-gradient(140% 90% at -10% -20%, var(--bg-glow-1), transparent 52%),
-        radial-gradient(120% 85% at 110% -8%, var(--bg-glow-2), transparent 56%),
-        radial-gradient(95% 75% at 50% 115%, var(--bg-glow-3), transparent 58%),
+        radial-gradient(140% 90% at -10% -20%, var(--bg-glow-1), transparent 60%),
+        radial-gradient(120% 85% at 110% -8%, var(--bg-glow-2), transparent 64%),
+        radial-gradient(95% 75% at 50% 115%, var(--bg-glow-3), transparent 67%),
         linear-gradient(var(--bg-grid) 1px, transparent 1px),
         linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
     background-size: auto, auto, auto, 124px 124px, 124px 124px;
@@ -87,9 +87,9 @@ body {
 
 .agent-page {
     background-image:
-        radial-gradient(140% 90% at -10% -20%, var(--bg-glow-1), transparent 52%),
-        radial-gradient(120% 85% at 110% -8%, var(--bg-glow-2), transparent 56%),
-        radial-gradient(95% 75% at 50% 115%, var(--bg-glow-3), transparent 58%);
+        radial-gradient(140% 90% at -10% -20%, var(--bg-glow-1), transparent 60%),
+        radial-gradient(120% 85% at 110% -8%, var(--bg-glow-2), transparent 64%),
+        radial-gradient(95% 75% at 50% 115%, var(--bg-glow-3), transparent 67%);
     background-size: auto, auto, auto;
     background-repeat: no-repeat, no-repeat, no-repeat;
 }

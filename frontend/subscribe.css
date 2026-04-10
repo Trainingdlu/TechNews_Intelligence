@@ -1,35 +1,10 @@
 .subscribe-page {
     background-image:
-        radial-gradient(circle at 12% 8%, var(--bg-glow-1), transparent 34%),
-        radial-gradient(circle at 88% 16%, var(--bg-glow-2), transparent 38%),
-        radial-gradient(circle at 50% 118%, var(--bg-glow-3), transparent 54%),
-        linear-gradient(var(--bg-grid) 1px, transparent 1px),
-        linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
-    background-size: auto, auto, auto, 124px 124px, 124px 124px;
-    background-repeat: no-repeat, no-repeat, no-repeat, repeat, repeat;
-}
-
-.subscribe-page .topbar {
-    background: linear-gradient(
-        180deg,
-        rgba(247, 249, 252, 0.97) 0%,
-        rgba(247, 249, 252, 0.92) 72%,
-        rgba(247, 249, 252, 0.82) 100%
-    );
-    border-bottom: 1px solid rgba(224, 224, 224, 0.62);
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-}
-
-.subscribe-page .topbar::after {
-    content: "";
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: -12px;
-    height: 12px;
-    pointer-events: none;
-    background: linear-gradient(to bottom, rgba(247, 249, 252, 0.34), rgba(247, 249, 252, 0));
+        radial-gradient(140% 90% at -10% -20%, var(--bg-glow-1), transparent 60%),
+        radial-gradient(120% 85% at 110% -8%, var(--bg-glow-2), transparent 64%),
+        radial-gradient(95% 75% at 50% 115%, var(--bg-glow-3), transparent 67%);
+    background-size: auto, auto, auto;
+    background-repeat: no-repeat, no-repeat, no-repeat;
 }
 
 .subscribe-card .material-symbols-outlined {
@@ -267,20 +242,6 @@
 }
 
 @media (prefers-color-scheme: dark) {
-    .subscribe-page .topbar {
-        background: linear-gradient(
-            180deg,
-            rgba(18, 18, 18, 0.96) 0%,
-            rgba(18, 18, 18, 0.90) 72%,
-            rgba(18, 18, 18, 0.82) 100%
-        );
-        border-bottom: 1px solid rgba(51, 51, 51, 0.62);
-    }
-
-    .subscribe-page .topbar::after {
-        background: linear-gradient(to bottom, rgba(18, 18, 18, 0.38), rgba(18, 18, 18, 0));
-    }
-
     .danger-btn {
         color: #f28b82;
     }
