@@ -392,7 +392,7 @@
 
     // == Message Rendering ==
     const sourceHeaderRe = /^\s{0,3}(?:#{1,6}\s*)?(?:\u6765\u6e90|\u8bc1\u636e\u6765\u6e90|source(?:s)?|evidence\s+sources?)\s*:?\s*$/i;
-    const sourceBulletRe = /^\s*-\s*\[(\d{1,3})\]\s+.+$/;
+    const sourceBulletRe = /^\s*(?:-\s*)?\[(\d{1,3})\]\s+.+$/;
 
     function _splitBodyAndSource(rawText) {
         const text = String(rawText || '');
@@ -428,7 +428,7 @@
         const map = {};
         const lines = String(sourceText || '').split('\n');
         for (const line of lines) {
-            const m = line.match(/^\s*-\s*\[(\d{1,3})\]\s+(.+)$/);
+            const m = line.match(/^\s*(?:-\s*)?\[(\d{1,3})\]\s+(.+)$/);
             if (!m) continue;
             const idx = m[1];
             const rest = m[2];
@@ -465,7 +465,9 @@
         }
 
         // Source section: keep numbering literal, avoid accidental relative links like /[5].
-        const normalizedSource = String(source).replace(/^(\s*-\s*)\[(\d{1,3})\]/gm, '$1\\[$2\\]');
+        const normalizedSource = String(source)
+            .replace(/^(\s*-\s*)\[(\d{1,3})\]/gm, '$1\\[$2\\]')
+            .replace(/^(\s*)\[(\d{1,3})\]/gm, '$1\\[$2\\]');
         return `${linkedBody}\n${normalizedSource}`.trim();
     }
 
