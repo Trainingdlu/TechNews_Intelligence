@@ -629,7 +629,7 @@ def _enforce_inline_citation_guard(
     _metrics_inc("react_inline_citation_blocked")
     if _contains_cjk(user_message):
         raise AgentGenerationError(
-            "抱歉，本次回答缺少正文引用标注（如 [1]）。为避免无证据结论，系统已阻断该输出，请重试。",
+            "抱歉，本次回答缺少准确引用。为避免无证据结论，已阻断该输出，请重试。",
             code="react_inline_citation_missing",
         )
     raise AgentGenerationError(
@@ -735,8 +735,8 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
         if any(marker in exc_str for marker in transient_markers):
             print(f"[Agent][Warn] upstream/transient error: {type(exc).__name__}: {exc}")
             raise AgentGenerationError(
-                "抱歉，当前模型或数据服务暂时不可用。"
-                "请稍后重试，或先缩小问题范围重试。",
+                "抱歉，当前服务暂时不可用。"
+                "请稍后重试。",
                 code="react_upstream_unavailable",
             )
 
