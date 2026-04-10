@@ -391,6 +391,84 @@
     }
 
     // == Message Rendering ==
+    const sourceHeaderRe = /^\s{0,3}(?:#{1,6}\s*)?(?:\u6765\u6e90|\u8bc1\u636e\u6765\u6e90|source(?:s)?|evidence\s+sources?)\s*:?\s*$/i;
+    const sourceBulletRe = /^\s*-\s*\[(\d{1,3})\]\s+.+$/;
+
+    function _splitBodyAndSource(rawText) {
+        const text = String(rawText || '');
+        const lines = text.split('\n');
+        let sourceStart = -1;
+        for (let i = 0; i < lines.length; i++) {
+            if (sourceHeaderRe.test(lines[i].trim())) {
+                sourceStart = i;
+                break;
+            }
+        }
+        if (sourceStart < 0) {
+            const bulletIndexes = [];
+            for (let i = 0; i < lines.length; i++) {
+                if (sourceBulletRe.test(lines[i])) {
+                    bulletIndexes.push(i);
+                }
+            }
+            if (bulletIndexes.length >= 2) {
+                sourceStart = bulletIndexes[0];
+            }
+        }
+        if (sourceStart < 0) {
+            return { body: text, source: '' };
+        }
+        return {
+            body: lines.slice(0, sourceStart).join('\n'),
+            source: lines.slice(sourceStart).join('\n'),
+        };
+    }
+
+    function _extractCitationUrlMap(sourceText) {
+        const map = {};
+        const lines = String(sourceText || '').split('\n');
+        for (const line of lines) {
+            const m = line.match(/^\s*-\s*\[(\d{1,3})\]\s+(.+)$/);
+            if (!m) continue;
+            const idx = m[1];
+            const rest = m[2];
+            let url = null;
+
+            const markdownLink = rest.match(/\]\((https?:\/\/[^\s)]+)\)/i);
+            if (markdownLink) {
+                url = markdownLink[1];
+            } else {
+                const plainUrl = rest.match(/https?:\/\/[^\s)]+/i);
+                if (plainUrl) url = plainUrl[0];
+            }
+
+            if (url) {
+                map[idx] = url.replace(/[),.;!?]+$/, '');
+            }
+        }
+        return map;
+    }
+
+    function _prepareAgentMarkdown(rawText) {
+        const { body, source } = _splitBodyAndSource(rawText);
+        const citationMap = _extractCitationUrlMap(source);
+
+        // Body: [n] -> linked [n](url) when url exists; otherwise keep as literal [n].
+        const linkedBody = String(body || '').replace(/\[(\d{1,3})\](?!\()/g, (full, idx) => {
+            const url = citationMap[idx];
+            if (!url) return `\\[${idx}\\]`;
+            return `[${idx}](${url})`;
+        });
+
+        if (!source) {
+            return linkedBody;
+        }
+
+        // Source section: keep numbering literal, avoid accidental relative links like /[5].
+        const normalizedSource = String(source).replace(/^(\s*-\s*)\[(\d{1,3})\]/gm, '$1\\[$2\\]');
+        return `${linkedBody}\n${normalizedSource}`.trim();
+    }
+
     function appendMessage(role, text) {
         const msg = document.createElement('div');
         msg.className = 'msg ' + role;
@@ -405,7 +483,7 @@
         const content = document.createElement('div');
         content.className = 'msg-content';
         if (role === 'agent') {
-            content.innerHTML = marked.parse(text);
+            content.innerHTML = marked.parse(_prepareAgentMarkdown(text));
         } else {
             content.textContent = text;
         }

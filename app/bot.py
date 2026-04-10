@@ -176,6 +176,11 @@ import html as html_mod
 
 _URL_PATTERN = re.compile(r"https?://[^\s<>\]\)}`]+")
 _LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^\s<>\]\)\}`]+)\)|(https?://[^\s<>\]\)\}`]+)")
+_SOURCE_HEADER_RE = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:\u6765\u6e90|\u8bc1\u636e\u6765\u6e90|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
+    re.IGNORECASE,
+)
+_SOURCE_BULLET_RE = re.compile(r"^\s*-\s*\[(\d{1,3})\]\s+(.+?)\s*$")
 
 
 
@@ -287,7 +292,70 @@ def _escape_and_linkify(text: str, url_title_map: dict[str, str]) -> str:
     return "".join(out)
 
 
-def _render_limited_bold_line(line: str, url_title_map: dict[str, str]) -> str:
+def _find_source_section_start(lines: list[str]) -> int:
+    for idx, line in enumerate(lines):
+        if _SOURCE_HEADER_RE.match((line or "").strip()):
+            return idx
+    bullet_indexes: list[int] = []
+    for idx, line in enumerate(lines):
+        if _SOURCE_BULLET_RE.match(line or ""):
+            bullet_indexes.append(idx)
+    if len(bullet_indexes) >= 2:
+        return bullet_indexes[0]
+    return -1
+
+
+def _extract_source_citation_url_map(lines: list[str], source_start: int) -> dict[str, str]:
+    if source_start < 0:
+        return {}
+    citation_map: dict[str, str] = {}
+    for line in lines[source_start:]:
+        m = _SOURCE_BULLET_RE.match(line or "")
+        if not m:
+            continue
+        idx = m.group(1)
+        rest = m.group(2).strip()
+        url = None
+        markdown_link = re.search(r"\]\((https?://[^\s)]+)\)", rest, flags=re.IGNORECASE)
+        if markdown_link:
+            url = markdown_link.group(1)
+        else:
+            plain_url = re.search(r"https?://[^\s)]+", rest, flags=re.IGNORECASE)
+            if plain_url:
+                url = plain_url.group(0)
+        if not url:
+            continue
+        citation_map[idx] = url.rstrip(".,;:!?)")
+    return citation_map
+
+
+def _linkify_numeric_citations_html(html_text: str, citation_url_map: dict[str, str]) -> str:
+    if not html_text or not citation_url_map:
+        return html_text
+
+    chunks = re.split(r"(<[^>]+>)", html_text)
+
+    def _replace(match: re.Match[str]) -> str:
+        idx = match.group(1)
+        url = citation_url_map.get(idx)
+        if not url:
+            return match.group(0)
+        safe_url = html_mod.escape(url, quote=True)
+        return f'<a href="{safe_url}">[{idx}]</a>'
+
+    for i, chunk in enumerate(chunks):
+        if i % 2 == 1:
+            continue
+        chunks[i] = re.sub(r"\[(\d{1,3})\]", _replace, chunk)
+    return "".join(chunks)
+
+
+def _render_limited_bold_line(
+    line: str,
+    url_title_map: dict[str, str],
+    citation_url_map: dict[str, str] | None = None,
+    link_inline_citations: bool = False,
+) -> str:
     """Keep bold only for short segment-summary labels, plain text otherwise.
 
     Supported bold patterns:
@@ -299,7 +367,10 @@ def _render_limited_bold_line(line: str, url_title_map: dict[str, str]) -> str:
     m = re.match(r"^(\s*)\*\*(.+?)\*\*\s*$", line)
     if m:
         indent, label = m.group(1), m.group(2)
-        return f"{html_mod.escape(indent)}<b>{html_mod.escape(label)}</b>"
+        rendered = f"{html_mod.escape(indent)}<b>{html_mod.escape(label)}</b>"
+        if link_inline_citations and citation_url_map:
+            return _linkify_numeric_citations_html(rendered, citation_url_map)
+        return rendered
 
     # Case 2: prefix summary label: **Summary**: detail
     m = re.match(r"^(\s*)\*\*(.+?)\*\*\s*([:\uFF1A])\s*(.*)$", line)
@@ -307,7 +378,12 @@ def _render_limited_bold_line(line: str, url_title_map: dict[str, str]) -> str:
         indent, label, colon, rest = m.groups()
         prefix = f"{html_mod.escape(indent)}<b>{html_mod.escape(label)}</b>{html_mod.escape(colon)}"
         if rest:
-            return f"{prefix} {_escape_and_linkify(rest, url_title_map)}"
+            rendered = f"{prefix} {_escape_and_linkify(rest, url_title_map)}"
+            if link_inline_citations and citation_url_map:
+                return _linkify_numeric_citations_html(rendered, citation_url_map)
+            return rendered
+        if link_inline_citations and citation_url_map:
+            return _linkify_numeric_citations_html(prefix, citation_url_map)
         return prefix
 
     # Case 3: source line with markdown link title may include nested [].
@@ -318,7 +394,10 @@ def _render_limited_bold_line(line: str, url_title_map: dict[str, str]) -> str:
     # Other lines: strip markdown bold markers and keep plain text.
     plain = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
     plain = re.sub(r"`(https?://[^`]+)`", r"\1", plain)
-    return _escape_and_linkify(plain, url_title_map)
+    rendered = _escape_and_linkify(plain, url_title_map)
+    if link_inline_citations and citation_url_map:
+        return _linkify_numeric_citations_html(rendered, citation_url_map)
+    return rendered
 
 
 def _chunk_by_lines(text: str, max_len: int = 4096) -> list[str]:
@@ -363,8 +442,11 @@ def _format_for_telegram(text: str, url_title_map: dict[str, str] | None = None)
     """
     lines = text.split("\n")
     title_map = url_title_map or {}
+    source_start = _find_source_section_start(lines)
+    citation_url_map = _extract_source_citation_url_map(lines, source_start)
     result = []
-    for line in lines:
+    for idx, line in enumerate(lines):
+        link_inline_citations = source_start < 0 or idx < source_start
         stripped = line.strip()
         # 处理 Markdown 标题行
         if stripped.startswith("#"):
@@ -372,14 +454,24 @@ def _format_for_telegram(text: str, url_title_map: dict[str, str] | None = None)
             title = re.sub(r"\*\*(.+?)\*\*", r"\1", title)
             title = html_mod.escape(title)
             if title:
-                result.append(f"<b>{title}</b>")
+                heading = f"<b>{title}</b>"
+                if link_inline_citations and citation_url_map:
+                    heading = _linkify_numeric_citations_html(heading, citation_url_map)
+                result.append(heading)
             continue
 
         # 将 markdown 无序列表统一为 "-"，避免 TG 中星号列表不稳定。
         line = re.sub(r"^(\s*)[\*\u2022]\s+", r"\1- ", line)
 
         # 正文：只允许分段综述标签加粗；其余正文全部普通文本。
-        result.append(_render_limited_bold_line(line, title_map))
+        result.append(
+            _render_limited_bold_line(
+                line,
+                title_map,
+                citation_url_map=citation_url_map,
+                link_inline_citations=link_inline_citations,
+            )
+        )
     return "\n".join(result)
 
 

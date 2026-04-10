@@ -98,6 +98,20 @@ def test_format_for_telegram_source_bullet_with_bracketed_title(bot_mod) -> None
     assert "](<a href=" not in html
 
 
+def test_format_for_telegram_inline_citation_links_to_sources(bot_mod) -> None:  # noqa: ANN001
+    text = (
+        "OpenAI update [1], Google update [2]\n\n"
+        "## Sources\n"
+        "- [1] https://a.com/openai\n"
+        "- [2] [Google News](https://b.com/google)"
+    )
+    html = bot_mod._format_for_telegram(text, {})  # pylint: disable=protected-access
+    assert '<a href="https://a.com/openai">[1]</a>' in html
+    assert '<a href="https://b.com/google">[2]</a>' in html
+    assert 'href="https://agent.trainingcqy.com/[1]"' not in html
+    assert 'href="https://agent.trainingcqy.com/[2]"' not in html
+
+
 def test_render_source_bullet_markdown_link_returns_none_for_non_source(bot_mod) -> None:  # noqa: ANN001
     rendered = bot_mod._render_source_bullet_markdown_link(  # pylint: disable=protected-access
         "普通文本 [标题](https://a.com/x)"
