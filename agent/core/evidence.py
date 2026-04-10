@@ -50,8 +50,8 @@ def strip_existing_source_section(text: str) -> str:
 def apply_inline_citations(text: str, ordered_urls: list[str]) -> str:
     out = text or ""
     for idx, url in enumerate(ordered_urls, 1):
-        cite = f"[{{idx}}]"
-        out = out.replace(f"`{{url}}`", cite)
+        cite = f"[{idx}]"
+        out = out.replace(f"`{url}`", cite)
         out = out.replace(url, cite)
     return out
 
@@ -72,9 +72,9 @@ def normalize_inline_citation_styles(text: str) -> str:
     body = text or ""
     if not body:
         return body
-    body = _PAREN_CITATION_RE.sub(lambda m: f"[{{m.group(1)}}]", body)
-    body = _SOURCE_HASH_CITATION_RE.sub(lambda m: f"[{{m.group(1)}}]", body)
-    body = _NESTED_CITATION_RE.sub(lambda m: f"[{{m.group(1)}}]", body)
+    body = _PAREN_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
+    body = _SOURCE_HASH_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
+    body = _NESTED_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
     return body
 
 
@@ -127,7 +127,7 @@ def remap_inline_citations(text: str, index_map: dict[int, int], strip_unmapped:
             if matches:
                 has_valid = any(int(m) in index_map for m in matches if m.isdigit())
                 has_invalid = any(int(m) not in index_map for m in matches if m.isdigit())
-                
+
                 # If the line ONLY has invalid citations, drop the line entirely
                 if has_invalid and not has_valid:
                     continue
@@ -140,7 +140,7 @@ def remap_inline_citations(text: str, index_map: dict[int, int], strip_unmapped:
             new = index_map.get(old)
             if new is None:
                 return "" if strip_unmapped else match.group(0)
-            return f"[{{new}}]"
+            return f"[{new}]"
 
         remapped_line = _INLINE_CITATION_RE.sub(_replace, line)
         out_lines.append(remapped_line)
@@ -195,7 +195,7 @@ def dedupe_redundant_inline_citation_runs(text: str) -> str:
         else:
             sep = ", "
 
-        return sep.join(f"[{{idx}}]" for idx in unique)
+        return sep.join(f"[{idx}]" for idx in unique)
 
     return _INLINE_CITATION_LIST_RE.sub(_replace, body)
 
@@ -206,7 +206,7 @@ def compact_citations_and_urls(cited_body: str, ordered_urls: list[str], valid_u
         return cited_body, ordered_urls
 
     compact_urls: list[str] = []
-    index_map: dict[int, int] = {};
+    index_map: dict[int, int] = {}
     for old_idx in refs:
         if 1 <= old_idx <= len(ordered_urls):
             url = ordered_urls[old_idx - 1]
@@ -234,9 +234,9 @@ def build_source_section(ordered_urls: list[str], user_message: str, title_map: 
     for idx, url in enumerate(ordered_urls, 1):
         if title_map and url in title_map:
             title = title_map[url]
-            lines.append(f"- [{{idx}}] [{{title}}]({{url}})")
+            lines.append(f"- [{idx}] [{title}]({url})")
         else:
-            lines.append(f"- [{{idx}}] {{url}}")
+            lines.append(f"- [{idx}] {url}")
     return "\n".join(lines)
 
 
@@ -279,7 +279,7 @@ def decorate_response_with_sources(
         try:
             title_map = lookup_url_titles(ordered_urls)
         except Exception as exc:
-            print(f"[Warn] lookup_url_titles in evidence helper failed: {{exc}}")
+            print(f"[Warn] lookup_url_titles in evidence helper failed: {exc}")
             title_map = {}
 
     render_body = normalize_inline_citation_styles(body if body else raw)
@@ -294,7 +294,7 @@ def decorate_response_with_sources(
         return compact_body.rstrip(), title_map
 
     source_section = build_source_section(final_urls, user_message, title_map=title_map)
-    merged = f"{{compact_body.rstrip()}}\n\n{{source_section}}".strip()
+    merged = f"{compact_body.rstrip()}\n\n{source_section}".strip()
     return merged, title_map
 
 
@@ -314,5 +314,5 @@ def ensure_evidence_section(answer: str, source_output: str, user_message: str, 
     header = "## 来源" if contains_cjk(user_message) else "## Sources"
     required_urls = max_inline_citation_index(answer)
     effective_max = max(max_urls, required_urls)
-    lines = [f"{{url}}" for url in source_urls[:effective_max]]
-    return f"{{answer.rstrip()}}\n\n{{header}}\n" + "\n".join(lines)
+    lines = [f"{url}" for url in source_urls[:effective_max]]
+    return f"{answer.rstrip()}\n\n{header}\n" + "\n".join(lines)

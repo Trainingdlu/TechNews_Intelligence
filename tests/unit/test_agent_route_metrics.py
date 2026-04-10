@@ -99,6 +99,28 @@ class TestEvidence:
         assert "[3]" in out
         assert "[12]" in out
 
+    def test_normalize_nested_citation(self):
+        from agent.core.evidence import normalize_inline_citation_styles
+
+        text = "Model updates [[1]] and ([2]) and [#3] should normalize."
+        out = normalize_inline_citation_styles(text)
+        assert "[[1]]" not in out
+        assert "([2])" not in out
+        assert "[#3]" not in out
+        assert "[1]" in out
+        assert "[2]" in out
+        assert "[3]" in out
+
+    def test_decorate_response_does_not_emit_template_literals(self):
+        from agent.core.evidence import decorate_response_with_sources
+
+        text = "Google update https://a.com/1 and OpenAI update https://b.com/2."
+        out, _ = decorate_response_with_sources(text, "对比谷歌和openai")
+        assert "{compact_body" not in out
+        assert "{source_section" not in out
+        assert "{url}" not in out
+        assert "## 来源" in out
+
     def test_has_inline_citation_in_body_ignores_sources_section(self):
         from agent.core.evidence import has_inline_citation_in_body
 
