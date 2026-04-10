@@ -26,11 +26,14 @@ tests/reports/*
 !tests/reports/.gitkeep
 tests/_test_output.txt
 tests/unit/.tmp_mcp_stdio/
+tests/pytest-cache-files-*/
 
 # Local development artifacts
 .venv/
 .tmp/
+tests/pytest-tmp/
 .pytest_cache/
+tests/.pytest_cache/
 agent/.pytest_cache/
 agents/.pytest_cache/
 agents/__pycache__/

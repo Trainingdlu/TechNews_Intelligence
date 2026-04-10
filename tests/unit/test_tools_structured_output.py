@@ -7,13 +7,6 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-try:
-    from tests.utils.bootstrap import ensure_agents_on_path
-except ModuleNotFoundError:
-    from utils.bootstrap import ensure_agents_on_path
-
-ensure_agents_on_path()
-
 from agent.skills import fulltext_batch as fulltext_mod  # noqa: E402  pylint: disable=wrong-import-position
 from agent.skills import helpers as helpers_mod  # noqa: E402  pylint: disable=wrong-import-position
 from agent.skills import query_news as query_news_mod  # noqa: E402  pylint: disable=wrong-import-position

@@ -4,13 +4,6 @@ from __future__ import annotations
 
 import unittest
 
-try:
-    from tests.utils.bootstrap import ensure_agents_on_path
-except ModuleNotFoundError:
-    from utils.bootstrap import ensure_agents_on_path
-
-ensure_agents_on_path()
-
 from eval.eval_core import (  # noqa: E402  pylint: disable=wrong-import-position
     average_pairwise_similarity,
     build_baseline_comparison,

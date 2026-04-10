@@ -3,49 +3,10 @@
 from __future__ import annotations
 
 import re
-import sys
-import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Stub external dependencies so tests run without DB/API keys
-# ---------------------------------------------------------------------------
-def _setup_stubs():
-    """Create stub modules for dependencies that need real infrastructure."""
-    # Stub services.db module
-    if "services" not in sys.modules:
-        try:
-            import importlib
-            importlib.import_module("services")
-        except Exception:
-            services_mod = types.ModuleType("services")
-            services_mod.__path__ = []  # mark as package
-            sys.modules.setdefault("services", services_mod)
-
-    db_mod = types.ModuleType("services.db")
-    db_mod.get_conn = MagicMock()
-    db_mod.put_conn = MagicMock()
-    db_mod.init_db_pool = MagicMock()
-    db_mod.close_db_pool = MagicMock()
-    sys.modules.setdefault("services.db", db_mod)
-
-    # Stub psycopg2 if not installed
-    if "psycopg2" not in sys.modules:
-        psycopg2_mod = types.ModuleType("psycopg2")
-        psycopg2_extras = types.ModuleType("psycopg2.extras")
-        psycopg2_pool = types.ModuleType("psycopg2.pool")
-        psycopg2_mod.extras = psycopg2_extras
-        psycopg2_mod.pool = psycopg2_pool
-        psycopg2_extras.Json = lambda x: x
-        psycopg2_pool.SimpleConnectionPool = MagicMock()
-        sys.modules["psycopg2"] = psycopg2_mod
-        sys.modules["psycopg2.extras"] = psycopg2_extras
-        sys.modules["psycopg2.pool"] = psycopg2_pool
-
-
-_setup_stubs()
+pytestmark = pytest.mark.usefixtures("agent_dependency_stubs")
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +134,8 @@ class TestAgentStructure:
     def test_no_legacy_imports(self):
         """Ensure deleted modules are not referenced."""
         import agent.agent as agent_mod
-        source = open(agent_mod.__file__, "r", encoding="utf-8").read()
+        with open(agent_mod.__file__, "r", encoding="utf-8") as f:
+            source = f.read()
         assert "from core.router" not in source
         assert "from .core.router" not in source
         assert "from core.pipelines" not in source

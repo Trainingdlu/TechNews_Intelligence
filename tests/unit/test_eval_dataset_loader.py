@@ -1,19 +1,15 @@
-﻿"""Unit tests for eval dataset normalization and capability filtering."""
+"""Unit tests for eval dataset normalization and capability filtering."""
 
 from __future__ import annotations
 
-import tempfile
-import unittest
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
+from shutil import rmtree
 
-try:
-    from tests.utils.bootstrap import ensure_agents_on_path
-except ModuleNotFoundError:
-    from utils.bootstrap import ensure_agents_on_path
+import pytest
 
-ensure_agents_on_path()
-
-from eval.dataset_loader import (  # noqa: E402  pylint: disable=wrong-import-position
+from eval.dataset_loader import (
     filter_eval_cases,
     load_eval_cases,
     parse_csv_filter_arg,
@@ -21,109 +17,104 @@ from eval.dataset_loader import (  # noqa: E402  pylint: disable=wrong-import-po
 )
 
 
-def _write_jsonl(lines: list[str]) -> Path:
-    fd = tempfile.NamedTemporaryFile(delete=False, suffix=".jsonl", mode="w", encoding="utf-8")
+@contextmanager
+def _jsonl_case(lines: list[str]):
+    root = Path("tests/unit/.tmp_eval_dataset_loader")
+    root.mkdir(parents=True, exist_ok=True)
+    case_dir = root / f"case_{uuid.uuid4().hex}"
+    case_dir.mkdir(parents=True, exist_ok=True)
+    path = case_dir / "cases.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     try:
-        for line in lines:
-            fd.write(line)
-            fd.write("\n")
-        return Path(fd.name)
+        yield path
     finally:
-        fd.close()
+        rmtree(case_dir, ignore_errors=True)
 
 
-class EvalDatasetLoaderTests(unittest.TestCase):
-    def test_load_cases_with_explicit_capability(self) -> None:
-        path = _write_jsonl(
-            [
-                '{"id":"c1","category":"compare","capability":"compare_topics","question":"A vs B","min_urls":2}',
-                '{"id":"c2","category":"timeline","capability":"timeline","question":"build timeline"}',
-            ]
-        )
+def test_load_cases_with_explicit_capability() -> None:
+    with _jsonl_case(
+        [
+            '{"id":"c1","category":"compare","capability":"compare_topics","question":"A vs B","min_urls":2}',
+            '{"id":"c2","category":"timeline","capability":"timeline","question":"build timeline"}',
+        ],
+    ) as path:
         cases = load_eval_cases(path)
-        self.assertEqual(len(cases), 2)
-        self.assertEqual(cases[0]["capability"], "compare_topics")
-        self.assertEqual(cases[1]["capability"], "timeline")
-        self.assertEqual(cases[0]["required_tools"], ["compare_topics"])
-        self.assertEqual(cases[1]["required_tools"], ["build_timeline"])
+    assert len(cases) == 2
+    assert cases[0]["capability"] == "compare_topics"
+    assert cases[1]["capability"] == "timeline"
+    assert cases[0]["required_tools"] == ["compare_topics"]
+    assert cases[1]["required_tools"] == ["build_timeline"]
 
-    def test_load_cases_resolve_capability_from_category(self) -> None:
-        path = _write_jsonl(
-            [
-                '{"id":"c1","category":"trend","question":"OpenAI trend?"}',
-                '{"id":"c2","category":"brief","question":"latest news?"}',
-            ]
-        )
+
+def test_load_cases_resolve_capability_from_category() -> None:
+    with _jsonl_case(
+        [
+            '{"id":"c1","category":"trend","question":"OpenAI trend?"}',
+            '{"id":"c2","category":"brief","question":"latest news?"}',
+        ],
+    ) as path:
         cases = load_eval_cases(path)
-        self.assertEqual(cases[0]["capability"], "trend_analysis")
-        self.assertEqual(cases[1]["capability"], "general_qa")
+    assert cases[0]["capability"] == "trend_analysis"
+    assert cases[1]["capability"] == "general_qa"
 
-    def test_unknown_capability_strict_raises(self) -> None:
-        path = _write_jsonl(
-            [
-                '{"id":"c1","category":"query","capability":"not_supported","question":"Q"}',
-            ]
-        )
-        with self.assertRaises(ValueError):
+
+def test_unknown_capability_strict_raises() -> None:
+    with _jsonl_case(
+        ['{"id":"c1","category":"query","capability":"not_supported","question":"Q"}'],
+    ) as path:
+        with pytest.raises(ValueError):
             load_eval_cases(path, strict_capability_check=True)
 
-    def test_unknown_capability_non_strict_fallbacks(self) -> None:
-        path = _write_jsonl(
-            [
-                '{"id":"c1","category":"query","capability":"not_supported","question":"Q"}',
-            ]
-        )
+
+def test_unknown_capability_non_strict_fallbacks() -> None:
+    with _jsonl_case(
+        ['{"id":"c1","category":"query","capability":"not_supported","question":"Q"}'],
+    ) as path:
         cases = load_eval_cases(path, strict_capability_check=False)
-        self.assertEqual(cases[0]["capability"], "general_qa")
-        self.assertEqual(cases[0]["required_tools"], [])
+    assert cases[0]["capability"] == "general_qa"
+    assert cases[0]["required_tools"] == []
 
-    def test_optional_accuracy_fields_are_normalized(self) -> None:
-        path = _write_jsonl(
-            [
-                (
-                    '{"id":"c1","category":"query","question":"Q",'
-                    '"expected_facts":"openai,anthropic",'
-                    '"expected_fact_groups":[["openai","oai"],"anthropic|claude"],'
-                    '"required_tools":"query_news",'
-                    '"acceptable_tool_paths":[["query_news"],["search_news","read_news_content"]],'
-                    '"must_not_contain":["hallucination"],'
-                    '"expected_source_domains":"techcrunch.com,news.ycombinator.com"}'
-                ),
-            ]
-        )
+
+def test_optional_accuracy_fields_are_normalized() -> None:
+    with _jsonl_case(
+        [
+            (
+                '{"id":"c1","category":"query","question":"Q",'
+                '"expected_facts":"openai,anthropic",'
+                '"expected_fact_groups":[["openai","oai"],"anthropic|claude"],'
+                '"required_tools":"query_news",'
+                '"acceptable_tool_paths":[["query_news"],["search_news","read_news_content"]],'
+                '"must_not_contain":["hallucination"],'
+                '"expected_source_domains":"techcrunch.com,news.ycombinator.com"}'
+            ),
+        ],
+    ) as path:
         cases = load_eval_cases(path)
-        self.assertEqual(cases[0]["expected_facts"], ["openai", "anthropic"])
-        self.assertEqual(
-            cases[0]["expected_fact_groups"],
-            [["openai", "oai"], ["anthropic", "claude"]],
-        )
-        self.assertEqual(cases[0]["required_tools"], ["query_news"])
-        self.assertEqual(
-            cases[0]["acceptable_tool_paths"],
-            [["query_news"], ["search_news", "read_news_content"]],
-        )
-        self.assertEqual(cases[0]["must_not_contain"], ["hallucination"])
-        self.assertEqual(
-            cases[0]["expected_source_domains"],
-            ["techcrunch.com", "news.ycombinator.com"],
-        )
 
-    def test_filter_and_matrix(self) -> None:
-        cases = [
-            {"id": "a", "category": "compare", "capability": "compare_topics"},
-            {"id": "b", "category": "timeline", "capability": "timeline"},
-            {"id": "c", "category": "query", "capability": "query_news"},
-        ]
-        filtered = filter_eval_cases(cases, categories={"compare", "timeline"}, capabilities={"timeline"})
-        self.assertEqual(len(filtered), 1)
-        self.assertEqual(filtered[0]["id"], "b")
+    assert cases[0]["expected_facts"] == ["openai", "anthropic"]
+    assert cases[0]["expected_fact_groups"] == [["openai", "oai"], ["anthropic", "claude"]]
+    assert cases[0]["required_tools"] == ["query_news"]
+    assert cases[0]["acceptable_tool_paths"] == [["query_news"], ["search_news", "read_news_content"]]
+    assert cases[0]["must_not_contain"] == ["hallucination"]
+    assert cases[0]["expected_source_domains"] == ["techcrunch.com", "news.ycombinator.com"]
 
-        matrix = summarize_case_matrix(filtered)
-        self.assertEqual(matrix["case_count"], 1)
-        self.assertEqual(matrix["categories"]["timeline"], 1)
-        self.assertEqual(matrix["capabilities"]["timeline"], 1)
 
-    def test_parse_csv_filter_arg(self) -> None:
-        parsed = parse_csv_filter_arg("compare, timeline , ,landscape")
-        self.assertEqual(parsed, {"compare", "timeline", "landscape"})
+def test_filter_and_matrix() -> None:
+    cases = [
+        {"id": "a", "category": "compare", "capability": "compare_topics"},
+        {"id": "b", "category": "timeline", "capability": "timeline"},
+        {"id": "c", "category": "query", "capability": "query_news"},
+    ]
+    filtered = filter_eval_cases(cases, categories={"compare", "timeline"}, capabilities={"timeline"})
+    assert len(filtered) == 1
+    assert filtered[0]["id"] == "b"
 
+    matrix = summarize_case_matrix(filtered)
+    assert matrix["case_count"] == 1
+    assert matrix["categories"]["timeline"] == 1
+    assert matrix["capabilities"]["timeline"] == 1
+
+
+def test_parse_csv_filter_arg() -> None:
+    parsed = parse_csv_filter_arg("compare, timeline , ,landscape")
+    assert parsed == {"compare", "timeline", "landscape"}
