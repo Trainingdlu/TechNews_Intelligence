@@ -135,21 +135,21 @@ LLM 生成最终回复
 
 ### 工具体系
 
-智能体拥有 11 个工具，其中 8 个通过 SkillRegistry 分发，均有 Pydantic 输入验证和 SkillEnvelope 结构化输出：
+智能体拥有 11 个工具，通过 SkillRegistry 分发，均有 Pydantic 输入验证和 SkillEnvelope 结构化输出：
 
-| 工具 | 分发 | 用途 |
-| :--- | :--- | :--- |
-| `search_news` | Registry | 混合检索（pgvector 语义相似度 + 关键词精确匹配），合并去重 |
-| `query_news` | Registry | 结构化过滤查询（来源、分类、情感、时间窗口、排序） |
-| `trend_analysis` | Registry | 话题动量分析：近 N 天 vs 前 N 天的数据量与热度对比 |
-| `compare_sources` | Registry | HackerNews vs TechCrunch 双源覆盖与情感差异对比 |
-| `compare_topics` | Registry | A vs B 实体对比（如 OpenAI vs Anthropic），含指标与证据 |
-| `build_timeline` | Registry | 时间线构建：按时间排列的事件编年，自动扩展窗口 |
-| `analyze_landscape` | Registry | 竞争格局分析：实体维度统计 + 信号分类（Compute / Algorithm / Data / GTM / Policy） |
-| `fulltext_batch` | Registry | 批量全文阅读，支持 URL 列表或关键词自动选取 |
-| `read_news_content` | Registry | 单篇新闻原文读取（从 `jina_raw_logs` 提取） |
-| `get_db_stats` | Registry | 数据库新鲜度与文章总量 |
-| `list_topics` | Registry | 近 21 天每日发文量分布 |
+| 工具 | 用途 |
+| :--- | :--- |
+| `search_news` | 混合检索（pgvector 语义相似度 + 关键词精确匹配），合并去重 |
+| `query_news` | 结构化过滤查询（来源、分类、情感、时间窗口、排序） |
+| `trend_analysis` | 话题动量分析：近 N 天 vs 前 N 天的数据量与热度对比 |
+| `compare_sources` | HackerNews vs TechCrunch 双源覆盖与情感差异对比 |
+| `compare_topics` | A vs B 实体对比（如 OpenAI vs Anthropic），含指标与证据 |
+| `build_timeline` | 时间线构建：按时间排列的事件编年，自动扩展窗口 |
+| `analyze_landscape` | 竞争格局分析：实体维度统计 + 信号分类（Compute / Algorithm / Data / GTM / Policy） |
+| `fulltext_batch` | 批量全文阅读，支持 URL 列表或关键词自动选取 |
+| `read_news_content` | 单篇新闻原文读取（从 `jina_raw_logs` 提取） |
+| `get_db_stats` | 数据库新鲜度与文章总量 |
+| `list_topics` | 近 21 天每日发文量分布 |
 
 **混合检索机制**：纯向量检索在公司名、产品名等专有名词上容易召回偏移，关键词匹配作为兜底保证精确查询的稳定性。检索评分融合了语义相似度、关键词命中、热度归一化和时间衰减因子 `0.1 × EXP(-age_seconds / 86400 / 21)`。
 
