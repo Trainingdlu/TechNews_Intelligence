@@ -74,7 +74,7 @@
 </g>
 
 <path d="M130,218 L147,218 L147,180 L164,180" fill="none" stroke="rgb(156, 154, 146)" stroke-width="1.5" marker-end="url(#arrow)" style="fill:none;stroke:rgb(156, 154, 146);stroke-width:1.5px;opacity:1;"/>
-<path d="M130,328 L147,328 L147,180" fill="none" stroke="rgb(156, 154, 146)" stroke-width="1" opacity="0.55" style="fill:none;stroke:rgb(156, 154, 146);stroke-width:1px;opacity:0.55;"/>
+<path d="M130,328 L147,328 L147,180 L164,180" fill="none" stroke="rgb(156, 154, 146)" stroke-width="1.5" marker-end="url(#arrow)" style="fill:none;stroke:rgb(156, 154, 146);stroke-width:1.5px;opacity:1;"/>
 
 <line x1="270" y1="208" x2="270" y2="252" marker-end="url(#arrow)" style="fill:none;stroke:rgb(156, 154, 146);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
 <line x1="270" y1="308" x2="270" y2="352" marker-end="url(#arrow)" style="fill:none;stroke:rgb(156, 154, 146);color:rgb(255, 255, 255);stroke-width:1.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
