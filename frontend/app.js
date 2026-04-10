@@ -391,7 +391,7 @@
     }
 
     // == Message Rendering ==
-    const sourceHeaderRe = /^\s{0,3}(?:#{1,6}\s*)?(?:\u6765\u6e90|\u8bc1\u636e\u6765\u6e90|source(?:s)?|evidence\s+sources?)\s*:?\s*$/i;
+    const sourceHeaderRe = /^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$/i;
     const sourceBulletRe = /^\s*(?:-\s*)?\[(\d{1,3})\]\s+.+$/;
 
     function _splitBodyAndSource(rawText) {

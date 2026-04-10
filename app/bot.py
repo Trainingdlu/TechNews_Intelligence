@@ -177,7 +177,7 @@ import html as html_mod
 _URL_PATTERN = re.compile(r"https?://[^\s<>\]\)}`]+")
 _LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^\s<>\]\)\}`]+)\)|(https?://[^\s<>\]\)\}`]+)")
 _SOURCE_HEADER_RE = re.compile(
-    r"^\s{0,3}(?:#{1,6}\s*)?(?:\u6765\u6e90|\u8bc1\u636e\u6765\u6e90|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?\s*$",
     re.IGNORECASE,
 )
 _SOURCE_BULLET_RE = re.compile(r"^\s*-\s*\[(\d{1,3})\]\s+(.+?)\s*$")
@@ -361,7 +361,7 @@ def _render_limited_bold_line(
     Supported bold patterns:
     - **Summary**
     - **Summary**: detail
-    - **Summary**\uFF1Adetail
+    - **Summary**：detail
     """
     # Case 1: full-line summary label: **Summary**
     m = re.match(r"^(\s*)\*\*(.+?)\*\*\s*$", line)
@@ -373,7 +373,7 @@ def _render_limited_bold_line(
         return rendered
 
     # Case 2: prefix summary label: **Summary**: detail
-    m = re.match(r"^(\s*)\*\*(.+?)\*\*\s*([:\uFF1A])\s*(.*)$", line)
+    m = re.match(r"^(\s*)\*\*(.+?)\*\*\s*([:：])\s*(.*)$", line)
     if m:
         indent, label, colon, rest = m.groups()
         prefix = f"{html_mod.escape(indent)}<b>{html_mod.escape(label)}</b>{html_mod.escape(colon)}"

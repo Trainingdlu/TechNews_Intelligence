@@ -554,7 +554,7 @@ def _decorate_response_with_sources(
 
 
 def _contains_cjk(text: str) -> bool:
-    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+    return bool(re.search(r"[一-鿿]", text or ""))
 
 
 _SMALLTALK_INTENT_RE = re.compile(

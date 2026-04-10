@@ -1,4 +1,4 @@
-﻿{
+{
   "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
   "python.terminal.activateEnvironment": false,
   "python.terminal.activateEnvInCurrentTerminal": false,
@@ -15,5 +15,7 @@
       ]
     }
   },
-  "terminal.integrated.defaultProfile.windows": "PowerShell (Project .venv)"
+  "terminal.integrated.defaultProfile.windows": "PowerShell (Project .venv)",
+  "python-envs.defaultEnvManager": "ms-python.python:venv",
+  "python-envs.defaultPackageManager": "ms-python.python:pip"
 }

@@ -7,8 +7,11 @@ import re
 from typing import Callable
 
 
+_CJK_BASIC_RE = re.compile(r"[一-鿿]")  # CJK统一表意文字基本区：U+4E00 到 U+9FFF
+
+
 def contains_cjk(text: str) -> bool:
-    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+    return bool(_CJK_BASIC_RE.search(text or ""))
 
 
 def extract_urls(text: str) -> list[str]:
