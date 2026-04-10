@@ -130,7 +130,7 @@ SkillEnvelope → Evidence 累积
   ↓
 LLM 生成最终回复
   ↓
-后处理管道 (evidence.py)       ── 引用归一化 + 来源列表
+后处理管道 (evidence.py)        ── 引用归一化 + 来源列表
 ```
 
 ### 工具体系
@@ -291,7 +291,6 @@ TechNews_Intelligence/
 项目已容器化，可通过 Docker Compose 部署。智能体在 Docker 中拆分为 `tech_news_bot`（Telegram 机器人）和 `tech_news_api`（网页 API）两个独立容器。
 
 ### 前置条件
-已安装 Docker<br>
 已获取 LLM API 密钥或 Vertex AI 凭证，及 Jina API 密钥<br>
 已创建 Telegram 机器人并获取 Bot Token（通过 @BotFather）<br>
 ### 步骤
@@ -302,13 +301,13 @@ cd TechNews_Intelligence
 
 # 2. 配置环境变量
 cp deployment/.env.example deployment/.env
-# 编辑 deployment/.env，填入数据库密码、API 密钥、TELEGRAM_BOT_TOKEN 等
+# 编辑 deployment/.env，填入环境变量
 # 关键变量：
-#   AGENT_MODEL_PROVIDER           — 模型后端
-#   GEMINI_API_KEY                 — Gemini API 密钥
-#   VERTEX_PROJECT                 — GCP 项目 ID
-#   GOOGLE_APPLICATION_CREDENTIALS — Vertex AI 服务账号凭证路径
-#   JINA_API_KEY                   — Jina Embeddings API 密钥
+# AGENT_MODEL_PROVIDER           — 模型后端
+# GEMINI_API_KEY                 — Gemini API 密钥
+# VERTEX_PROJECT                 — GCP 项目 ID
+# GOOGLE_APPLICATION_CREDENTIALS — Vertex AI 服务账号凭证路径
+# JINA_API_KEY                   — Jina Embeddings API 密钥
 
 # 3. 启动服务
 cd deployment
@@ -328,7 +327,7 @@ docker-compose up -d
 ```bash
 # 在仓库根目录执行
 cp agent/.env.example agent/.env
-# 编辑 agent/.env，填入 Gemini API 密钥、Jina API 密钥、数据库连接信息
+# 编辑 agent/.env，填入环境变量
 pip install -r requirements.txt
 python -m app.cli
 ```
