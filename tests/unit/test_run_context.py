@@ -15,7 +15,7 @@ from agent.core.run_context import (
 
 def test_agent_run_context_isolated_between_threads() -> None:
     barrier = threading.Barrier(2)
-    results: dict[str, tuple[set[str], set[str]]] = {}
+    results: dict[str, tuple[set[str], list[str]]] = {}
 
     def _worker(name: str, tool: str, url: str) -> None:
         with agent_run_context():
@@ -32,7 +32,6 @@ def test_agent_run_context_isolated_between_threads() -> None:
     t2.join(timeout=5)
 
     assert results["t1"][0] == {"query_news"}
-    assert results["t1"][1] == {"https://a.example.com"}
+    assert results["t1"][1] == ["https://a.example.com"]
     assert results["t2"][0] == {"trend_analysis"}
-    assert results["t2"][1] == {"https://b.example.com"}
-
+    assert results["t2"][1] == ["https://b.example.com"]

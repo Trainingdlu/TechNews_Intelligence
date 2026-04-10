@@ -541,7 +541,9 @@ def _strip_generic_analysis_leadin(text: str) -> str:
     return stripped or raw.strip()
 
 
-def _decorate_response_with_sources(text: str, user_message: str, valid_urls: set[str] | None = None) -> tuple[str, dict[str, str]]:
+def _decorate_response_with_sources(
+    text: str, user_message: str, valid_urls: list[str] | set[str] | None = None
+) -> tuple[str, dict[str, str]]:
     """Attach numbered citations and source section via shared evidence helper."""
     return _decorate_response_with_sources_core(
         text=text,
@@ -594,7 +596,9 @@ def _is_analysis_intent(user_message: str) -> bool:
     return bool(_ANALYSIS_INTENT_RE.search(text))
 
 
-def _should_block_empty_evidence(user_message: str, valid_urls: set[str], tool_calls: set[str]) -> bool:
+def _should_block_empty_evidence(
+    user_message: str, valid_urls: list[str] | set[str], tool_calls: set[str]
+) -> bool:
     """Decide whether empty-evidence outputs should be blocked."""
     if valid_urls:
         return False
@@ -611,7 +615,9 @@ def _strict_inline_citations_enabled() -> bool:
     return os.getenv("AGENT_STRICT_INLINE_CITATIONS", "true").strip().lower() not in {"0", "false", "no", "off"}
 
 
-def _enforce_inline_citation_guard(final_text: str, user_message: str, valid_urls: set[str] | None) -> None:
+def _enforce_inline_citation_guard(
+    final_text: str, user_message: str, valid_urls: list[str] | set[str] | None
+) -> None:
     """Block response when evidence exists but body-level [n] citations are missing."""
     if not _strict_inline_citations_enabled():
         return
@@ -635,7 +641,7 @@ def _enforce_inline_citation_guard(final_text: str, user_message: str, valid_url
 # ---------------------------------------------------------------------------
 # Core generation
 # ---------------------------------------------------------------------------
-def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[str]]:
+def _generate_react(history: list[dict], user_message: str) -> tuple[str, list[str]]:
     """Run the ReAct agent loop with Skill infrastructure."""
     agent = _get_react_agent()
     messages = _history_to_messages(history)
@@ -653,7 +659,8 @@ def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[st
 
     # Collect evidence from two sources:
     # 1. Structured evidence from SkillEnvelope (accumulated during tool calls)
-    valid_urls: set[str] = _get_accumulated_evidence()
+    valid_urls: list[str] = list(_get_accumulated_evidence())
+    seen_urls = set(valid_urls)
 
     # 2. URLs parsed from ToolMessage content (fallback for non-skill tools)
     if isinstance(result, dict) and "messages" in result:
@@ -668,12 +675,15 @@ def _generate_react(history: list[dict], user_message: str) -> tuple[str, set[st
             if isinstance(msg, ToolMessage):
                 _accumulate_tool_call(str(getattr(msg, "name", "")).strip())
                 content_str = _coerce_to_text(getattr(msg, "content", ""))
-                valid_urls.update(extract_urls(content_str))
+                for url in extract_urls(content_str):
+                    if url not in seen_urls:
+                        valid_urls.append(url)
+                        seen_urls.add(url)
 
     return text, valid_urls
 
 
-def _generate_response_core(history: list[dict], user_message: str) -> tuple[str, set[str]]:
+def _generate_response_core(history: list[dict], user_message: str) -> tuple[str, list[str]]:
     """Core generation: invoke ReAct agent with metrics tracking."""
     _metrics_inc("requests_total")
 
@@ -741,7 +751,7 @@ def _run_generation_core(
     history: list[dict],
     user_message: str,
     progress_callback: Callable[[dict[str, str]], None] | None = None,
-) -> tuple[str, set[str]]:
+) -> tuple[str, list[str]]:
     """Run core generation with optional progress callback lifecycle."""
     with agent_run_context(progress_callback=progress_callback):
         _emit_progress("understanding")

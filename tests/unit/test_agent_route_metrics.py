@@ -79,6 +79,18 @@ class TestEvidence:
         assert result == text
         assert title_map == {}
 
+    def test_decorate_fallback_respects_valid_url_order(self):
+        from agent.core.evidence import decorate_response_with_sources
+
+        text = "Alpha finding [1]. Beta finding [2]."
+        valid_urls = ["https://b.example.com", "https://a.example.com"]
+        result, _ = decorate_response_with_sources(text, "test question", valid_urls=valid_urls)
+
+        idx_b = result.find("- [1] https://b.example.com")
+        idx_a = result.find("- [2] https://a.example.com")
+        assert idx_b != -1 and idx_a != -1
+        assert idx_b < idx_a
+
     def test_normalize_parenthesized_citation(self):
         from agent.core.evidence import normalize_inline_citation_styles
 

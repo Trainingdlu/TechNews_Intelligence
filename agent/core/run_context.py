@@ -89,9 +89,8 @@ def add_evidence_urls(urls: list[str]) -> None:
             state.evidence_urls.append(clean)
 
 
-def get_evidence_urls() -> set[str]:
+def get_evidence_urls() -> list[str]:
     state = _get_state(create_if_missing=False)
     if state is None:
-        return set()
-    return set(state.evidence_urls)
-
+        return []
+    return list(state.evidence_urls)
