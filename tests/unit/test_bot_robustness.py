@@ -226,3 +226,113 @@ def test_handle_message_generation_error_not_pollute_history(bot_mod) -> None:  
 
     assert bot_mod.conversation_histories.get(chat_id, []) == []
     assert thinking.edits == ["抱歉，当前模型服务暂时不可用。"]
+
+
+def test_handle_message_clarification_roundtrip(bot_mod) -> None:  # noqa: ANN001
+    chat_id = 1001
+    update_first = types.SimpleNamespace(
+        effective_chat=types.SimpleNamespace(id=chat_id),
+        message=types.SimpleNamespace(text="帮我分析 AI 行业"),
+    )
+    update_second = types.SimpleNamespace(
+        effective_chat=types.SimpleNamespace(id=chat_id),
+        message=types.SimpleNamespace(text="最近30天，只看 TechCrunch，聚焦 OpenAI，做趋势"),
+    )
+    context = types.SimpleNamespace(bot=None)
+    seen_messages: list[str] = []
+
+    clarification_payload = {
+        "kind": "clarification_required",
+        "reason": "insufficient_evidence",
+        "question": "你更想看最近 7 天还是最近 30 天？",
+        "hints": [
+            "时间范围：最近 7 天 / 最近 30 天",
+            "来源范围：HackerNews / TechCrunch / 全部来源",
+        ],
+        "original_question": "帮我分析 AI 行业",
+    }
+
+    def _fake_generate(_history, message):  # noqa: ANN001
+        seen_messages.append(str(message))
+        if len(seen_messages) == 1:
+            return {
+                "kind": "clarification_required",
+                "text": clarification_payload["question"],
+                "clarification": clarification_payload,
+                "url_title_map": {},
+            }
+        return {
+            "kind": "answer",
+            "text": "最终回答 [1]\n\n## 来源\n- [1] https://example.com/a",
+            "url_title_map": {"https://example.com/a": "Example A"},
+        }
+
+    async def _to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    thinking_1 = _ThinkingMessage()
+    thinking_2 = _ThinkingMessage()
+    send_reply_mock = AsyncMock()
+
+    with (
+        patch.object(bot_mod, "_consume_chat_rate_token", return_value=(True, 0)),
+        patch.object(bot_mod, "_reply_text_with_retry", new=AsyncMock(side_effect=[thinking_1, thinking_2])),
+        patch.object(bot_mod, "_send_reply", new=send_reply_mock),
+        patch.object(bot_mod.asyncio, "to_thread", new=AsyncMock(side_effect=_to_thread)),
+        patch.object(bot_mod, "generate_response_payload", side_effect=_fake_generate),
+    ):
+        asyncio.run(bot_mod.handle_message(update_first, context))
+        asyncio.run(bot_mod.handle_message(update_second, context))
+
+    history = bot_mod.conversation_histories.get(chat_id, [])
+    assert len(history) == 4
+    assert history[1]["kind"] == "clarification_required"
+    assert history[1]["clarification"]["reason"] == "insufficient_evidence"
+    assert len(seen_messages) == 2
+    assert "原问题：帮我分析 AI 行业" in seen_messages[1]
+    assert "用户补充澄清：最近30天，只看 TechCrunch，聚焦 OpenAI，做趋势" in seen_messages[1]
+    sent_texts = [call.args[1] for call in send_reply_mock.await_args_list]
+    assert any("你更想看最近 7 天还是最近 30 天" in text for text in sent_texts)
+    assert any("最终回答" in text for text in sent_texts)
+
+
+def test_handle_message_source_conflict_reason_kept_in_history(bot_mod) -> None:  # noqa: ANN001
+    chat_id = 1002
+    thinking = _ThinkingMessage()
+    update = types.SimpleNamespace(
+        effective_chat=types.SimpleNamespace(id=chat_id),
+        message=types.SimpleNamespace(text="OpenAI 现在前景怎么样？"),
+    )
+    context = types.SimpleNamespace(bot=None)
+
+    async def _to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    with (
+        patch.object(bot_mod, "_consume_chat_rate_token", return_value=(True, 0)),
+        patch.object(bot_mod, "_reply_text_with_retry", new=AsyncMock(return_value=thinking)),
+        patch.object(bot_mod, "_send_reply", new=AsyncMock()),
+        patch.object(bot_mod.asyncio, "to_thread", new=AsyncMock(side_effect=_to_thread)),
+        patch.object(
+            bot_mod,
+            "generate_response_payload",
+            return_value={
+                "kind": "clarification_required",
+                "text": "当前多来源结论存在冲突，请确认范围。",
+                "clarification": {
+                    "kind": "clarification_required",
+                    "reason": "source_conflict",
+                    "question": "当前多来源结论存在冲突，请确认范围。",
+                    "hints": ["来源范围", "时间范围", "分析维度"],
+                    "original_question": "OpenAI 现在前景怎么样？",
+                },
+                "url_title_map": {},
+            },
+        ),
+    ):
+        asyncio.run(bot_mod.handle_message(update, context))
+
+    history = bot_mod.conversation_histories.get(chat_id, [])
+    assert len(history) == 2
+    assert history[1]["kind"] == "clarification_required"
+    assert history[1]["clarification"]["reason"] == "source_conflict"

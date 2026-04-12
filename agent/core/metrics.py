@@ -12,6 +12,13 @@ _route_metrics: dict[str, int] = {
     "react_success": 0,
     "react_error": 0,
     "react_recursion_limit_hit": 0,
+    "trace_runs_total": 0,
+    "trace_success": 0,
+    "trace_error": 0,
+    "trace_tool_calls_total": 0,
+    "trace_tool_success": 0,
+    "trace_tool_empty": 0,
+    "trace_tool_error": 0,
 }
 
 
@@ -54,8 +61,14 @@ def emit_route_metrics(route_event: str, force: bool = False) -> None:
     success = snapshot.get("react_success", 0)
     errors = snapshot.get("react_error", 0)
     recursion_hits = snapshot.get("react_recursion_limit_hit", 0)
+    trace_runs = snapshot.get("trace_runs_total", 0)
+    trace_errors = snapshot.get("trace_error", 0)
+    trace_tools = snapshot.get("trace_tool_calls_total", 0)
+    trace_tool_errors = snapshot.get("trace_tool_error", 0)
     success_rate = (success / attempts) if attempts else 0.0
     error_rate = (errors / total)
+    trace_error_rate = (trace_errors / trace_runs) if trace_runs else 0.0
+    trace_tool_error_rate = (trace_tool_errors / trace_tools) if trace_tools else 0.0
 
     print(
         "[Metrics] "
@@ -65,8 +78,14 @@ def emit_route_metrics(route_event: str, force: bool = False) -> None:
         f"react_success={success} "
         f"react_error={errors} "
         f"react_recursion_limit_hit={recursion_hits} "
+        f"trace_runs_total={trace_runs} "
+        f"trace_error={trace_errors} "
+        f"trace_tool_calls_total={trace_tools} "
+        f"trace_tool_error={trace_tool_errors} "
         f"success_rate={success_rate:.1%} "
-        f"error_rate={error_rate:.1%}"
+        f"error_rate={error_rate:.1%} "
+        f"trace_error_rate={trace_error_rate:.1%} "
+        f"trace_tool_error_rate={trace_tool_error_rate:.1%}"
     )
 
 
@@ -87,6 +106,10 @@ def get_route_metrics_snapshot() -> dict[str, float]:
     success = int(snapshot.get("react_success", 0))
     errors = int(snapshot.get("react_error", 0))
     recursion_hits = int(snapshot.get("react_recursion_limit_hit", 0))
+    trace_runs = int(snapshot.get("trace_runs_total", 0))
+    trace_errors = int(snapshot.get("trace_error", 0))
+    trace_tools = int(snapshot.get("trace_tool_calls_total", 0))
+    trace_tool_errors = int(snapshot.get("trace_tool_error", 0))
 
     snapshot["success_rate"] = (success / attempts) if attempts else 0.0
     snapshot["error_rate"] = errors / total
@@ -95,4 +118,10 @@ def get_route_metrics_snapshot() -> dict[str, float]:
     snapshot["react_recursion_limit_rate"] = (
         recursion_hits / attempts
     ) if attempts else 0.0
+    snapshot["trace_error_rate"] = (
+        trace_errors / trace_runs
+    ) if trace_runs else 0.0
+    snapshot["trace_tool_error_rate"] = (
+        trace_tool_errors / trace_tools
+    ) if trace_tools else 0.0
     return snapshot

@@ -9,6 +9,7 @@ import logging
 import html
 import hmac
 import hashlib
+import uuid
 from threading import Lock
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,7 +23,8 @@ from cachetools import TTLCache
 from pydantic import BaseModel, EmailStr
 from psycopg2.extras import Json
 
-from agent import AgentGenerationError, generate_response
+from agent import AgentGenerationError, generate_response_payload
+from agent.clarification import resolve_user_message_with_history_clarification
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
 from services.mail import (
     send_token_email,
@@ -239,8 +241,18 @@ class ChatRequest(BaseModel):
     history: list[dict] = []
 
 
+class ClarificationResponsePayload(BaseModel):
+    kind: str = "clarification_required"
+    reason: str
+    question: str
+    hints: list[str] = []
+    original_question: str = ""
+
+
 class ChatResponse(BaseModel):
     reply: str
+    kind: str = "answer"
+    clarification: ClarificationResponsePayload | None = None
     remaining: int
     quota: int
 
@@ -290,6 +302,14 @@ def _status_text_from_progress(payload: dict) -> str | None:
     if stage == "finalizing":
         return "正在生成回复"
     return None
+
+
+def _remaining_after_refund(reservation: dict) -> int:
+    quota = int(reservation.get("quota", 0) or 0)
+    remaining = int(reservation.get("remaining", 0) or 0) + 1
+    if quota > 0:
+        remaining = min(remaining, quota)
+    return max(remaining, 0)
 
 
 def _normalize_sources(sources: list[str] | None) -> list[str]:
@@ -733,11 +753,28 @@ async def chat(
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
     reservation = _reserve_quota_or_403(token_info)
+    request_id = uuid.uuid4().hex
 
-    logger.info(f"[{token_info['email']}] 对话: {body.message[:50]}...")
+    logger.info(
+        "[%s] 对话: request_id=%s message=%s...",
+        token_info["email"],
+        request_id,
+        body.message[:50],
+    )
+    effective_message, pending = resolve_user_message_with_history_clarification(body.history, body.message)
+    if pending is not None:
+        logger.info(
+            "[%s] clarification follow-up detected: request_id=%s reason=%s",
+            token_info["email"],
+            request_id,
+            pending.reason,
+        )
     try:
-        reply = await asyncio.to_thread(
-            generate_response, body.history, body.message,
+        payload = await asyncio.to_thread(
+            generate_response_payload,
+            body.history,
+            effective_message,
+            request_id=request_id,
         )
     except HTTPException:
         _refund_reserved_quota(token_info)
@@ -747,16 +784,41 @@ async def chat(
         raise
     except AgentGenerationError as e:
         _refund_reserved_quota(token_info)
-        logger.warning(f"[{token_info['email']}] generation blocked: {e}")
+        logger.warning(
+            "[%s] generation blocked: request_id=%s error=%s",
+            token_info["email"],
+            request_id,
+            e,
+        )
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         _refund_reserved_quota(token_info)
-        logger.error(f"[{token_info['email']}] 处理失败: {e}")
+        logger.error(
+            "[%s] 处理失败: request_id=%s error=%s",
+            token_info["email"],
+            request_id,
+            e,
+        )
         raise HTTPException(status_code=500, detail="服务暂时不可用，请稍后重试")
 
+    kind = str(payload.get("kind", "answer")).strip().lower()
+    if kind == "clarification_required":
+        _refund_reserved_quota(token_info)
+        clarification_payload = payload.get("clarification", {})
+        question = str(payload.get("text", "")).strip()
+        return ChatResponse(
+            reply=question,
+            kind="clarification_required",
+            clarification=clarification_payload if isinstance(clarification_payload, dict) else None,
+            remaining=_remaining_after_refund(reservation),
+            quota=int(reservation["quota"]),
+        )
+
+    reply = str(payload.get("text", "")).strip()
     _maybe_send_quota_exhausted_notifications(token_info, reservation)
     return ChatResponse(
         reply=reply,
+        kind="answer",
         remaining=max(int(reservation["remaining"]), 0),
         quota=int(reservation["quota"]),
     )
@@ -772,14 +834,28 @@ async def chat_stream(
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
     reservation = _reserve_quota_or_403(token_info)
+    request_id = uuid.uuid4().hex
 
-    logger.info(f"[{token_info['email']}] 对话(流式): {body.message[:50]}...")
+    logger.info(
+        "[%s] 对话(流式): request_id=%s message=%s...",
+        token_info["email"],
+        request_id,
+        body.message[:50],
+    )
+    effective_message, pending = resolve_user_message_with_history_clarification(body.history, body.message)
+    if pending is not None:
+        logger.info(
+            "[%s] clarification follow-up detected(stream): request_id=%s reason=%s",
+            token_info["email"],
+            request_id,
+            pending.reason,
+        )
 
     async def event_generator():
         loop = asyncio.get_running_loop()
         progress_queue: asyncio.Queue[dict] = asyncio.Queue()
         done_event = asyncio.Event()
-        result_holder: dict[str, str] = {}
+        result_holder: dict[str, dict] = {}
         error_holder: dict[str, Exception] = {}
         refunded = False
         completed = False
@@ -800,10 +876,11 @@ async def chat_stream(
 
         def worker():
             try:
-                result_holder["reply"] = generate_response(
+                result_holder["payload"] = generate_response_payload(
                     body.history,
-                    body.message,
+                    effective_message,
                     progress_callback=progress_callback,
+                    request_id=request_id,
                 )
             except Exception as exc:
                 error_holder["exc"] = exc
@@ -833,17 +910,45 @@ async def chat_stream(
                 exc = error_holder["exc"]
                 refund_once()
                 if isinstance(exc, AgentGenerationError):
-                    logger.warning(f"[{token_info['email']}] generation blocked: {exc}")
+                    logger.warning(
+                        "[%s] generation blocked: request_id=%s error=%s",
+                        token_info["email"],
+                        request_id,
+                        exc,
+                    )
                     yield _sse_event("error", {"detail": str(exc), "status_code": 503})
                     return
-                logger.error(f"[{token_info['email']}] 处理失败: {exc}")
+                logger.error(
+                    "[%s] 处理失败: request_id=%s error=%s",
+                    token_info["email"],
+                    request_id,
+                    exc,
+                )
                 yield _sse_event("error", {"detail": "服务暂时不可用，请稍后重试", "status_code": 500})
                 return
 
+            payload = result_holder.get("payload", {})
+            kind = str(payload.get("kind", "answer")).strip().lower()
+            if kind == "clarification_required":
+                clarification_payload = payload.get("clarification", {})
+                question = str(payload.get("text", "")).strip()
+                refund_once()
+                completed = True
+                yield _sse_event("final", {
+                    "kind": "clarification_required",
+                    "reply": question,
+                    "clarification": clarification_payload if isinstance(clarification_payload, dict) else None,
+                    "remaining": _remaining_after_refund(reservation),
+                    "quota": int(reservation["quota"]),
+                })
+                return
+
+            reply = str(payload.get("text", "")).strip()
             _maybe_send_quota_exhausted_notifications(token_info, reservation)
             completed = True
             yield _sse_event("final", {
-                "reply": result_holder.get("reply", ""),
+                "kind": "answer",
+                "reply": reply,
                 "remaining": max(int(reservation["remaining"]), 0),
                 "quota": int(reservation["quota"]),
             })

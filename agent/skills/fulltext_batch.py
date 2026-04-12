@@ -15,15 +15,30 @@ from .helpers import (
     _split_urls,
 )
 from .news_ops import read_news_content
+from .rerank import resolve_rerank_mode
 from .retrieval import _lookup_urls_by_query
 from .schemas import FulltextBatchSkillInput
 
 
-def fulltext_batch(urls: str, max_chars_per_article: int = 4000, response_format: str = "text") -> str:
+def fulltext_batch(
+    urls: str,
+    max_chars_per_article: int = 4000,
+    response_format: str = "text",
+    rerank_mode: str | None = None,
+) -> str:
     """Batch-read full article text by URL list or keyword auto-selection."""
     print("\n[Tool] fulltext_batch")
     max_chars_per_article = _clamp_int(max_chars_per_article, 800, 12000)
     as_json = response_format.strip().lower() == "json"
+    resolved_rerank_mode = resolve_rerank_mode(
+        rerank_mode, env_keys=("FULLTEXT_BATCH_RERANK_MODE", "NEWS_RERANK_MODE")
+    )
+    rerank_meta: dict[str, Any] = {
+        "rerank_mode": resolved_rerank_mode,
+        "candidate_count": 0,
+        "top_k": 0,
+        "fallback": False,
+    }
 
     raw_items = _split_urls(urls)
     direct_urls = [item for item in raw_items if _is_probable_url(item)]
@@ -34,16 +49,38 @@ def fulltext_batch(urls: str, max_chars_per_article: int = 4000, response_format
 
     if direct_urls:
         for url in direct_urls[:12]:
-            meta = {"selection_mode": "direct", "url": url}
+            meta = {"selection_mode": "direct", "url": url, "rerank_mode": resolved_rerank_mode}
             selected.append(("direct", url, meta))
             selected_meta.append(meta)
+        rerank_meta = {
+            "rerank_mode": resolved_rerank_mode,
+            "candidate_count": len(selected),
+            "top_k": len(selected),
+            "fallback": False,
+        }
     else:
         query = (urls or "").strip()
         if not query:
             return "fulltext_batch requires URLs or a keyword query."
 
         days = _extract_time_window_days(query, default=14, maximum=120)
-        candidates = _lookup_urls_by_query(query=query, days=days, limit=6)
+        lookup_result = _lookup_urls_by_query(
+            query=query,
+            days=days,
+            limit=6,
+            rerank_mode=resolved_rerank_mode,
+            include_rerank_meta=True,
+        )
+        if isinstance(lookup_result, tuple):
+            candidates, rerank_meta = lookup_result
+        else:
+            candidates = lookup_result
+            rerank_meta = {
+                "rerank_mode": resolved_rerank_mode,
+                "candidate_count": len(candidates),
+                "top_k": min(6, len(candidates)),
+                "fallback": False,
+            }
         if not candidates:
             if as_json:
                 return _json_text(
@@ -55,7 +92,9 @@ def fulltext_batch(urls: str, max_chars_per_article: int = 4000, response_format
                             "query": query,
                             "days": days,
                             "max_chars_per_article": max_chars_per_article,
+                            "rerank_mode": resolved_rerank_mode,
                         },
+                        "rerank": rerank_meta,
                         "selected": [],
                         "articles": [],
                         "error": f"No candidate articles found for query '{query}'.",
@@ -76,6 +115,7 @@ def fulltext_batch(urls: str, max_chars_per_article: int = 4000, response_format
                 "selection_mode": "query",
                 "query": query,
                 "window_days": days,
+                "rerank_mode": resolved_rerank_mode,
                 "rank": rank,
                 "headline": headline,
                 "source_type": source_type,
@@ -111,7 +151,12 @@ def fulltext_batch(urls: str, max_chars_per_article: int = 4000, response_format
             {
                 "tool": "fulltext_batch",
                 "status": "ok",
-                "request": {"urls_or_query": urls, "max_chars_per_article": max_chars_per_article},
+                "request": {
+                    "urls_or_query": urls,
+                    "max_chars_per_article": max_chars_per_article,
+                    "rerank_mode": resolved_rerank_mode,
+                },
+                "rerank": rerank_meta,
                 "selected": selected_meta,
                 "articles": article_rows,
             }
@@ -161,7 +206,7 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
             data=parsed,
             evidence=[],
             error=parsed.get("error"),
-            diagnostics={},
+            diagnostics={"rerank": parsed.get("rerank", {})},
         )
 
     selected = parsed.get("selected", [])
@@ -202,5 +247,6 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
         diagnostics={
             "selected_count": len(selected) if isinstance(selected, list) else 0,
             "article_count": len(articles) if isinstance(articles, list) else 0,
+            "rerank": parsed.get("rerank", {}),
         },
     )

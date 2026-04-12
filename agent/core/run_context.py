@@ -16,6 +16,9 @@ class AgentRunState:
     evidence_urls: list[str] = field(default_factory=list)
     tool_calls: list[str] = field(default_factory=list)
     progress_callback: ProgressCallback | None = None
+    request_id: str | None = None
+    thread_id: str | None = None
+    user_message: str | None = None
 
 
 _RUN_STATE: ContextVar[AgentRunState | None] = ContextVar("agent_run_state", default=None)
@@ -45,6 +48,34 @@ def set_progress_callback(callback: ProgressCallback | None) -> None:
     state = _get_state(create_if_missing=True)
     if state is not None:
         state.progress_callback = callback
+
+
+def set_request_metadata(
+    request_id: str | None = None,
+    thread_id: str | None = None,
+    user_message: str | None = None,
+) -> None:
+    state = _get_state(create_if_missing=True)
+    if state is None:
+        return
+    state.request_id = str(request_id) if request_id else None
+    state.thread_id = str(thread_id) if thread_id else None
+    state.user_message = str(user_message) if user_message else None
+
+
+def get_request_metadata() -> dict[str, str | None]:
+    state = _get_state(create_if_missing=False)
+    if state is None:
+        return {
+            "request_id": None,
+            "thread_id": None,
+            "user_message": None,
+        }
+    return {
+        "request_id": state.request_id,
+        "thread_id": state.thread_id,
+        "user_message": state.user_message,
+    }
 
 
 def emit_progress(stage: str, tool_name: str = "") -> None:

@@ -389,19 +389,25 @@ class TestAgentSafety:
         assert urls == set()
 
     def test_generate_response_core_blocks_analysis_without_evidence_when_no_tools(self):
-        from agent.agent import AgentGenerationError, _generate_response_core
+        from agent.agent import _generate_response_core
+        from agent.clarification import ClarificationRequiredError
 
         with patch("agent.agent._generate_react", return_value=("analysis result", set())):
             with patch("agent.agent._get_accumulated_tool_calls", return_value=set()):
-                with pytest.raises(AgentGenerationError) as ei:
+                with pytest.raises(ClarificationRequiredError) as ei:
                     _generate_response_core([], "analyze recent 30 days AI trend")
-        assert ei.value.code == "react_empty_evidence_blocked"
+        payload = ei.value.clarification.to_dict()
+        assert payload["kind"] == "clarification_required"
+        assert payload["reason"] == "insufficient_evidence"
 
     def test_generate_response_core_blocks_when_tools_used_but_no_evidence(self):
-        from agent.agent import AgentGenerationError, _generate_response_core
+        from agent.agent import _generate_response_core
+        from agent.clarification import ClarificationRequiredError
 
         with patch("agent.agent._generate_react", return_value=("tool output empty", set())):
             with patch("agent.agent._get_accumulated_tool_calls", return_value={"query_news"}):
-                with pytest.raises(AgentGenerationError) as ei:
+                with pytest.raises(ClarificationRequiredError) as ei:
                     _generate_response_core([], "hello")
-        assert ei.value.code == "react_empty_evidence_blocked"
+        payload = ei.value.clarification.to_dict()
+        assert payload["kind"] == "clarification_required"
+        assert payload["reason"] in {"insufficient_evidence", "ambiguous_scope"}

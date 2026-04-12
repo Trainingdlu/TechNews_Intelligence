@@ -152,7 +152,71 @@ CREATE TABLE IF NOT EXISTS access_tokens (
     upgraded_at TIMESTAMPTZ
 );
 
--- 9. Performance Indexes
+-- 9. Conversation Threads (persistent chat sessions)
+CREATE TABLE IF NOT EXISTS public.conversation_threads (
+    id BIGSERIAL PRIMARY KEY,
+    thread_id VARCHAR(64) NOT NULL UNIQUE,
+    channel VARCHAR(32) NOT NULL DEFAULT 'generic',
+    subject TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_message_at TIMESTAMPTZ
+);
+
+-- 10. Conversation Messages (history entries per thread)
+CREATE TABLE IF NOT EXISTS public.conversation_messages (
+    id BIGSERIAL PRIMARY KEY,
+    thread_id VARCHAR(64) NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    parts JSONB NOT NULL DEFAULT '[]'::jsonb,
+    payload JSONB NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_conversation_messages_thread
+        FOREIGN KEY (thread_id)
+        REFERENCES public.conversation_threads(thread_id)
+        ON DELETE CASCADE
+);
+
+-- 11. Agent request traces
+CREATE TABLE IF NOT EXISTS public.agent_runs (
+    id BIGSERIAL PRIMARY KEY,
+    request_id VARCHAR(64) NOT NULL UNIQUE,
+    thread_id VARCHAR(128),
+    user_message TEXT NOT NULL,
+    final_status VARCHAR(32) NOT NULL,
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    evidence_count INTEGER NOT NULL DEFAULT 0,
+    token_usage JSONB,
+    error_code VARCHAR(128),
+    error_message TEXT,
+    exception_chain JSONB,
+    tool_call_chain JSONB NOT NULL DEFAULT '[]'::jsonb,
+    trace_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.agent_tool_events (
+    id BIGSERIAL PRIMARY KEY,
+    request_id VARCHAR(64) NOT NULL,
+    event_index INTEGER NOT NULL,
+    tool_name VARCHAR(128) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    latency_ms INTEGER,
+    input_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    output_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_code VARCHAR(128),
+    error_message TEXT,
+    exception_chain JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_agent_tool_events_request
+        FOREIGN KEY (request_id)
+        REFERENCES public.agent_runs(request_id)
+        ON DELETE CASCADE
+);
+
+-- 12. Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_created_at ON public.tech_news(created_at);
 CREATE INDEX IF NOT EXISTS idx_created_at_cn ON public.tech_news ((created_at + '08:00:00'::interval));
 CREATE INDEX IF NOT EXISTS idx_points ON public.tech_news(points DESC);
@@ -164,6 +228,20 @@ CREATE INDEX IF NOT EXISTS idx_access_tokens_token ON access_tokens (token);
 CREATE INDEX IF NOT EXISTS idx_access_tokens_email ON access_tokens (email);
 CREATE INDEX IF NOT EXISTS idx_subscribers_active ON public.subscribers(is_active);
 CREATE INDEX IF NOT EXISTS idx_source_registry_active ON public.source_registry(is_active, priority);
+CREATE INDEX IF NOT EXISTS idx_conversation_threads_recent
+    ON public.conversation_threads (COALESCE(last_message_at, created_at) DESC);
+CREATE INDEX IF NOT EXISTS idx_conversation_threads_channel_recent
+    ON public.conversation_threads (channel, COALESCE(last_message_at, created_at) DESC);
+CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_order
+    ON public.conversation_messages (thread_id, id);
+CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_created
+    ON public.conversation_messages (thread_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_created_at ON public.agent_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON public.agent_runs(final_status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_tool_events_request ON public.agent_tool_events(request_id, event_index);
+CREATE INDEX IF NOT EXISTS idx_agent_tool_events_status ON public.agent_tool_events(status, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tool_events_request_event_unique
+    ON public.agent_tool_events(request_id, event_index);
 
 -- NOTE: This index is safe to create on an empty table, but should be rebuilt
 -- after the initial data backfill to ensure optimal clustering quality.
@@ -172,7 +250,7 @@ CREATE INDEX IF NOT EXISTS idx_embedding_vector ON public.news_embeddings
 USING ivfflat (embedding vector_cosine_ops)
 WITH (lists = 100);
 
--- 10. Update Trigger Function
+-- 13. Update Trigger Function
 CREATE OR REPLACE FUNCTION update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -190,6 +268,12 @@ CREATE TRIGGER update_tech_news_modtime
 DROP TRIGGER IF EXISTS update_source_registry_modtime ON public.source_registry;
 CREATE TRIGGER update_source_registry_modtime
     BEFORE UPDATE ON public.source_registry
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();
+
+DROP TRIGGER IF EXISTS update_conversation_threads_modtime ON public.conversation_threads;
+CREATE TRIGGER update_conversation_threads_modtime
+    BEFORE UPDATE ON public.conversation_threads
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_column();
 

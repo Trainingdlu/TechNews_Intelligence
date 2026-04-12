@@ -20,6 +20,12 @@ from langgraph.prebuilt import create_react_agent
 
 from .core.runtime_factories import build_default_hook_runner, build_default_registry
 from .prompts import SYSTEM_INSTRUCTION
+from .clarification import (
+    ClarificationRequiredError,
+    build_clarification_payload,
+    detect_scope_or_conflict_reason,
+    infer_clarification_reason,
+)
 from .core.evidence import (
     decorate_response_with_sources as _decorate_response_with_sources_core,
     has_inline_citation_in_body as _has_inline_citation_in_body_core,
@@ -36,6 +42,19 @@ from .core.run_context import (
     emit_progress as _emit_progress,
     get_evidence_urls as _get_accumulated_evidence,
     get_tool_calls as _get_accumulated_tool_calls,
+    set_request_metadata as _set_request_metadata,
+)
+from .core.trace import (
+    extract_token_usage as _extract_token_usage,
+    finalize_request_trace as _finalize_request_trace,
+    get_current_request_id as _get_current_request_id,
+    get_current_thread_id as _get_current_thread_id,
+    get_last_trace_summary as _get_last_trace_summary,
+    request_trace_context as _request_trace_context,
+    set_request_token_usage as _set_request_token_usage,
+    trace_tool_finish_error as _trace_tool_finish_error,
+    trace_tool_finish_with_envelope as _trace_tool_finish_with_envelope,
+    trace_tool_start as _trace_tool_start,
 )
 from .core.skill_contracts import SkillEnvelope
 from .skills.news_ops import lookup_url_titles
@@ -128,40 +147,66 @@ def _execute_skill(skill_name: str, payload: dict[str, Any]) -> str:
 
     Returns the text representation for the ReAct LLM to consume.
     """
+    trace_event_index = _trace_tool_start(skill_name, payload)
     hooks = _get_hook_runner()
 
-    # Pre-hook guard
-    pre = hooks.pre_tool_use(skill_name, payload)
-    if pre.action == "deny":
-        return f"[Blocked] {pre.reason or 'pre-hook denied'}"
-    effective_payload = pre.updated_payload if pre.updated_payload is not None else payload
+    try:
+        # Pre-hook guard
+        pre = hooks.pre_tool_use(skill_name, payload)
+        if pre.action == "deny":
+            blocked_reason = pre.reason or "pre-hook denied"
+            _trace_tool_finish_error(
+                trace_event_index,
+                error_code="tool_pre_hook_denied",
+                error_message=blocked_reason,
+                error=RuntimeError(blocked_reason),
+            )
+            return f"[Blocked] {blocked_reason}"
+        effective_payload = pre.updated_payload if pre.updated_payload is not None else payload
 
-    # Execute via registry
-    registry = _get_registry()
-    if skill_name in {"search_news", "query_news", "trend_analysis", "fulltext_batch"}:
-        _emit_progress("retrieving", skill_name)
-    elif skill_name in {"compare_sources", "compare_topics", "build_timeline", "analyze_landscape"}:
-        _emit_progress("analyzing", skill_name)
-    else:
-        _emit_progress("retrieving", skill_name)
-    envelope = registry.execute(skill_name, effective_payload)
-    _accumulate_tool_call(skill_name)
+        # Execute via registry
+        registry = _get_registry()
+        if skill_name in {"search_news", "query_news", "trend_analysis", "fulltext_batch"}:
+            _emit_progress("retrieving", skill_name)
+        elif skill_name in {"compare_sources", "compare_topics", "build_timeline", "analyze_landscape"}:
+            _emit_progress("analyzing", skill_name)
+        else:
+            _emit_progress("retrieving", skill_name)
+        envelope = registry.execute(skill_name, effective_payload)
+        _accumulate_tool_call(skill_name)
 
-    # Post-hook guard
-    post = hooks.post_tool_use(skill_name, effective_payload, envelope)
-    if post.action == "deny":
-        return f"[Blocked] {post.reason or 'post-hook denied'}"
+        # Post-hook guard
+        post = hooks.post_tool_use(skill_name, effective_payload, envelope)
+        if post.action == "deny":
+            blocked_reason = post.reason or "post-hook denied"
+            _trace_tool_finish_with_envelope(
+                trace_event_index,
+                envelope,
+                status_override="blocked",
+                error_code="tool_post_hook_denied",
+                error_message=blocked_reason,
+            )
+            return f"[Blocked] {blocked_reason}"
 
-    # Collect structured evidence URLs
-    evidence_urls = [
-        str(e.url).strip()
-        for e in (envelope.evidence or [])
-        if str(e.url or "").strip()
-    ]
-    _accumulate_evidence(evidence_urls)
+        # Collect structured evidence URLs
+        evidence_urls = [
+            str(e.url).strip()
+            for e in (envelope.evidence or [])
+            if str(e.url or "").strip()
+        ]
+        _accumulate_evidence(evidence_urls)
+        _trace_tool_finish_with_envelope(trace_event_index, envelope)
 
-    # Convert to text for LLM
-    return _envelope_to_tool_text(envelope)
+        # Convert to text for LLM
+        return _envelope_to_tool_text(envelope)
+    except Exception as exc:
+        _trace_tool_finish_error(
+            trace_event_index,
+            error_code=f"tool_{type(exc).__name__.lower()}",
+            error_message=str(exc),
+            error=exc,
+        )
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -653,6 +698,11 @@ def _generate_react(history: list[dict], user_message: str) -> tuple[str, list[s
         {"messages": messages},
         config={"recursion_limit": recursion_limit},
     )
+
+    if isinstance(result, dict) and "messages" in result:
+        usage = _extract_token_usage(list(result.get("messages", [])))
+        _set_request_token_usage(usage)
+
     text = _extract_final_text(result)
     if not text:
         raise RuntimeError("ReAct agent returned empty response.")
@@ -693,16 +743,33 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
         tool_calls = _get_accumulated_tool_calls()
 
         if _should_block_empty_evidence(user_message, valid_urls, tool_calls):
-            raise AgentGenerationError(
-                "抱歉，针对该问题，系统未能检索到相关的新闻。",
-                code="react_empty_evidence_blocked"
+            reason = infer_clarification_reason(user_message)
+            clarification = build_clarification_payload(
+                user_message=user_message,
+                reason=reason,
+                context={"tool_calls": sorted(tool_calls)},
             )
+            raise ClarificationRequiredError(clarification)
+
+        risk_reason, risk_context = detect_scope_or_conflict_reason(
+            user_message=user_message,
+            candidate_answer=result,
+            valid_urls=valid_urls,
+            tool_calls=tool_calls,
+        )
+        if risk_reason:
+            clarification = build_clarification_payload(
+                user_message=user_message,
+                reason=risk_reason,
+                context=risk_context,
+            )
+            raise ClarificationRequiredError(clarification)
 
         _metrics_inc("react_success")
         return result, valid_urls
     except Exception as exc:
         _metrics_inc("react_error")
-        if isinstance(exc, AgentGenerationError):
+        if isinstance(exc, (AgentGenerationError, ClarificationRequiredError)):
             raise exc
 
         exc_name = type(exc).__name__.lower()
@@ -747,6 +814,35 @@ def _generate_response_core(history: list[dict], user_message: str) -> tuple[str
         )
 
 
+def _extract_thread_id(history: list[dict] | None) -> str | None:
+    """Best-effort thread id extraction from transport history payload."""
+    for item in reversed(history or []):
+        if not isinstance(item, dict):
+            continue
+        for key in ("thread_id", "threadId"):
+            value = item.get(key)
+            if value:
+                return str(value)
+    return None
+
+
+def _resolve_trace_final_status(error: Exception) -> str:
+    if isinstance(error, ClarificationRequiredError):
+        return "clarification_required"
+    if isinstance(error, AgentGenerationError):
+        return "blocked"
+    return "error"
+
+
+def _resolve_trace_error_code(error: Exception) -> str:
+    if isinstance(error, ClarificationRequiredError):
+        return f"clarification_{error.clarification.reason}"
+    code = getattr(error, "code", None)
+    if code:
+        return str(code)
+    return f"runtime_{type(error).__name__.lower()}"
+
+
 def _run_generation_core(
     history: list[dict],
     user_message: str,
@@ -754,6 +850,11 @@ def _run_generation_core(
 ) -> tuple[str, list[str]]:
     """Run core generation with optional progress callback lifecycle."""
     with agent_run_context(progress_callback=progress_callback):
+        _set_request_metadata(
+            request_id=_get_current_request_id(),
+            thread_id=_get_current_thread_id(),
+            user_message=user_message,
+        )
         _emit_progress("understanding")
         core_text, valid_urls = _generate_response_core(history, user_message)
         _emit_progress("finalizing")
@@ -764,6 +865,7 @@ def generate_response(
     history: list[dict],
     user_message: str,
     progress_callback: Callable[[dict[str, str]], None] | None = None,
+    request_id: str | None = None,
 ) -> str:
     """Public generation entrypoint with post-processing safety net.
 
@@ -771,54 +873,189 @@ def generate_response(
     1. Strip generic analysis lead-in phrases
     2. Normalize citations and attach source section
     """
-    core_text, valid_urls = _run_generation_core(
-        history,
-        user_message,
-        progress_callback=progress_callback,
-    )
-    core_text = _strip_generic_analysis_leadin(core_text)
-    final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
-    _enforce_inline_citation_guard(final_text, user_message, valid_urls)
-    return final_text
+    thread_id = _extract_thread_id(history)
+    with _request_trace_context(
+        user_message=user_message,
+        thread_id=thread_id,
+        request_id=request_id,
+    ):
+        try:
+            core_text, valid_urls = _run_generation_core(
+                history,
+                user_message,
+                progress_callback=progress_callback,
+            )
+            core_text = _strip_generic_analysis_leadin(core_text)
+            final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+            _enforce_inline_citation_guard(final_text, user_message, valid_urls)
+            _finalize_request_trace(
+                final_status="success",
+                evidence_count=len(valid_urls),
+                final_answer_metadata={
+                    "response_kind": "text",
+                    "answer_chars": len(final_text),
+                    "source_count": len(valid_urls),
+                },
+            )
+            return final_text
+        except ClarificationRequiredError as exc:
+            payload = exc.clarification.to_dict()
+            question_text = str(payload.get("question", "")).strip()
+            _finalize_request_trace(
+                final_status="clarification_required",
+                evidence_count=0,
+                error_code=f"clarification_{payload.get('reason', 'required')}",
+                error_message=question_text,
+                error=exc,
+                final_answer_metadata={
+                    "response_kind": "clarification_text",
+                    "answer_chars": len(question_text),
+                    "source_count": 0,
+                },
+            )
+            return question_text
+        except Exception as exc:
+            evidence_count = len(valid_urls) if "valid_urls" in locals() else None
+            _finalize_request_trace(
+                final_status=_resolve_trace_final_status(exc),
+                evidence_count=evidence_count,
+                error_code=_resolve_trace_error_code(exc),
+                error_message=str(exc),
+                error=exc,
+            )
+            raise
 
 
 def generate_response_payload(
     history: list[dict],
     user_message: str,
     progress_callback: Callable[[dict[str, str]], None] | None = None,
+    request_id: str | None = None,
 ) -> dict[str, Any]:
     """Structured response for transport layers (e.g., Telegram bot)."""
-    core_text, valid_urls = _run_generation_core(
-        history,
-        user_message,
-        progress_callback=progress_callback,
-    )
-    core_text = _strip_generic_analysis_leadin(core_text)
-    final_text, title_map = _decorate_response_with_sources(core_text, user_message, valid_urls)
-    _enforce_inline_citation_guard(final_text, user_message, valid_urls)
-    return {
-        "text": final_text,
-        "url_title_map": title_map,
-    }
+    thread_id = _extract_thread_id(history)
+    with _request_trace_context(
+        user_message=user_message,
+        thread_id=thread_id,
+        request_id=request_id,
+    ):
+        try:
+            core_text, valid_urls = _run_generation_core(
+                history,
+                user_message,
+                progress_callback=progress_callback,
+            )
+            core_text = _strip_generic_analysis_leadin(core_text)
+            final_text, title_map = _decorate_response_with_sources(core_text, user_message, valid_urls)
+            _enforce_inline_citation_guard(final_text, user_message, valid_urls)
+            _finalize_request_trace(
+                final_status="success",
+                evidence_count=len(valid_urls),
+                final_answer_metadata={
+                    "response_kind": "payload",
+                    "answer_chars": len(final_text),
+                    "source_count": len(valid_urls),
+                    "title_map_count": len(title_map),
+                },
+            )
+            return {
+                "kind": "answer",
+                "text": final_text,
+                "url_title_map": title_map,
+            }
+        except ClarificationRequiredError as exc:
+            payload = exc.clarification.to_dict()
+            question_text = str(payload.get("question", "")).strip()
+            _finalize_request_trace(
+                final_status="clarification_required",
+                evidence_count=0,
+                error_code=f"clarification_{payload.get('reason', 'required')}",
+                error_message=question_text,
+                error=exc,
+                final_answer_metadata={
+                    "response_kind": "clarification_payload",
+                    "answer_chars": len(question_text),
+                    "source_count": 0,
+                    "title_map_count": 0,
+                },
+            )
+            return {
+                "kind": "clarification_required",
+                "text": question_text,
+                "url_title_map": {},
+                "clarification": payload,
+            }
+        except Exception as exc:
+            evidence_count = len(valid_urls) if "valid_urls" in locals() else None
+            _finalize_request_trace(
+                final_status=_resolve_trace_final_status(exc),
+                evidence_count=evidence_count,
+                error_code=_resolve_trace_error_code(exc),
+                error_message=str(exc),
+                error=exc,
+            )
+            raise
 
 
-def generate_response_eval_payload(history: list[dict], user_message: str) -> dict[str, Any]:
+def generate_response_eval_payload(
+    history: list[dict],
+    user_message: str,
+    request_id: str | None = None,
+) -> dict[str, Any]:
     """Structured response for eval with tool trace and URL evidence."""
-    with agent_run_context():
-        core_text, valid_urls = _generate_response_core(history, user_message)
-        core_text = _strip_generic_analysis_leadin(core_text)
-        final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
-        _enforce_inline_citation_guard(final_text, user_message, valid_urls)
-        return {
-            "text": final_text,
-            "valid_urls": sorted(valid_urls),
-            "tool_calls": sorted(_get_accumulated_tool_calls()),
-        }
+    thread_id = _extract_thread_id(history)
+    with _request_trace_context(
+        user_message=user_message,
+        thread_id=thread_id,
+        request_id=request_id,
+    ):
+        try:
+            with agent_run_context():
+                _set_request_metadata(
+                    request_id=_get_current_request_id(),
+                    thread_id=_get_current_thread_id(),
+                    user_message=user_message,
+                )
+                core_text, valid_urls = _generate_response_core(history, user_message)
+                core_text = _strip_generic_analysis_leadin(core_text)
+                final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+                _enforce_inline_citation_guard(final_text, user_message, valid_urls)
+                tool_calls = sorted(_get_accumulated_tool_calls())
+                _finalize_request_trace(
+                    final_status="success",
+                    evidence_count=len(valid_urls),
+                    final_answer_metadata={
+                        "response_kind": "eval_payload",
+                        "answer_chars": len(final_text),
+                        "source_count": len(valid_urls),
+                        "tool_count": len(tool_calls),
+                    },
+                )
+                return {
+                    "text": final_text,
+                    "valid_urls": sorted(valid_urls),
+                    "tool_calls": tool_calls,
+                }
+        except Exception as exc:
+            evidence_count = len(valid_urls) if "valid_urls" in locals() else None
+            _finalize_request_trace(
+                final_status=_resolve_trace_final_status(exc),
+                evidence_count=evidence_count,
+                error_code=_resolve_trace_error_code(exc),
+                error_message=str(exc),
+                error=exc,
+            )
+            raise
 
 
 def get_last_tool_calls_snapshot() -> list[str]:
     """Return current request-local tool call set (best-effort for diagnostics)."""
     return sorted(_get_accumulated_tool_calls())
+
+
+def get_last_request_trace_summary() -> dict[str, Any] | None:
+    """Return the last finalized request-level trace summary."""
+    return _get_last_trace_summary()
 
 
 # ---------------------------------------------------------------------------

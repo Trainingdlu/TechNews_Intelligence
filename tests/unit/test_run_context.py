@@ -9,7 +9,9 @@ from agent.core.run_context import (
     add_tool_call,
     agent_run_context,
     get_evidence_urls,
+    get_request_metadata,
     get_tool_calls,
+    set_request_metadata,
 )
 
 
@@ -35,3 +37,17 @@ def test_agent_run_context_isolated_between_threads() -> None:
     assert results["t1"][1] == ["https://a.example.com"]
     assert results["t2"][0] == {"trend_analysis"}
     assert results["t2"][1] == ["https://b.example.com"]
+
+
+def test_request_metadata_roundtrip() -> None:
+    with agent_run_context():
+        set_request_metadata(
+            request_id="req-001",
+            thread_id="thread-abc",
+            user_message="latest ai updates",
+        )
+        metadata = get_request_metadata()
+
+    assert metadata["request_id"] == "req-001"
+    assert metadata["thread_id"] == "thread-abc"
+    assert metadata["user_message"] == "latest ai updates"

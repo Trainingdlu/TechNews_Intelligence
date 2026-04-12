@@ -1,0 +1,116 @@
+[
+  {
+    "id": "voice_openai",
+    "query": "OpenAI voice assistant model announcement",
+    "candidates": [
+      {
+        "title": "NVIDIA quarterly earnings beat estimates",
+        "summary": "Data center revenue climbed as AI demand stayed strong.",
+        "url": "https://example.com/nvda-earnings",
+        "source_type": "TechCrunch",
+        "score": 2.41,
+        "label": 0
+      },
+      {
+        "title": "OpenAI unveils new voice mode for ChatGPT",
+        "summary": "The update adds low-latency speech interaction and emotion controls.",
+        "url": "https://example.com/openai-voice-mode",
+        "source_type": "TechCrunch",
+        "score": 1.55,
+        "label": 3
+      },
+      {
+        "title": "Meta introduces open speech model",
+        "summary": "A new audio model targets multilingual speech synthesis.",
+        "url": "https://example.com/meta-speech-model",
+        "source_type": "HackerNews",
+        "score": 1.49,
+        "label": 1
+      },
+      {
+        "title": "Cloud storage pricing update",
+        "summary": "Several providers cut archive-tier prices this quarter.",
+        "url": "https://example.com/cloud-pricing",
+        "source_type": "HackerNews",
+        "score": 1.44,
+        "label": 0
+      }
+    ]
+  },
+  {
+    "id": "apple_eu_digital_markets",
+    "query": "Apple antitrust case in EU digital markets act",
+    "candidates": [
+      {
+        "title": "Apple faces EU charges under Digital Markets Act",
+        "summary": "Regulators allege anti-steering restrictions still limit app developers.",
+        "url": "https://example.com/apple-eu-dma",
+        "source_type": "TechCrunch",
+        "score": 1.88,
+        "label": 3
+      },
+      {
+        "title": "Apple Vision Pro gains new productivity apps",
+        "summary": "Developers release additional productivity workflows for visionOS.",
+        "url": "https://example.com/apple-vision-apps",
+        "source_type": "TechCrunch",
+        "score": 1.97,
+        "label": 0
+      },
+      {
+        "title": "European antitrust updates target platform gatekeepers",
+        "summary": "The commission outlines compliance expectations for dominant platforms.",
+        "url": "https://example.com/eu-antitrust-gatekeepers",
+        "source_type": "HackerNews",
+        "score": 1.62,
+        "label": 2
+      },
+      {
+        "title": "GPU benchmark roundup for gaming laptops",
+        "summary": "Frame-rate comparisons across popular 2026 gaming devices.",
+        "url": "https://example.com/gpu-benchmark-roundup",
+        "source_type": "HackerNews",
+        "score": 1.45,
+        "label": 0
+      }
+    ]
+  },
+  {
+    "id": "github_copilot_enterprise_security",
+    "query": "GitHub Copilot enterprise security controls",
+    "candidates": [
+      {
+        "title": "GitHub adds policy controls for Copilot Enterprise",
+        "summary": "Admins can enforce repository allowlists and code snippet filtering.",
+        "url": "https://example.com/copilot-enterprise-controls",
+        "source_type": "HackerNews",
+        "score": 1.66,
+        "label": 3
+      },
+      {
+        "title": "A startup launches AI meeting assistant",
+        "summary": "The product focuses on note-taking and meeting summaries.",
+        "url": "https://example.com/meeting-assistant-startup",
+        "source_type": "TechCrunch",
+        "score": 2.05,
+        "label": 0
+      },
+      {
+        "title": "Security teams evaluate AI coding assistant risks",
+        "summary": "An enterprise survey highlights governance and privacy concerns.",
+        "url": "https://example.com/ai-coding-security-survey",
+        "source_type": "TechCrunch",
+        "score": 1.58,
+        "label": 2
+      },
+      {
+        "title": "TypeScript 6.0 roadmap preview",
+        "summary": "Core maintainers discuss compiler and language ergonomics.",
+        "url": "https://example.com/typescript-roadmap",
+        "source_type": "HackerNews",
+        "score": 1.52,
+        "label": 0
+      }
+    ]
+  }
+]

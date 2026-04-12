@@ -9,6 +9,7 @@ import requests
 from services.db import get_conn, put_conn
 
 from .helpers import _clamp_int
+from .rerank import RERANK_MODE_NONE, rerank_lookup_rows, resolve_rerank_mode
 
 
 JINA_EMBED_URL = "https://api.jina.ai/v1/embeddings"
@@ -44,14 +45,56 @@ def _get_query_embedding(query: str) -> list[float] | None:
         return None
 
 
-def _lookup_urls_by_query(query: str, days: int = 14, limit: int = 5) -> list[tuple]:
+def _finalize_lookup_rows(
+    rows: list[tuple],
+    *,
+    query: str,
+    limit: int,
+    rerank_mode: str,
+) -> tuple[list[tuple], dict]:
+    default_meta = {
+        "rerank_mode": rerank_mode,
+        "candidate_count": len(rows),
+        "top_k": min(int(limit), len(rows)),
+        "fallback": False,
+    }
+    if not rows:
+        return [], default_meta
+    if rerank_mode == RERANK_MODE_NONE:
+        return list(rows)[:limit], default_meta
+    ranked_rows, rerank_meta = rerank_lookup_rows(
+        query=query,
+        rows=rows,
+        mode=rerank_mode,
+        top_k=limit,
+        env_keys=("FULLTEXT_BATCH_RERANK_MODE", "NEWS_RERANK_MODE"),
+    )
+    return ranked_rows, rerank_meta
+
+
+def _lookup_urls_by_query(
+    query: str,
+    days: int = 14,
+    limit: int = 5,
+    rerank_mode: str | None = None,
+    include_rerank_meta: bool = False,
+) -> list[tuple] | tuple[list[tuple], dict]:
     """Return candidate URLs by fused semantic+keyword retrieval."""
     query_clean = (query or "").strip()
     if not query_clean:
+        empty_meta = {"rerank_mode": resolve_rerank_mode(rerank_mode), "candidate_count": 0, "top_k": 0, "fallback": False}
+        if include_rerank_meta:
+            return [], empty_meta
         return []
 
     days = _clamp_int(days, 1, 180)
     limit = _clamp_int(limit, 1, 12)
+    resolved_rerank_mode = resolve_rerank_mode(
+        rerank_mode, env_keys=("FULLTEXT_BATCH_RERANK_MODE", "NEWS_RERANK_MODE")
+    )
+    candidate_pool_limit = limit if resolved_rerank_mode == RERANK_MODE_NONE else min(limit * 6, 72)
+    keyword_fetch_limit = max(limit * 4, candidate_pool_limit)
+    semantic_fetch_limit = max(limit * 6, candidate_pool_limit)
     q = f"%{query_clean}%"
     query_vec = _get_query_embedding(query_clean)
 
@@ -142,17 +185,25 @@ def _lookup_urls_by_query(query: str, days: int = 14, limit: int = 5) -> list[tu
                         q,
                         q,
                         q,
-                        limit * 4,
+                        keyword_fetch_limit,
                         vec_str,
                         f"{days} days",
                         vec_str,
-                        limit * 6,
-                        limit,
+                        semantic_fetch_limit,
+                        candidate_pool_limit,
                     ),
                 )
                 rows = cur.fetchall()
                 cur.close()
-                return rows
+                ranked_rows, rerank_meta = _finalize_lookup_rows(
+                    rows,
+                    query=query_clean,
+                    limit=limit,
+                    rerank_mode=resolved_rerank_mode,
+                )
+                if include_rerank_meta:
+                    return ranked_rows, rerank_meta
+                return ranked_rows
             except Exception as exc:
                 print(f"[Warn] semantic candidate lookup failed; fallback to keyword-only: {exc}")
 
@@ -182,11 +233,18 @@ def _lookup_urls_by_query(query: str, days: int = 14, limit: int = 5) -> list[tu
             ORDER BY score DESC, points DESC NULLS LAST, created_at DESC
             LIMIT %s
             """,
-            (q, q, q, f"{days} days", q, q, q, limit),
+            (q, q, q, f"{days} days", q, q, q, candidate_pool_limit),
         )
         rows = cur.fetchall()
         cur.close()
-        return rows
+        ranked_rows, rerank_meta = _finalize_lookup_rows(
+            rows,
+            query=query_clean,
+            limit=limit,
+            rerank_mode=resolved_rerank_mode,
+        )
+        if include_rerank_meta:
+            return ranked_rows, rerank_meta
+        return ranked_rows
     finally:
         put_conn(conn)
-

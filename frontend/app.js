@@ -207,13 +207,47 @@
     }
 
     function applyChatSuccess(text, data) {
+        const reply = String(data.reply || '').trim();
         history.push({ role: 'user', parts: [{ text }] });
-        history.push({ role: 'model', parts: [{ text: data.reply }] });
+        history.push({ role: 'model', parts: [{ text: reply }] });
 
-        appendMessage('agent', data.reply);
+        appendMessage('agent', reply);
         const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
         const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
         updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
+    }
+
+    function applyChatClarification(text, data) {
+        const clarification = data && typeof data.clarification === 'object' ? data.clarification : {};
+        const question = String((clarification && clarification.question) || data.reply || '').trim();
+        const hints = Array.isArray(clarification.hints)
+            ? clarification.hints.map((item) => String(item || '').trim()).filter(Boolean)
+            : [];
+        const clarificationText = hints.length
+            ? `${question}\n\n你可以补充以下任意一项：\n${hints.map((hint) => `- ${hint}`).join('\n')}`
+            : question;
+
+        history.push({ role: 'user', parts: [{ text }] });
+        history.push({
+            role: 'model',
+            kind: 'clarification_required',
+            clarification: clarification,
+            parts: [{ text: question }],
+        });
+
+        appendMessage('agent', clarificationText || '请补充分析范围后我再继续。');
+        const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
+        const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
+        updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
+    }
+
+    function applyChatPayload(text, data) {
+        const kind = String((data && data.kind) || 'answer').toLowerCase();
+        if (kind === 'clarification_required') {
+            applyChatClarification(text, data || {});
+            return;
+        }
+        applyChatSuccess(text, data || {});
     }
 
     async function handleChatHttpError(res) {
@@ -357,13 +391,13 @@
                     appendMessage('agent', '出错了：未收到完整回复');
                     return;
                 }
-                applyChatSuccess(text, streamed.final);
+                applyChatPayload(text, streamed.final);
                 return;
             }
 
             if (await handleChatHttpError(streamRes)) return;
             const fallbackData = await streamRes.json();
-            applyChatSuccess(text, fallbackData);
+            applyChatPayload(text, fallbackData);
         } catch {
             // If streaming request itself failed before getting a response object,
             // fallback to non-streaming chat once.
@@ -375,7 +409,7 @@
                     });
                     if (await handleChatHttpError(nonStreamRes)) return;
                     const nonStreamData = await nonStreamRes.json();
-                    applyChatSuccess(text, nonStreamData);
+                    applyChatPayload(text, nonStreamData);
                     return;
                 } catch {
                     // continue to unified network error below

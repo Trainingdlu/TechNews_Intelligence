@@ -20,6 +20,10 @@ from telegram.ext import (
 )
 
 from agent import AgentGenerationError, generate_response_payload
+from agent.clarification import (
+    build_clarification_history_item,
+    resolve_user_message_with_history_clarification,
+)
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / "agent" / ".env", override=False)
@@ -757,13 +761,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         history = conversation_histories[chat_id]
-        payload = await asyncio.to_thread(generate_response_payload, history, user_text)
-        reply = str(payload.get("text", "")).strip()
-        title_map = payload.get("url_title_map", {}) if isinstance(payload, dict) else {}
+        effective_message, pending = resolve_user_message_with_history_clarification(history, user_text)
+        if pending is not None:
+            logger.info(
+                "[chat_id=%s] clarification follow-up detected: reason=%s",
+                chat_id,
+                pending.reason,
+            )
 
-        # 更新历史
+        payload = await asyncio.to_thread(generate_response_payload, history, effective_message)
+        kind = str(payload.get("kind", "answer")).strip().lower()
+        reply = str(payload.get("text", "")).strip()
+
+        # 更新历史（answer / clarification 都保留，便于下一轮继续）
         history.append({"role": "user", "parts": [{"text": user_text}]})
-        history.append({"role": "model", "parts": [{"text": reply}]})
+        if kind == "clarification_required":
+            clarification_payload = payload.get("clarification", {})
+            history.append(build_clarification_history_item(clarification_payload))
+        else:
+            history.append({"role": "model", "parts": [{"text": reply}]})
+
         history_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
         conversation_histories[chat_id] = _trim_history(history, max_turns=history_limit)
 
@@ -772,6 +789,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await thinking_msg.delete()
         except Exception:
             pass
+
+        if kind == "clarification_required":
+            clarification_payload = payload.get("clarification", {})
+            question = str(payload.get("text", "")).strip()
+            hints = []
+            if isinstance(clarification_payload, dict):
+                raw_hints = clarification_payload.get("hints", [])
+                if isinstance(raw_hints, list):
+                    hints = [str(item).strip() for item in raw_hints if str(item).strip()]
+            clarification_text = question
+            if hints:
+                clarification_text = (
+                    f"{question}\n\n你可以补充以下任意一项：\n"
+                    + "\n".join(f"- {hint}" for hint in hints)
+                )
+            await _send_reply(update.message, clarification_text, url_title_map={})
+            return
+
+        title_map = payload.get("url_title_map", {}) if isinstance(payload, dict) else {}
         await _send_reply(update.message, reply, url_title_map=title_map if isinstance(title_map, dict) else {})
     except AgentGenerationError as e:
         logger.warning(f"[chat_id={chat_id}] generation blocked: {e}")
