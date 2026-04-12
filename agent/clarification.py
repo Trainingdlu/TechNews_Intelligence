@@ -7,6 +7,15 @@ from datetime import date
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import urlparse
+from .core.intent import (
+    classify_tool_profile,
+    classify_user_intent,
+    extract_user_intent_text as _extract_user_intent_text,
+    has_explicit_conflict_request,
+    is_analysis_heavy_intent,
+    is_conflict_resolution_intent,
+    is_roundup_listing_intent,
+)
 
 CLARIFICATION_KIND = "clarification_required"
 CLARIFICATION_REASON_INSUFFICIENT_EVIDENCE = "insufficient_evidence"
@@ -15,6 +24,8 @@ CLARIFICATION_REASON_SOURCE_CONFLICT = "source_conflict"
 
 _TIME_RANGE_RE = re.compile(
     r"(?:近|最近|过去)\s*\d+\s*天|近一周|最近一周|近一个月|最近一个月|"
+    r"今天|今日|当天|本日|近?24\s*小时|最近24小时|过去24小时|"
+    r"today|last\s*24\s*hours?|past\s*24\s*hours?|"
     r"last\s*\d+\s*days?|past\s*(?:week|month)|"
     r"\d{4}[/-]\d{1,2}[/-]\d{1,2}",
     re.IGNORECASE,
@@ -41,6 +52,12 @@ _GENERIC_TOPIC_RE = re.compile(
 _WIDE_QUERY_RE = re.compile(
     r"行业|全局|总体|宏观|盘点|综述|总结|全景|格局|"
     r"industry|market|overall|overview|landscape|big\s+picture|broad",
+    re.IGNORECASE,
+)
+_GENERIC_CJK_CHUNK_RE = re.compile(
+    r"(?:帮我|请|给我|原问题|用户补充澄清|分析|总结|新闻|动态|最近|今天|今日|发生|什么|"
+    r"全景|行业|格局|时间线|对比|比较|趋势|列出|列一下|直接|快讯|要闻|汇总|梳理|"
+    r"重新检索|有证据支撑|分析结论)",
     re.IGNORECASE,
 )
 _GENERIC_TOPIC_TOKENS = {
@@ -76,6 +93,7 @@ _SOURCE_ALIAS_MAP = {
     "tech crunch": "TechCrunch",
     "tc": "TechCrunch",
 }
+_DISPLAY_SOURCE_LABELS = frozenset({"HackerNews", "TechCrunch"})
 _POSITIVE_WORDS_RE = re.compile(
     r"增长|上升|强劲|乐观|改善|领先|看好|利好|突破|正向|"
     r"grow(?:th|ing)?|surge|bullish|positive|strong|improv(?:e|ed|ing)|leading|optimistic",
@@ -152,6 +170,66 @@ def infer_clarification_reason(user_message: str) -> str:
     return CLARIFICATION_REASON_INSUFFICIENT_EVIDENCE
 
 
+def _topic_hint_text(entities: list[str]) -> str:
+    if entities:
+        picks = " / ".join(entities[:3])
+        return f"具体主题：例如 {picks}（任选其一）"
+    return "具体主题：例如某家公司、产品或事件（任选其一）"
+
+
+def _display_source_labels(labels: list[str] | tuple[str, ...] | Any) -> list[str]:
+    normalized = _normalize_source_labels(labels)
+    return [label for label in normalized if label in _DISPLAY_SOURCE_LABELS]
+
+
+def _source_hint_text(source_labels: list[str]) -> str:
+    labels = _display_source_labels(source_labels)
+    if len(labels) >= 2:
+        return f"来源范围：例如仅 {labels[0]}、仅 {labels[1]} 或保留多来源对比"
+    if len(labels) == 1:
+        return f"来源范围：例如仅 {labels[0]} 或保留多来源"
+    return "来源范围：例如仅单一来源或保留多来源对比"
+
+
+def _build_missing_hints(
+    *,
+    scope: dict[str, Any],
+    source_labels: list[str],
+    entities: list[str],
+) -> list[str]:
+    hints: list[str] = []
+    if not bool(scope.get("has_time")):
+        hints.append("时间范围：例如最近 7 天或最近 30 天")
+    if not bool(scope.get("has_source")):
+        hints.append(_source_hint_text(source_labels))
+    if not bool(scope.get("has_topic")):
+        hints.append(_topic_hint_text(entities))
+    if not bool(scope.get("has_dimension")):
+        hints.append("分析维度：趋势 / 对比 / 时间线 / 格局")
+    if not hints:
+        hints.append("请补充时间范围、来源范围、主题或分析维度中的任意一项")
+    return hints
+
+
+def _reason_text_from_risk_tags(tags: list[str]) -> str:
+    mapping = {
+        "few_constraints": "约束条件较少",
+        "partial_constraints": "约束信息不完整",
+        "multi_source_unscoped": "涉及多个来源且未限定来源范围",
+        "large_url_set": "候选证据量较大",
+        "medium_url_set": "候选证据较多",
+        "long_time_span": "时间跨度较长",
+        "moderate_time_span": "时间窗口偏宽",
+        "many_entities_unscoped": "涉及实体较多且未聚焦",
+        "entity_dispersion": "主题实体分散",
+        "analytical_tool_chain": "分析链路较复杂",
+    }
+    parts = [mapping[tag] for tag in tags if tag in mapping]
+    if not parts:
+        return ""
+    return "；".join(parts[:2])
+
+
 def build_clarification_payload(
     user_message: str,
     *,
@@ -169,57 +247,59 @@ def build_clarification_payload(
         reason_value = CLARIFICATION_REASON_INSUFFICIENT_EVIDENCE
     scope = _query_scope_signals(text)
 
-    missing_hints: list[str] = []
-    if not _TIME_RANGE_RE.search(text):
-        missing_hints.append("时间范围：例如最近 7 天或最近 30 天")
-    if not _SOURCE_RANGE_RE.search(text):
-        missing_hints.append("来源范围：例如 HackerNews、TechCrunch 或全部来源")
-    if not _has_specific_topic(text):
-        missing_hints.append("具体实体/主题：例如 OpenAI、Google、AI 芯片")
-    if not _ANALYSIS_DIM_RE.search(text):
-        missing_hints.append("分析维度：趋势 / 对比 / 时间线 / 格局")
-    if not missing_hints:
-        missing_hints.append("请补充时间范围、来源范围、主题或分析维度中的任意一项")
-
-    source_labels = _normalize_source_labels(ctx.get("source_labels", []))
+    source_labels = _display_source_labels(ctx.get("source_labels", []))
     source_clause = "、".join(source_labels[:3]) if source_labels else "多个来源"
     time_span_days = _coerce_int(ctx.get("time_span_days"))
     entities = _normalize_entity_candidates(ctx.get("entity_candidates", []))
-    focus_entity = entities[0] if entities else "一个具体实体（如 OpenAI）"
     conflict_summary = str(ctx.get("conflict_summary", "")).strip()
+    risk_tags = [str(item).strip() for item in (ctx.get("ambiguous_scope_reasons") or []) if str(item).strip()]
+    missing_hints = _build_missing_hints(scope=scope, source_labels=source_labels, entities=entities)
+    source_hint = _source_hint_text(source_labels)
+    topic_hint = _topic_hint_text(entities)
 
     if reason_value == CLARIFICATION_REASON_SOURCE_CONFLICT:
+        ask_parts: list[str] = []
+        if not bool(scope.get("has_source")):
+            ask_parts.append("来源范围")
+        if not bool(scope.get("has_time")):
+            ask_parts.append("时间窗口")
+        if not bool(scope.get("has_dimension")):
+            ask_parts.append("分析维度")
+        ask_clause = "、".join(ask_parts[:3]) if ask_parts else "分析维度"
         if conflict_summary:
             question = (
                 f"当前多来源结论存在冲突：{conflict_summary}。"
-                "为了降低综合偏差，你希望我如何收敛范围？"
-                "例如“仅 TechCrunch + 最近 14 天 + 做趋势”或“保留双来源但只做时间线对比”。"
+                f"为了降低综合偏差，请先明确 {ask_clause} 后我再继续。"
             )
         else:
             question = (
                 f"当前 {source_clause} 对同一主题结论存在分歧。"
-                "请先确认分析范围：是缩小来源、缩短时间窗口，还是指定分析维度（趋势/对比/时间线/格局）？"
+                f"请先确认 {ask_clause}，我再给出可追溯的结论。"
             )
         hints = [
-            "来源范围：只看 HackerNews / 只看 TechCrunch / 保留双来源对比",
+            source_hint,
             "时间范围：例如最近 7 天、14 天或 30 天",
-            f"主题实体：建议指定 {focus_entity}",
+            topic_hint,
             "分析维度：趋势 / 对比 / 时间线 / 格局",
         ]
     elif reason_value == CLARIFICATION_REASON_AMBIGUOUS_SCOPE:
         span_hint = f"时间跨度约 {time_span_days} 天" if time_span_days is not None and time_span_days > 0 else "时间范围尚未收敛"
         entity_hint = f"主题涉及较广（如 {', '.join(entities[:3])}）" if entities else "主题跨度较大"
-        question = (
-            f"当前候选证据覆盖 {source_clause}，{span_hint}，且{entity_hint}。"
-            "为避免范围过宽导致误综合，请确认一个更具体的分析范围。"
-            "你更希望看最近 7 天还是 30 天？聚焦哪个来源和实体？"
-        )
-        hints = [
-            "时间范围：例如最近 7 天 / 最近 30 天",
-            "来源范围：例如仅 HackerNews、仅 TechCrunch 或双来源对比",
-            f"具体主题：建议指定 {focus_entity}",
-            "分析维度：趋势 / 对比 / 时间线 / 格局",
-        ]
+        risk_reason_text = _reason_text_from_risk_tags(risk_tags)
+        if risk_reason_text:
+            question = (
+                f"当前候选证据覆盖 {source_clause}，{span_hint}，且{entity_hint}。"
+                f"主要原因：{risk_reason_text}。"
+                "请确认更具体的分析范围后我再继续。"
+            )
+        else:
+            question = (
+                f"当前候选证据覆盖 {source_clause}，{span_hint}，且{entity_hint}。"
+                "为避免范围过宽导致误综合，请确认更具体的分析范围。"
+            )
+        if not bool(scope.get("has_time")):
+            question += "你更希望看最近 7 天还是 30 天？"
+        hints = missing_hints
     else:
         question = (
             "目前证据不足，先补充一个更具体的分析范围后我再继续。"
@@ -350,7 +430,7 @@ def _find_previous_user_message(history: list[dict] | None) -> str:
 
 
 def _has_specific_topic(user_message: str) -> bool:
-    text = str(user_message or "").strip()
+    text = _extract_user_intent_text(user_message)
     if not text:
         return False
     if _GENERIC_TOPIC_RE.search(text):
@@ -361,9 +441,20 @@ def _has_specific_topic(user_message: str) -> bool:
         return True
 
     cjk_chunks = re.findall(r"[\u4e00-\u9fff]{2,}", text)
-    generic_chunks = {"最近", "新闻", "动态", "分析", "趋势", "对比", "时间线", "格局", "科技", "人工智能"}
     for chunk in cjk_chunks:
-        if chunk not in generic_chunks:
+        if len(chunk) <= 2:
+            continue
+        if _GENERIC_CJK_CHUNK_RE.search(chunk):
+            continue
+        if chunk in {"科技", "人工智能"}:
+            continue
+        if re.fullmatch(r"[一二三四五六七八九十百千万两几多]+", chunk):
+            continue
+        if re.fullmatch(r"(最近|今天|今日|过去|近来)", chunk):
+            continue
+        if re.fullmatch(r"(新闻|动态|快讯|要闻|总结|分析)", chunk):
+            continue
+        else:
             return True
     return False
 
@@ -380,31 +471,59 @@ def detect_scope_or_conflict_reason(
     if not urls:
         return None, {}
 
-    scope = _query_scope_signals(user_message)
+    intent_text = _extract_user_intent_text(user_message)
+    user_intent = classify_user_intent(intent_text)
+    normalized_tool_calls = _normalize_tool_calls(tool_calls)
+    tool_profile = classify_tool_profile(normalized_tool_calls)
+    scope = _query_scope_signals(intent_text)
     source_labels = _source_labels_from_urls(urls)
+    source_labels = _augment_source_labels_with_context(
+        source_labels=source_labels,
+        user_message=intent_text,
+        tool_calls=normalized_tool_calls,
+    )
     time_span_days = _extract_time_span_days(candidate_answer)
     entity_candidates = _extract_entity_candidates(candidate_answer)
     context: dict[str, Any] = {
+        "intent_text": intent_text,
+        "user_intent": user_intent,
+        "tool_profile": tool_profile,
         "source_labels": source_labels,
         "source_count": len(source_labels),
         "url_count": len(urls),
         "time_span_days": time_span_days,
         "entity_candidates": entity_candidates,
-        "tool_calls": sorted(tool_calls or set()),
+        "tool_calls": sorted(normalized_tool_calls),
     }
+    if user_intent == "smalltalk_or_capability":
+        return None, context
 
     conflict_hit, conflict_summary = _detect_source_conflict(
-        user_message=user_message,
+        user_message=intent_text,
         candidate_answer=candidate_answer,
         source_labels=source_labels,
         scope=scope,
+        intent_label=user_intent,
+        tool_profile=tool_profile,
     )
     if conflict_hit:
         if conflict_summary:
             context["conflict_summary"] = conflict_summary
         return CLARIFICATION_REASON_SOURCE_CONFLICT, context
 
-    if _detect_ambiguous_scope(scope=scope, source_labels=source_labels, url_count=len(urls), time_span_days=time_span_days, entity_span=len(entity_candidates), user_message=user_message):
+    ambiguous_hit, ambiguous_score, ambiguous_reasons = _detect_ambiguous_scope(
+        scope=scope,
+        source_labels=source_labels,
+        url_count=len(urls),
+        time_span_days=time_span_days,
+        entity_span=len(entity_candidates),
+        user_message=intent_text,
+        intent_label=user_intent,
+        tool_profile=tool_profile,
+    )
+    context["ambiguous_scope_score"] = ambiguous_score
+    context["ambiguous_scope_reasons"] = ambiguous_reasons
+    if ambiguous_hit:
         return CLARIFICATION_REASON_AMBIGUOUS_SCOPE, context
 
     return None, context
@@ -423,6 +542,15 @@ def _normalize_urls(valid_urls: list[str] | set[str]) -> list[str]:
     return dedup
 
 
+def _normalize_tool_calls(tool_calls: set[str] | None) -> set[str]:
+    normalized: set[str] = set()
+    for raw in (tool_calls or set()):
+        name = str(raw or "").strip().lower()
+        if name:
+            normalized.add(name)
+    return normalized
+
+
 def _normalize_source_labels(labels: list[str] | tuple[str, ...] | Any) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -439,6 +567,36 @@ def _normalize_source_labels(labels: list[str] | tuple[str, ...] | Any) -> list[
         seen.add(canonical)
         out.append(canonical)
     return out
+
+
+def _extract_requested_source_labels(user_message: str) -> list[str]:
+    text = _extract_user_intent_text(user_message)
+    if not text:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for alias, canonical in _SOURCE_ALIAS_MAP.items():
+        if re.search(re.escape(alias), text, flags=re.IGNORECASE):
+            if canonical not in seen:
+                seen.add(canonical)
+                out.append(canonical)
+    return out
+
+
+def _augment_source_labels_with_context(
+    *,
+    source_labels: list[str],
+    user_message: str,
+    tool_calls: set[str],
+) -> list[str]:
+    labels = _normalize_source_labels(source_labels)
+    requested = _extract_requested_source_labels(user_message)
+    if requested:
+        labels = _normalize_source_labels([*labels, *requested])
+
+    if "compare_sources" in tool_calls:
+        labels = _normalize_source_labels([*labels, "HackerNews", "TechCrunch"])
+    return labels
 
 
 def _normalize_entity_candidates(entities: list[str] | tuple[str, ...] | Any) -> list[str]:
@@ -486,22 +644,11 @@ def _source_label_from_url(url: str) -> str:
         return "TechCrunch"
     if "news.ycombinator.com" in host or host.endswith("ycombinator.com"):
         return "HackerNews"
-
-    parts = [part for part in host.split(".") if part]
-    if len(parts) >= 3 and parts[-2] in {"co", "com", "org", "net"}:
-        root = parts[-3]
-    elif len(parts) >= 2:
-        root = parts[-2]
-    else:
-        root = parts[0]
-    root = root.strip("-_")
-    if not root:
-        return host
-    return root[:1].upper() + root[1:]
+    return ""
 
 
 def _query_scope_signals(user_message: str) -> dict[str, Any]:
-    text = str(user_message or "").strip()
+    text = _extract_user_intent_text(user_message)
     has_time = bool(_TIME_RANGE_RE.search(text))
     has_source = bool(_SOURCE_RANGE_RE.search(text))
     has_topic = _has_specific_topic(text)
@@ -520,6 +667,120 @@ def _query_scope_signals(user_message: str) -> dict[str, Any]:
     }
 
 
+def _is_roundup_listing_request(user_message: str, scope: dict[str, Any]) -> bool:
+    text = _extract_user_intent_text(user_message)
+    if not text:
+        return False
+    if bool(scope.get("has_topic")):
+        return False
+    if bool(scope.get("has_dimension")):
+        return False
+    return is_roundup_listing_intent(text)
+
+
+def _is_analysis_heavy_request(user_message: str, scope: dict[str, Any]) -> bool:
+    text = _extract_user_intent_text(user_message)
+    if not text:
+        return False
+    if _is_roundup_listing_request(text, scope):
+        return False
+    if bool(scope.get("has_dimension")):
+        return True
+    if is_analysis_heavy_intent(text):
+        return True
+    return bool(_WIDE_QUERY_RE.search(text))
+
+
+def _scope_is_tight(scope: dict[str, Any]) -> bool:
+    specified = int(scope.get("specified_count", 0) or 0)
+    if (
+        bool(scope.get("has_source"))
+        and bool(scope.get("has_time"))
+        and bool(scope.get("has_topic"))
+        and (bool(scope.get("has_dimension")) or specified >= 3)
+    ):
+        return True
+    return specified >= 3
+
+
+def _ambiguous_scope_risk_score(
+    *,
+    scope: dict[str, Any],
+    source_labels: list[str],
+    url_count: int,
+    time_span_days: int | None,
+    entity_span: int,
+    user_message: str,
+    intent_label: str,
+    tool_profile: str,
+) -> tuple[int, list[str]]:
+    text = _extract_user_intent_text(user_message)
+    score = 0
+    reasons: list[str] = []
+    specified = int(scope.get("specified_count", 0) or 0)
+
+    if bool(scope.get("broad_query")):
+        score += 2
+        reasons.append("broad_query")
+    if specified <= 1:
+        score += 2
+        reasons.append("few_constraints")
+    elif specified == 2:
+        score += 1
+        reasons.append("partial_constraints")
+
+    if len(source_labels) >= 2 and not bool(scope.get("has_source")):
+        score += 2
+        reasons.append("multi_source_unscoped")
+
+    if url_count >= 10:
+        score += 2
+        reasons.append("large_url_set")
+    elif url_count >= 6:
+        score += 1
+        reasons.append("medium_url_set")
+
+    if time_span_days is not None and not bool(scope.get("has_time")):
+        if time_span_days >= 60:
+            score += 2
+            reasons.append("long_time_span")
+        elif time_span_days >= 30:
+            score += 1
+            reasons.append("moderate_time_span")
+
+    if entity_span >= 8 and not bool(scope.get("has_topic")):
+        score += 2
+        reasons.append("many_entities_unscoped")
+    elif entity_span >= 5 and not bool(scope.get("has_topic")):
+        score += 1
+        reasons.append("entity_dispersion")
+
+    # Penalize overly aggressive clarification when user already gave useful constraints.
+    if bool(scope.get("has_time")):
+        score = max(0, score - 1)
+    if bool(scope.get("has_source")):
+        score = max(0, score - 1)
+    if bool(scope.get("has_topic")):
+        score = max(0, score - 1)
+
+    if len(source_labels) >= 2 and url_count >= 10 and _WIDE_QUERY_RE.search(text):
+        score += 1
+        reasons.append("extra_wide_multi_source_guard")
+
+    if tool_profile == "analytical":
+        score += 1
+        reasons.append("analytical_tool_chain")
+    elif tool_profile == "retrieval_only":
+        score = max(0, score - 1)
+        reasons.append("retrieval_only_tool_chain")
+
+    if intent_label == "roundup_listing":
+        score = max(0, score - 2)
+        reasons.append("roundup_intent_discount")
+
+    return score, reasons
+
+
 def _detect_ambiguous_scope(
     *,
     scope: dict[str, Any],
@@ -528,37 +789,38 @@ def _detect_ambiguous_scope(
     time_span_days: int | None,
     entity_span: int,
     user_message: str,
-) -> bool:
-    specified = int(scope.get("specified_count", 0) or 0)
-    if specified >= 3:
-        return False
+    intent_label: str,
+    tool_profile: str,
+) -> tuple[bool, int, list[str]]:
+    if intent_label in {"smalltalk_or_capability", "roundup_listing"}:
+        return False, 0, [f"intent_{intent_label}"]
+    if _scope_is_tight(scope):
+        return False, 0, ["scope_tight"]
 
-    dispersion_score = 0
-    if len(source_labels) >= 2 and not bool(scope.get("has_source")):
-        dispersion_score += 1
-    if url_count >= 8:
-        dispersion_score += 1
-    if time_span_days is not None and time_span_days >= 45 and not bool(scope.get("has_time")):
-        dispersion_score += 1
-    if entity_span >= 5 and not bool(scope.get("has_topic")):
-        dispersion_score += 1
+    score, reasons = _ambiguous_scope_risk_score(
+        scope=scope,
+        source_labels=source_labels,
+        url_count=url_count,
+        time_span_days=time_span_days,
+        entity_span=entity_span,
+        user_message=user_message,
+        intent_label=intent_label,
+        tool_profile=tool_profile,
+    )
 
-    broad_query = bool(scope.get("broad_query"))
-    if broad_query and dispersion_score >= 2 and specified <= 2:
-        return True
-    if dispersion_score >= 3 and specified <= 2:
-        return True
+    threshold = 7
+    if intent_label == "analysis":
+        threshold = 6
+    elif intent_label == "conflict_resolution":
+        threshold = 5
 
-    # Extra guard: broad analysis requests without clear scope, multi-source + many urls.
-    if (
-        len(source_labels) >= 2
-        and url_count >= 10
-        and not bool(scope.get("has_time"))
-        and not bool(scope.get("has_source"))
-        and _WIDE_QUERY_RE.search(str(user_message or ""))
-    ):
-        return True
-    return False
+    analysis_heavy = _is_analysis_heavy_request(user_message, scope)
+    if analysis_heavy and tool_profile == "analytical":
+        threshold = max(4, threshold - 1)
+
+    if score >= threshold:
+        return True, score, reasons
+    return False, score, reasons
 
 
 def _detect_source_conflict(
@@ -567,7 +829,19 @@ def _detect_source_conflict(
     candidate_answer: str,
     source_labels: list[str],
     scope: dict[str, Any],
+    intent_label: str,
+    tool_profile: str,
 ) -> tuple[bool, str]:
+    if intent_label in {"smalltalk_or_capability", "roundup_listing"}:
+        return False, ""
+    if not _needs_conflict_resolution(
+        user_message,
+        scope,
+        intent_label=intent_label,
+        tool_profile=tool_profile,
+    ):
+        return False, ""
+
     if len(source_labels) < 2:
         return False, ""
 
@@ -582,23 +856,45 @@ def _detect_source_conflict(
     divergence = bool(positive_sources and negative_sources)
     conflict_words_hit = bool(_CONFLICT_WORDS_RE.search(text))
     explicit_compare = bool(re.search(r"对比|比较|compare|comparison|vs", str(user_message or ""), flags=re.IGNORECASE))
+    explicit_conflict_request = has_explicit_conflict_request(user_message)
 
-    if not divergence and not conflict_words_hit:
+    if not divergence:
+        if conflict_words_hit and explicit_conflict_request and not _scope_is_tight(scope):
+            return True, "不同来源对同一主题的判断存在明显分歧"
         return False, ""
 
     # If user already constrained very tightly, keep normal answer path.
-    if (
-        bool(scope.get("has_source"))
-        and bool(scope.get("has_time"))
-        and bool(scope.get("has_topic"))
-        and (bool(scope.get("has_dimension")) or explicit_compare)
-    ):
+    if _scope_is_tight(scope) and not explicit_compare and not explicit_conflict_request:
         return False, ""
 
     if divergence:
         summary = f"{positive_sources[0]} 偏正向，而 {negative_sources[0]} 更偏谨慎"
         return True, summary
     return True, "不同来源对同一主题的判断存在明显分歧"
+
+
+def _needs_conflict_resolution(
+    user_message: str,
+    scope: dict[str, Any],
+    *,
+    intent_label: str,
+    tool_profile: str,
+) -> bool:
+    if intent_label in {"smalltalk_or_capability", "roundup_listing"}:
+        return False
+    if intent_label == "conflict_resolution":
+        return True
+    if intent_label == "analysis" and tool_profile == "analytical":
+        return True
+
+    text = _extract_user_intent_text(user_message)
+    if not text:
+        return False
+    if is_conflict_resolution_intent(text):
+        return True
+    if bool(scope.get("has_dimension")) and tool_profile in {"analytical", "mixed"}:
+        return True
+    return False
 
 
 def _source_polarity_scores(text: str, source_labels: list[str]) -> dict[str, int]:

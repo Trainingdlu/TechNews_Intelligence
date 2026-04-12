@@ -30,6 +30,7 @@ from .core.evidence import (
     decorate_response_with_sources as _decorate_response_with_sources_core,
     has_inline_citation_in_body as _has_inline_citation_in_body_core,
 )
+from .core.intent import classify_user_intent
 from .core.metrics import (
     get_route_metrics_snapshot,
     metrics_inc as _metrics_inc,
@@ -602,45 +603,6 @@ def _contains_cjk(text: str) -> bool:
     return bool(re.search(r"[一-鿿]", text or ""))
 
 
-_SMALLTALK_INTENT_RE = re.compile(
-    r"(?:^|\s)(?:hi|hello|hey|yo|thanks?|thank you|你好|您好|嗨|哈喽|在吗|早上好|下午好|晚上好|谢谢|辛苦了)(?:\s|$|[，。！？?!,])",
-    re.IGNORECASE,
-)
-_CAPABILITY_INTENT_RE = re.compile(
-    r"(?:你|您|机器人|助手|bot|assistant).*(?:能|可以|会|支持|can|able to).*(?:做什么|干什么|哪些功能|支持什么|怎么用|能做啥|what can you|how to use|capabilities|对比什么|分析什么)",
-    re.IGNORECASE,
-)
-_CAPABILITY_HINT_RE = re.compile(
-    r"(?:what can you|how can you help|your capabilities|你能做什么|你可以做什么|支持什么|怎么用|对比什么|分析什么)",
-    re.IGNORECASE,
-)
-_ANALYSIS_INTENT_RE = re.compile(
-    r"(?:最近|过去|近\d+天|近一周|近一个月|last\s*\d+\s*days?|recent|past|analy[sz]e|analysis|compare|vs|timeline|trend|outlook|landscape|"
-    r"分析|对比|比较|趋势|时间线|动态|格局|局势|复盘|汇总|梳理)",
-    re.IGNORECASE,
-)
-
-
-def _is_smalltalk_or_capability_intent(user_message: str) -> bool:
-    text = str(user_message or "").strip()
-    if not text:
-        return False
-    if _SMALLTALK_INTENT_RE.search(text):
-        return True
-    if _CAPABILITY_INTENT_RE.search(text):
-        return True
-    if _CAPABILITY_HINT_RE.search(text):
-        return True
-    return False
-
-
-def _is_analysis_intent(user_message: str) -> bool:
-    text = str(user_message or "").strip()
-    if not text:
-        return False
-    return bool(_ANALYSIS_INTENT_RE.search(text))
-
-
 def _should_block_empty_evidence(
     user_message: str, valid_urls: list[str] | set[str], tool_calls: set[str]
 ) -> bool:
@@ -649,9 +611,10 @@ def _should_block_empty_evidence(
         return False
     if tool_calls:
         return True
-    if _is_smalltalk_or_capability_intent(user_message):
+    user_intent = classify_user_intent(user_message)
+    if user_intent == "smalltalk_or_capability":
         return False
-    if _is_analysis_intent(user_message):
+    if user_intent in {"analysis", "conflict_resolution", "roundup_listing"}:
         return True
     return True
 
