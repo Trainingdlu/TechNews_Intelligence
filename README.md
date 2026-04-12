@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
   <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/title.svg" alt="TechNews Intelligence" width="700">
   <img src="https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_Agent-blue?style=flat-square" alt="技术栈">
   <img src="https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square" alt="许可证">
@@ -79,6 +79,10 @@
 | `access_tokens`    | 网页前端令牌管理表，存储用户邮箱、令牌、配额与使用量  |
 | `source_registry`  | 数据源注册表，控制订阅可选的新闻源                     |
 | `system_logs`      | 系统运行日志                                |
+| `conversation_threads` | 对话会话管理，按 channel 隔离，持久化线程元数据 |
+| `conversation_messages` | 对话消息存储，关联 thread_id，保存完整 payload |
+| `agent_runs`       | 智能体请求级 Trace，记录延迟、Token 用量、工具调用链、异常链 |
+| `agent_tool_events` | 工具级事件明细，关联 request_id，记录每次工具调用的输入/输出摘要 |
 
 视图 `view_dashboard_news` 封装了时区转换（UTC → UTC+8）、来源归一化（优先 `source_registry`，并回退 `tech_news` 字段与 URL 兜底规则）、hours_ago 计算和 HN 讨论链接生成，分析查询层不重复这些逻辑。
 
@@ -113,24 +117,34 @@
 
 ### 运行时架构
 
-系统采用统一的 ReAct 智能体单循环架构，LLM 拥有完全的工具调用自主权。工具执行通过 SkillRegistry（技能注册中心）统一分发，并由 ToolHookRunner 在执行前后插入参数校验与证据审计守卫。
+系统采用统一的 ReAct 智能体单循环架构，LLM 拥有完全的工具调用自主权。工具执行通过 SkillRegistry（技能注册中心）统一分发，并由 ToolHookRunner 在执行前后插入参数校验与证据审计守卫。每次请求自动绑定 `AgentRequestTrace`，记录工具调用链、延迟与 Token 用量，并在请求结束后持久化至 `agent_runs` / `agent_tool_events` 表。当证据不足或来源冲突时，Clarification HITL 机制会中断生成并返回结构化澄清问题，由用户补充范围后再继续。
 
 ```text
 请求入口 (app/api.py / app/bot.py / app/cli.py)
   ↓
+Clarification 历史解析 ── 检测是否为澄清追问，合并原问题
+  ↓
+request_trace_context() ── 绑定 AgentRequestTrace
+  ↓
 agent.py → LangGraph create_react_agent
   ↓  ↑ (tool calls)
+trace_tool_start()             ── 记录工具开始
 ToolHookRunner.pre_tool_use()  ── 参数校验
   ↓
-SkillRegistry.execute()        ── agent/skills/... (DB / Jina API / 知识库能力)
+SkillRegistry.execute()        ── agent/skills/... (DB / Jina Rerank / 知识库能力)
   ↓
 ToolHookRunner.post_tool_use() ── 证据审计
+trace_tool_finish()            ── 记录工具结束与输出摘要
   ↓
 SkillEnvelope → Evidence 累积
   ↓
-LLM 生成最终回复
+LLM 生成最终回复 → Token 用量采集
+  ↓
+Clarification 检测 ── 证据不足 / 范围模糊 / 来源冲突 → 结构化澄清
   ↓
 后处理管道 (evidence.py)        ── 引用归一化 + 来源列表
+  ↓
+finalize_request_trace()       ── Trace 持久化至 DB
 ```
 
 ### 工具体系
@@ -139,19 +153,21 @@ LLM 生成最终回复
 
 | 工具 | 用途 |
 | :--- | :--- |
-| `search_news` | 混合检索（pgvector 语义相似度 + 关键词精确匹配），合并去重 |
+| `search_news` | 混合检索（pgvector 语义相似度 + 关键词精确匹配），合并去重，支持 Rerank 二次排序 |
 | `query_news` | 结构化过滤查询（来源、分类、情感、时间窗口、排序） |
 | `trend_analysis` | 话题动量分析：近 N 天 vs 前 N 天的数据量与热度对比 |
 | `compare_sources` | HackerNews vs TechCrunch 双源覆盖与情感差异对比 |
 | `compare_topics` | A vs B 实体对比（如 OpenAI vs Anthropic），含指标与证据 |
 | `build_timeline` | 时间线构建：按时间排列的事件编年，自动扩展窗口 |
 | `analyze_landscape` | 竞争格局分析：实体维度统计 + 信号分类（Compute / Algorithm / Data / GTM / Policy） |
-| `fulltext_batch` | 批量全文阅读，支持 URL 列表或关键词自动选取 |
+| `fulltext_batch` | 批量全文阅读，支持 URL 列表或关键词自动选取，支持 Rerank 优先选取 |
 | `read_news_content` | 单篇新闻原文读取（从 `jina_raw_logs` 提取） |
 | `get_db_stats` | 数据库新鲜度与文章总量 |
 | `list_topics` | 近 21 天每日发文量分布 |
 
 **混合检索机制**：纯向量检索在公司名、产品名等专有名词上容易召回偏移，关键词匹配作为兜底保证精确查询的稳定性。检索评分融合了语义相似度、关键词命中、热度归一化和时间衰减因子 `0.1 × EXP(-age_seconds / 86400 / 21)`。
+
+**Rerank 二次排序**：召回结果可通过 Jina Reranker 进行二次精排（Cross-Encoder 或 LLM Rerank 模式），由环境变量 `NEWS_RERANK_MODE` 控制（`none` / `cross_encoder` / `llm_rerank`），失败时自动 fallback 至原始召回顺序。
 
 ### 基础设施层
 
@@ -161,7 +177,12 @@ LLM 生成最终回复
 | SkillEnvelope | `core/skill_contracts.py` | 统一输出信封：`status`(ok/empty/error) + `data` + `evidence[]` + `diagnostics` |
 | ToolHookRunner | `core/tool_hooks.py` | Pre-hook 参数守卫（时间窗口范围、topic 非空、去重校验）；Post-hook 证据完整性审计 |
 | Evidence Pipeline | `core/evidence.py` | URL 提取 → 内联引用编号 → 来源列表渲染 → 无效引用清洗 |
-| Metrics | `core/metrics.py` | 运行时指标：请求量、成功率、错误率、递归超限率，自动日志输出 |
+| Agent Trace | `core/trace.py` | 请求级追踪：工具调用事件记录、Token 用量采集、异常链捕获、摘要持久化 |
+| Trace Store | `services/agent_trace_store.py` | Trace 持久化适配器：将 `AgentRequestTrace` 摘要写入 `agent_runs` + `agent_tool_events` 表 |
+| Rerank | `skills/rerank.py` | 二次精排：Jina Cross-Encoder / LLM Rerank，支持环境变量配置与 fallback |
+| Clarification HITL | `clarification.py` | 证据不足 / 范围模糊 / 来源冲突检测 → 结构化澄清问题生成 → 用户追问自动合并 |
+| Thread Persistence | `services/conversations.py` | 对话线程持久化：创建线程、追加消息、加载历史、按 channel 列举 |
+| Metrics | `core/metrics.py` | 运行时指标：请求量、成功率、错误率、递归超限率、Trace 指标，自动日志输出 |
 | 角色策略 | `core/role_policy.py` | 角色-技能 ACL 策略（预留多智能体扩展点） |
 | MCP 协议层 | `mcp/` | In-Process + Stdio 双传输后端的 MCP 抽象，作为扩展层保留，非默认请求路径 |
 
@@ -188,17 +209,18 @@ LLM 生成最终回复
 
 | 入口 | 实现 | 部署 | 对话历史 |
 | :--- | :--- | :--- | :--- |
-| 网页前端 | FastAPI (`app/api.py`) + Bearer 令牌 | Docker 容器 `tech_news_api` | 客户端携带 `history` 参数，API 无状态 |
+| 网页前端 | FastAPI (`app/api.py`) + Bearer 令牌 | Docker 容器 `tech_news_api` | 客户端携带 `history` 参数，支持 DB 持久化线程 |
 | Telegram 机器人 | python-telegram-bot (`app/bot.py`) | Docker 容器 `tech_news_bot` | 进程内字典，按 `chat_id` 隔离 |
 | 本地命令行 | `app/cli.py` | 本地 Python | `_SessionChat` 对象持有 |
 
-**令牌配额机制**：网页前端通过邮箱自动获取令牌（默认 10 次），配额耗尽后自动触发管理员审批邮件，管理员一键批准可提升至 50 次。<br>
+**令牌配额机制**：网页前端通过邮箱自动获取令牌（默认 10 次），配额耗尽后自动触发管理员审批邮件，管理员一键批准可提升至 50 次。Clarification 流程触发时自动退还配额，不消耗用户次数。<br>
 **限流**：网页 API 按 IP 限流（默认 5 次/分钟）；Telegram 机器人按 chat_id 限流（默认 3 次/10 秒）。
 
 ### 质量保障
 
-- **单元测试**（`tests/unit/`）：覆盖 agent 路由指标、MCP 适配器、工具结构化输出、runtime factories、eval core 等模块
+- **单元测试**（`tests/unit/`）：覆盖 agent 路由指标、Trace 生命周期、Trace 持久化、Clarification 原因推断与场景覆盖、来源冲突检测、Rerank 流程与 fallback、对话线程服务、API 澄清集成、Bot 鲁棒性、MCP 适配器、工具结构化输出、runtime factories、eval core 等模块
 - **评测框架**（`eval/`）：JSONL 格式测试数据集，支持按类别/能力筛选；多次运行计算输出稳定性；质量门禁阈值检测与基线回归对比
+- **Rerank 评测**（`eval/rerank_eval.py`）：离线 NDCG / MRR 基准对比，对比召回原始顺序与 Rerank 后排序的检索质量增量
 
 ---
 
@@ -213,9 +235,10 @@ TechNews_Intelligence/
 │
 ├── agent/                           # 智能体核心逻辑
 │   ├── agent.py                     # ReAct 运行时主入口
+│   ├── clarification.py             # Clarification HITL：范围/冲突检测 + 结构化澄清
 │   ├── prompts.py                   # 系统提示词与约束
-│   ├── skills/                      # 具体技能实现代码
-│   ├── core/                        # skill registry / hooks / evidence / metrics
+│   ├── skills/                      # 具体技能实现代码（含 rerank.py 二次精排）
+│   ├── core/                        # skill registry / hooks / evidence / metrics / trace
 │   ├── mcp/                         # MCP 扩展层
 │   ├── .env.example
 
@@ -226,7 +249,9 @@ TechNews_Intelligence/
 │
 ├── services/                        # 基础服务
 │   ├── db.py                        # PostgreSQL 连接与查询
-│   └── mail.py                      # 邮件通知
+│   ├── mail.py                      # 邮件通知
+│   ├── agent_trace_store.py         # Agent Trace 持久化适配器
+│   └── conversations.py             # 对话线程持久化服务
 │
 ├── eval/                            # 离线评测框架
 │   ├── run_eval.py
