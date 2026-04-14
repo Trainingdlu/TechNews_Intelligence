@@ -1,0 +1,8 @@
+-r requirements.txt
+
+# Observability / tracing
+langsmith>=0.7,<1
+
+# LLM-as-judge RAG evaluation
+ragas>=0.2,<1
+datasets>=2.18,<4

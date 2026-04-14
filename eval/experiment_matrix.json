@@ -1,0 +1,61 @@
+{
+  "name": "rag_agent_eval_matrix_v2",
+  "description": "Six-group matrix to isolate retrieval-recall, rerank, and agent-body contributions.",
+  "groups": [
+    {
+      "id": "G0_baseline",
+      "description": "R0 + A0 (current baseline)",
+      "env": {
+        "EVAL_RETRIEVAL_VARIANT": "baseline",
+        "EVAL_AGENT_VARIANT": "baseline",
+        "NEWS_RERANK_MODE": "none"
+      }
+    },
+    {
+      "id": "G1_recall_only",
+      "description": "Recall optimization only; rerank disabled; agent baseline",
+      "env": {
+        "EVAL_RETRIEVAL_VARIANT": "recall_optimized",
+        "EVAL_AGENT_VARIANT": "baseline",
+        "NEWS_RERANK_MODE": "none"
+      }
+    },
+    {
+      "id": "G2_rerank_only",
+      "description": "Rerank optimization only; recall baseline; agent baseline",
+      "env": {
+        "EVAL_RETRIEVAL_VARIANT": "rerank_optimized",
+        "EVAL_AGENT_VARIANT": "baseline",
+        "NEWS_RERANK_MODE": "cross_encoder"
+      }
+    },
+    {
+      "id": "G3_retrieval_full",
+      "description": "Recall + rerank optimization; agent baseline",
+      "env": {
+        "EVAL_RETRIEVAL_VARIANT": "retrieval_full_optimized",
+        "EVAL_AGENT_VARIANT": "baseline",
+        "NEWS_RERANK_MODE": "cross_encoder"
+      }
+    },
+    {
+      "id": "G4_agent_only",
+      "description": "Agent-body optimization only; retrieval baseline",
+      "env": {
+        "EVAL_RETRIEVAL_VARIANT": "baseline",
+        "EVAL_AGENT_VARIANT": "agent_optimized",
+        "NEWS_RERANK_MODE": "none"
+      }
+    },
+    {
+      "id": "G5_full_optimized",
+      "description": "Retrieval full optimization + agent optimization",
+      "env": {
+        "EVAL_RETRIEVAL_VARIANT": "retrieval_full_optimized",
+        "EVAL_AGENT_VARIANT": "agent_optimized",
+        "NEWS_RERANK_MODE": "cross_encoder"
+      }
+    }
+  ]
+}
+

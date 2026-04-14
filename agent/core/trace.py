@@ -21,6 +21,7 @@ _MAX_STR_LEN = 240
 _MAX_LIST_ITEMS = 6
 _MAX_DICT_ITEMS = 12
 _MAX_ERROR_CHAIN = 6
+_MAX_CONTEXT_DOCS = 8
 logger = logging.getLogger(__name__)
 
 
@@ -68,6 +69,65 @@ def summarize_payload(value: Any, *, depth: int = _MAX_SUMMARY_DEPTH) -> Any:
     return _truncate_text(repr(value))
 
 
+def _extract_context_docs(data: Any) -> list[dict[str, Any]]:
+    """Extract lightweight context docs for downstream eval/ragas use."""
+    docs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _append_doc(url: str, title: str, summary: str) -> None:
+        key = f"{url}|{title}|{summary}"
+        if key in seen:
+            return
+        seen.add(key)
+        docs.append(
+            {
+                "url": _truncate_text(url, max_len=280),
+                "title": _truncate_text(title, max_len=160),
+                "summary": _truncate_text(summary, max_len=420),
+            }
+        )
+
+    def _from_mapping(item: dict[str, Any]) -> None:
+        url = str(item.get("url") or item.get("link") or "").strip()
+        title = str(
+            item.get("title")
+            or item.get("title_cn")
+            or item.get("headline")
+            or item.get("name")
+            or ""
+        ).strip()
+        summary = str(
+            item.get("summary")
+            or item.get("snippet")
+            or item.get("content")
+            or item.get("raw_output")
+            or ""
+        ).strip()
+        if not (url or title or summary):
+            return
+        _append_doc(url, title, summary)
+
+    if isinstance(data, dict):
+        for key in ("records", "selected", "articles", "items"):
+            value = data.get(key)
+            if not isinstance(value, list):
+                continue
+            for item in value:
+                if isinstance(item, dict):
+                    _from_mapping(item)
+                if len(docs) >= _MAX_CONTEXT_DOCS:
+                    return docs
+
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                _from_mapping(item)
+            if len(docs) >= _MAX_CONTEXT_DOCS:
+                return docs
+
+    return docs
+
+
 def summarize_envelope(envelope: SkillEnvelope) -> dict[str, Any]:
     """Build a compact summary from a SkillEnvelope."""
     summary: dict[str, Any] = {
@@ -92,6 +152,11 @@ def summarize_envelope(envelope: SkillEnvelope) -> dict[str, Any]:
         summary["data_type"] = "none"
     else:
         summary["data_type"] = type(data).__name__
+
+    context_docs = _extract_context_docs(data)
+    if context_docs:
+        summary["context_docs"] = context_docs
+        summary["context_count"] = len(context_docs)
 
     if envelope.error:
         summary["error"] = _truncate_text(envelope.error)

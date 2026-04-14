@@ -64,6 +64,77 @@ def test_resolve_dataset_path_from_suite_name() -> None:
     assert resolved.name == "smoke.jsonl"
 
 
+def test_build_experiment_context_captures_group_and_env(monkeypatch) -> None:  # noqa: ANN001
+    args = _parse_default_args()
+    args.experiment_group = "  G0_baseline  "
+    monkeypatch.setenv("EVAL_RETRIEVAL_VARIANT", "baseline")
+    monkeypatch.setenv("NEWS_RERANK_MODE", "none")
+
+    context = run_eval._build_experiment_context(args)
+    assert context["group"] == "G0_baseline"
+    assert context["env"]["EVAL_RETRIEVAL_VARIANT"] == "baseline"
+    assert context["env"]["NEWS_RERANK_MODE"] == "none"
+
+
+def test_invoke_eval_payload_backward_compatibility() -> None:
+    def _legacy_fn(_history, _question):
+        return {"text": "ok", "tool_calls": ["query_news"]}
+
+    payload = run_eval._invoke_eval_payload(
+        _legacy_fn,
+        "Q",
+        request_id="req-1",
+        case_id="case-1",
+        experiment_group="G0",
+        include_trace_summary=True,
+    )
+    assert payload["text"] == "ok"
+    assert payload["tool_calls"] == ["query_news"]
+
+
+def test_build_ragas_rows_extracts_trace_contexts() -> None:
+    report = {
+        "experiment": {"group": "G3_retrieval_full"},
+        "cases": [
+            {
+                "id": "case_1",
+                "question": "Q1",
+                "outputs": ["A1"],
+                "constraints": {
+                    "ground_truth": "GT1",
+                    "expected_facts": [],
+                    "ragas_contexts": ["fallback context"],
+                },
+                "runs": [
+                    {
+                        "trace_summary": {
+                            "tool_events": [
+                                {
+                                    "output_summary": {
+                                        "context_docs": [
+                                            {
+                                                "url": "https://a.com",
+                                                "title": "Doc A",
+                                                "summary": "Doc summary A",
+                                            }
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ],
+            }
+        ],
+    }
+    rows = run_eval._build_ragas_rows(report)
+    assert len(rows) == 1
+    assert rows[0]["case_id"] == "case_1"
+    assert rows[0]["reference"] == "GT1"
+    assert rows[0]["experiment_group"] == "G3_retrieval_full"
+    assert rows[0]["contexts"] == ["Doc summary A"]
+
+
 def test_main_returns_nonzero_when_quality_gate_fails(monkeypatch) -> None:  # noqa: ANN001
     with _case_dir() as tmp_dir:
         dataset = tmp_dir / "suite.jsonl"

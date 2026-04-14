@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -45,6 +47,14 @@ except ImportError:  # package-style import fallback
 
 
 ROUTE_METRICS_SCHEMA_VERSION = 3
+EXPERIMENT_ENV_KEYS = (
+    "EVAL_RETRIEVAL_VARIANT",
+    "EVAL_AGENT_VARIANT",
+    "NEWS_RERANK_MODE",
+    "SEARCH_NEWS_RERANK_MODE",
+    "FULLTEXT_BATCH_RERANK_MODE",
+    "AGENT_PROMPT_VARIANT",
+)
 
 
 def _bootstrap_imports() -> tuple[Any, Any, Any, Any]:
@@ -74,33 +84,50 @@ def _run_case(
     generate_response_eval_payload: Any,
     get_last_tool_calls_snapshot: Any,
     include_outputs: bool,
+    include_trace_summary: bool,
+    experiment_group: str,
 ) -> dict[str, Any]:
     outputs: list[str] = []
     output_meta: list[dict[str, Any]] = []
     tool_calls_by_run: list[list[str]] = []
     for idx in range(1, runs_per_question + 1):
+        request_id = f"eval-{case['id']}-{idx}-{uuid.uuid4().hex[:8]}"
+        payload: dict[str, Any] = {}
         try:
-            payload = generate_response_eval_payload([], case["question"])
+            payload = _invoke_eval_payload(
+                generate_response_eval_payload,
+                case["question"],
+                request_id=request_id,
+                case_id=str(case.get("id", "")),
+                experiment_group=experiment_group,
+                include_trace_summary=include_trace_summary,
+            )
             text = str(payload.get("text", ""))
             tools = payload.get("tool_calls", [])
             if not isinstance(tools, list):
                 tools = []
+            trace_summary = payload.get("trace_summary")
+            if not isinstance(trace_summary, dict):
+                trace_summary = None
         except Exception as exc:  # noqa: BLE001 - eval should continue on failures
             text = f"[EVAL_ERROR] {type(exc).__name__}: {exc}"
             try:
                 tools = get_last_tool_calls_snapshot()
             except Exception:
                 tools = []
+            trace_summary = None
 
         outputs.append(text)
         tool_calls_by_run.append([str(t).strip() for t in tools if str(t).strip()])
-        output_meta.append(
-            {
-                "run_index": idx,
-                "url_count": len(extract_urls(text)),
-                "tool_calls": tool_calls_by_run[-1],
-            }
-        )
+        run_meta = {
+            "run_index": idx,
+            "request_id": str(payload.get("request_id", request_id)),
+            "url_count": len(extract_urls(text)),
+            "tool_calls": tool_calls_by_run[-1],
+        }
+        if include_trace_summary and trace_summary is not None:
+            run_meta["trace_summary"] = trace_summary
+        output_meta.append(run_meta)
 
         if sleep_seconds > 0 and idx < runs_per_question:
             time.sleep(sleep_seconds)
@@ -132,6 +159,8 @@ def _run_case(
             "acceptable_tool_paths": case.get("acceptable_tool_paths", []),
             "must_not_contain": case.get("must_not_contain", []),
             "expected_source_domains": case.get("expected_source_domains", []),
+            "ground_truth": case.get("ground_truth", ""),
+            "ragas_contexts": case.get("ragas_contexts", []),
         },
         "tags": case.get("tags", []),
         "metrics": metrics,
@@ -214,6 +243,23 @@ def _build_arg_parser(eval_dir: Path) -> argparse.ArgumentParser:
         "--include-outputs",
         action="store_true",
         help="Include full model outputs in report JSON.",
+    )
+    parser.add_argument(
+        "--include-trace-summary",
+        action="store_true",
+        help="Include request trace summary in run metadata (for LangSmith/Ragas analysis).",
+    )
+    parser.add_argument(
+        "--experiment-group",
+        type=str,
+        default="",
+        help="Optional experiment group id for A/B matrix tracking (e.g. G0_baseline).",
+    )
+    parser.add_argument(
+        "--export-ragas-jsonl",
+        type=Path,
+        default=None,
+        help="Optional path to export Ragas-ready JSONL rows after eval run.",
     )
     parser.add_argument(
         "--baseline",
@@ -394,6 +440,141 @@ def _resolve_dataset_path(eval_dir: Path, args: argparse.Namespace) -> Path:
     return (eval_dir / "datasets" / f"{args.suite.strip().lower()}.jsonl").resolve()
 
 
+def _build_experiment_context(args: argparse.Namespace) -> dict[str, Any]:
+    group = str(getattr(args, "experiment_group", "") or "").strip()
+    env_snapshot: dict[str, str] = {}
+    for key in EXPERIMENT_ENV_KEYS:
+        value = os.getenv(key)
+        if value is None:
+            continue
+        value = str(value).strip()
+        if value:
+            env_snapshot[key] = value
+
+    return {
+        "group": group,
+        "env": env_snapshot,
+    }
+
+
+def _invoke_eval_payload(
+    generate_response_eval_payload: Any,
+    question: str,
+    *,
+    request_id: str,
+    case_id: str,
+    experiment_group: str,
+    include_trace_summary: bool,
+) -> dict[str, Any]:
+    """Call eval payload function with best-effort backward compatibility."""
+    try:
+        payload = generate_response_eval_payload(
+            [],
+            question,
+            request_id=request_id,
+            case_id=case_id,
+            experiment_group=experiment_group,
+            include_trace_summary=include_trace_summary,
+        )
+    except TypeError:
+        try:
+            payload = generate_response_eval_payload(
+                [],
+                question,
+                request_id=request_id,
+            )
+        except TypeError:
+            payload = generate_response_eval_payload([], question)
+    if not isinstance(payload, dict):
+        return {"text": str(payload), "tool_calls": []}
+    return payload
+
+
+def _extract_contexts_from_trace_summary(summary: dict[str, Any] | None) -> list[str]:
+    if not isinstance(summary, dict):
+        return []
+    contexts: list[str] = []
+    seen: set[str] = set()
+    for event in summary.get("tool_events", []) or []:
+        if not isinstance(event, dict):
+            continue
+        output_summary = event.get("output_summary", {})
+        if not isinstance(output_summary, dict):
+            continue
+        docs = output_summary.get("context_docs", [])
+        if not isinstance(docs, list):
+            continue
+        for doc in docs:
+            if not isinstance(doc, dict):
+                continue
+            snippet = str(doc.get("summary") or doc.get("title") or doc.get("url") or "").strip()
+            if not snippet or snippet in seen:
+                continue
+            seen.add(snippet)
+            contexts.append(snippet)
+    return contexts
+
+
+def _build_ragas_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    experiment_group = str((report.get("experiment") or {}).get("group", "")).strip()
+    for case in report.get("cases", []) or []:
+        if not isinstance(case, dict):
+            continue
+        outputs = case.get("outputs")
+        if not isinstance(outputs, list) or not outputs:
+            continue
+
+        answer = str(outputs[0]).strip()
+        if not answer or answer.startswith("[EVAL_ERROR]"):
+            continue
+
+        constraints = case.get("constraints", {})
+        if not isinstance(constraints, dict):
+            constraints = {}
+        reference = str(constraints.get("ground_truth", "")).strip()
+        if not reference:
+            expected_facts = constraints.get("expected_facts", [])
+            if isinstance(expected_facts, list):
+                tokens = [str(item).strip() for item in expected_facts if str(item).strip()]
+                reference = "；".join(tokens)
+
+        runs = case.get("runs", [])
+        first_trace_summary: dict[str, Any] | None = None
+        if isinstance(runs, list) and runs:
+            first_run = runs[0]
+            if isinstance(first_run, dict):
+                candidate = first_run.get("trace_summary")
+                if isinstance(candidate, dict):
+                    first_trace_summary = candidate
+
+        contexts = _extract_contexts_from_trace_summary(first_trace_summary)
+        if not contexts:
+            ragas_contexts = constraints.get("ragas_contexts", [])
+            if isinstance(ragas_contexts, list):
+                contexts = [str(item).strip() for item in ragas_contexts if str(item).strip()]
+
+        rows.append(
+            {
+                "case_id": str(case.get("id", "")).strip(),
+                "question": str(case.get("question", "")).strip(),
+                "answer": answer,
+                "reference": reference,
+                "contexts": contexts,
+                "experiment_group": experiment_group,
+            }
+        )
+    return rows
+
+
+def _export_ragas_jsonl(report: dict[str, Any], output_path: Path) -> None:
+    rows = _build_ragas_rows(report)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
 def main() -> int:
     eval_dir = Path(__file__).resolve().parent
     parser = _build_arg_parser(eval_dir)
@@ -468,6 +649,8 @@ def main() -> int:
                 generate_response_eval_payload=generate_response_eval_payload,
                 get_last_tool_calls_snapshot=get_last_tool_calls_snapshot,
                 include_outputs=bool(args.include_outputs),
+                include_trace_summary=bool(args.include_trace_summary),
+                experiment_group=str(args.experiment_group or "").strip(),
             )
         )
 
@@ -481,6 +664,7 @@ def main() -> int:
         "runs_per_question": args.runs_per_question,
         "elapsed_seconds": round(elapsed, 3),
         "route_metrics_schema_version": ROUTE_METRICS_SCHEMA_VERSION,
+        "experiment": _build_experiment_context(args),
         "selection": selection,
         "capability_catalog": CAPABILITY_CATALOG,
         "summary": summary,
@@ -514,6 +698,11 @@ def main() -> int:
         json.dumps(report, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+    if args.export_ragas_jsonl:
+        ragas_path = args.export_ragas_jsonl.resolve()
+        _export_ragas_jsonl(report, ragas_path)
+        print(f"[Eval] ragas_jsonl={ragas_path}")
 
     print(
         "[Eval] selection: "

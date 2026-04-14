@@ -81,6 +81,8 @@ def test_optional_accuracy_fields_are_normalized() -> None:
             (
                 '{"id":"c1","category":"query","question":"Q",'
                 '"expected_facts":"openai,anthropic",'
+                '"ground_truth":"OpenAI and Anthropic are compared.",'
+                '"ragas_contexts":"ctx-a,ctx-b",'
                 '"expected_fact_groups":[["openai","oai"],"anthropic|claude"],'
                 '"required_tools":"query_news",'
                 '"acceptable_tool_paths":[["query_news"],["search_news","read_news_content"]],'
@@ -97,6 +99,8 @@ def test_optional_accuracy_fields_are_normalized() -> None:
     assert cases[0]["acceptable_tool_paths"] == [["query_news"], ["search_news", "read_news_content"]]
     assert cases[0]["must_not_contain"] == ["hallucination"]
     assert cases[0]["expected_source_domains"] == ["techcrunch.com", "news.ycombinator.com"]
+    assert cases[0]["ground_truth"] == "OpenAI and Anthropic are compared."
+    assert cases[0]["ragas_contexts"] == ["ctx-a", "ctx-b"]
 
 
 def test_filter_and_matrix() -> None:

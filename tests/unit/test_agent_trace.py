@@ -71,6 +71,7 @@ def test_trace_records_tool_success_empty_and_error() -> None:
     event_statuses = [event["status"] for event in summary["tool_events"]]
     assert event_statuses == ["success", "empty", "error"]
     assert summary["tool_events"][2]["error_code"] == "tool_runtimeerror"
+    assert summary["tool_events"][0]["output_summary"]["context_count"] == 1
 
 
 def test_generate_response_finalizes_success_trace() -> None:

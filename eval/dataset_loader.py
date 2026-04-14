@@ -180,6 +180,8 @@ def load_eval_cases(
                 "expected_source_domains": _normalize_str_list(
                     item.get("expected_source_domains", [])
                 ),
+                "ground_truth": str(item.get("ground_truth", "")).strip(),
+                "ragas_contexts": _normalize_str_list(item.get("ragas_contexts", [])),
                 "tags": _normalize_str_list(item.get("tags", [])),
                 "enabled": enabled,
             }

@@ -599,6 +599,35 @@ def _decorate_response_with_sources(
     )
 
 
+
+_SOURCE_BULLET_RE = re.compile(r"^\s*-\s*\[(\d{1,3})\]\s+(.+?)\s*$")
+
+
+def _extract_citation_urls_from_text(text: str) -> list[str]:
+    """Extract ordered citation URLs from rendered source bullet lines."""
+    citation_map: dict[int, str] = {}
+    for line in str(text or "").splitlines():
+        match = _SOURCE_BULLET_RE.match(line)
+        if not match:
+            continue
+        idx = int(match.group(1))
+        rest = match.group(2).strip()
+
+        url_match = re.search(r"\]\((https?://[^\s)]+)\)", rest, flags=re.IGNORECASE)
+        if not url_match:
+            url_match = re.search(r"https?://[^\s)]+", rest, flags=re.IGNORECASE)
+        if not url_match:
+            continue
+
+        url = str(url_match.group(1) if url_match.lastindex else url_match.group(0)).rstrip(".,;:!?)")
+        if not url:
+            continue
+        citation_map[idx] = url
+
+    if not citation_map:
+        return []
+    return [citation_map[idx] for idx in sorted(citation_map.keys())]
+
 def _contains_cjk(text: str) -> bool:
     return bool(re.search(r"[一-鿿]", text or ""))
 
@@ -649,17 +678,28 @@ def _enforce_inline_citation_guard(
 # ---------------------------------------------------------------------------
 # Core generation
 # ---------------------------------------------------------------------------
-def _generate_react(history: list[dict], user_message: str) -> tuple[str, list[str]]:
+def _generate_react(
+    history: list[dict],
+    user_message: str,
+    *,
+    invoke_metadata: dict[str, Any] | None = None,
+    invoke_tags: list[str] | None = None,
+) -> tuple[str, list[str]]:
     """Run the ReAct agent loop with Skill infrastructure."""
     agent = _get_react_agent()
     messages = _history_to_messages(history)
     messages.append(HumanMessage(content=user_message))
 
     recursion_limit = int(os.getenv("AGENT_REACT_RECURSION_LIMIT", "25"))
+    invoke_config: dict[str, Any] = {"recursion_limit": recursion_limit}
+    if invoke_metadata:
+        invoke_config["metadata"] = dict(invoke_metadata)
+    if invoke_tags:
+        invoke_config["tags"] = [str(tag).strip() for tag in invoke_tags if str(tag).strip()]
 
     result = agent.invoke(
         {"messages": messages},
-        config={"recursion_limit": recursion_limit},
+        config=invoke_config,
     )
 
     if isinstance(result, dict) and "messages" in result:
@@ -696,13 +736,24 @@ def _generate_react(history: list[dict], user_message: str) -> tuple[str, list[s
     return text, valid_urls
 
 
-def _generate_response_core(history: list[dict], user_message: str) -> tuple[str, list[str]]:
+def _generate_response_core(
+    history: list[dict],
+    user_message: str,
+    *,
+    invoke_metadata: dict[str, Any] | None = None,
+    invoke_tags: list[str] | None = None,
+) -> tuple[str, list[str]]:
     """Core generation: invoke ReAct agent with metrics tracking."""
     _metrics_inc("requests_total")
 
     try:
         _metrics_inc("react_attempts")
-        result, valid_urls = _generate_react(history, user_message)
+        result, valid_urls = _generate_react(
+            history,
+            user_message,
+            invoke_metadata=invoke_metadata,
+            invoke_tags=invoke_tags,
+        )
         tool_calls = _get_accumulated_tool_calls()
 
         if _should_block_empty_evidence(user_message, valid_urls, tool_calls):
@@ -925,6 +976,7 @@ def generate_response_payload(
                 "kind": "answer",
                 "text": final_text,
                 "url_title_map": title_map,
+                "citation_urls": _extract_citation_urls_from_text(final_text),
             }
         except ClarificationRequiredError as exc:
             payload = exc.clarification.to_dict()
@@ -946,6 +998,7 @@ def generate_response_payload(
                 "kind": "clarification_required",
                 "text": question_text,
                 "url_title_map": {},
+                "citation_urls": [],
                 "clarification": payload,
             }
         except Exception as exc:
@@ -964,6 +1017,9 @@ def generate_response_eval_payload(
     history: list[dict],
     user_message: str,
     request_id: str | None = None,
+    case_id: str | None = None,
+    experiment_group: str | None = None,
+    include_trace_summary: bool = False,
 ) -> dict[str, Any]:
     """Structured response for eval with tool trace and URL evidence."""
     thread_id = _extract_thread_id(history)
@@ -979,12 +1035,32 @@ def generate_response_eval_payload(
                     thread_id=_get_current_thread_id(),
                     user_message=user_message,
                 )
-                core_text, valid_urls = _generate_response_core(history, user_message)
+                eval_request_id = _get_current_request_id()
+                invoke_metadata: dict[str, Any] = {
+                    "entrypoint": "eval",
+                    "request_id": eval_request_id,
+                }
+                invoke_tags: list[str] = ["eval"]
+                if case_id:
+                    invoke_metadata["case_id"] = str(case_id)
+                    invoke_tags.append(f"case:{case_id}")
+                if experiment_group:
+                    invoke_metadata["experiment_group"] = str(experiment_group)
+                    invoke_tags.append(f"exp:{experiment_group}")
+                if thread_id:
+                    invoke_metadata["thread_id"] = str(thread_id)
+
+                core_text, valid_urls = _generate_response_core(
+                    history,
+                    user_message,
+                    invoke_metadata=invoke_metadata,
+                    invoke_tags=invoke_tags,
+                )
                 core_text = _strip_generic_analysis_leadin(core_text)
                 final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
                 _enforce_inline_citation_guard(final_text, user_message, valid_urls)
                 tool_calls = sorted(_get_accumulated_tool_calls())
-                _finalize_request_trace(
+                trace_summary = _finalize_request_trace(
                     final_status="success",
                     evidence_count=len(valid_urls),
                     final_answer_metadata={
@@ -994,11 +1070,19 @@ def generate_response_eval_payload(
                         "tool_count": len(tool_calls),
                     },
                 )
-                return {
+                payload: dict[str, Any] = {
                     "text": final_text,
                     "valid_urls": sorted(valid_urls),
                     "tool_calls": tool_calls,
+                    "request_id": eval_request_id,
                 }
+                if case_id:
+                    payload["case_id"] = str(case_id)
+                if experiment_group:
+                    payload["experiment_group"] = str(experiment_group)
+                if include_trace_summary:
+                    payload["trace_summary"] = trace_summary
+                return payload
         except Exception as exc:
             evidence_count = len(valid_urls) if "valid_urls" in locals() else None
             _finalize_request_trace(
