@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
+
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -51,6 +53,45 @@ def _extract_contexts_from_trace_summary(summary: dict[str, Any] | None) -> list
     return contexts
 
 
+def _load_eval_env(env_file: Path | None) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    default_env = project_root / "agent" / ".env"
+    if default_env.exists():
+        load_dotenv(dotenv_path=default_env, override=False)
+
+    if env_file:
+        candidate = env_file.resolve()
+        if not candidate.exists():
+            raise FileNotFoundError(f"Env file not found: {candidate}")
+        load_dotenv(dotenv_path=candidate, override=False)
+
+
+def _resolve_langsmith_api_url() -> str:
+    explicit = str(os.getenv("LANGSMITH_ENDPOINT", "")).strip()
+    if explicit:
+        return explicit
+    compatibility = str(os.getenv("LANGCHAIN_ENDPOINT", "")).strip()
+    if compatibility:
+        return compatibility
+    return "https://api.smith.langchain.com"
+
+
+def _build_langsmith_client() -> Any:
+    from langsmith import Client
+
+    api_key = str(os.getenv("LANGSMITH_API_KEY", "")).strip()
+    if not api_key:
+        raise ValueError("LANGSMITH_API_KEY is required when --upload-langsmith is enabled.")
+
+    api_url = _resolve_langsmith_api_url()
+    workspace_id = str(os.getenv("LANGSMITH_WORKSPACE_ID", "")).strip() or None
+    return Client(
+        api_url=api_url,
+        api_key=api_key,
+        workspace_id=workspace_id,
+    )
+
+
 def build_rows_from_report(report: dict[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     experiment = report.get("experiment", {})
@@ -77,7 +118,7 @@ def build_rows_from_report(report: dict[str, Any]) -> list[dict[str, Any]]:
             expected_facts = constraints.get("expected_facts", [])
             if isinstance(expected_facts, list):
                 tokens = [str(item).strip() for item in expected_facts if str(item).strip()]
-                reference = "；".join(tokens)
+                reference = "; ".join(tokens)
 
         runs = case.get("runs", [])
         trace_summary: dict[str, Any] | None = None
@@ -230,9 +271,8 @@ def _get_or_create_dataset(client: Any, dataset_name: str, description: str) -> 
 
 
 def upload_rows_to_langsmith(rows: list[dict[str, Any]], dataset_name: str) -> dict[str, Any]:
-    from langsmith import Client
-
-    client = Client()
+    client = _build_langsmith_client()
+    api_url = _resolve_langsmith_api_url()
     dataset = _get_or_create_dataset(
         client,
         dataset_name=dataset_name,
@@ -265,6 +305,7 @@ def upload_rows_to_langsmith(rows: list[dict[str, Any]], dataset_name: str) -> d
         "dataset_id": dataset_id,
         "dataset_name": dataset_name,
         "examples_created": created,
+        "api_url": api_url,
     }
 
 
@@ -304,12 +345,19 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default="",
         help="LangSmith dataset name (default: technews-ragas-<timestamp>).",
     )
+    parser.add_argument(
+        "--env-file",
+        type=Path,
+        default=None,
+        help="Optional dotenv file loaded after agent/.env (without overriding existing env).",
+    )
     return parser
 
 
 def main() -> int:
     parser = _build_arg_parser()
     args = parser.parse_args()
+    _load_eval_env(args.env_file)
 
     if not args.report and not args.rows_jsonl:
         raise ValueError("One of --report or --rows-jsonl is required.")
@@ -357,3 +405,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

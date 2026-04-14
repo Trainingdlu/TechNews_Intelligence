@@ -395,6 +395,18 @@ class TestAgentSafety:
         assert out == expected
 
 
+    def test_generate_response_payload_includes_citation_urls(self):
+        from agent.agent import generate_response_payload
+
+        expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
+        with patch("agent.agent._run_generation_core", return_value=("Main analysis [1].", {"https://a.example.com"})):
+            with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
+                with patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}):
+                    payload = generate_response_payload([], "recent ai updates")
+        assert payload["kind"] == "answer"
+        assert payload["citation_urls"] == ["https://a.example.com"]
+
+
     def test_generate_response_core_allows_smalltalk_without_evidence_when_no_tools(self):
         from agent.agent import _generate_response_core
 

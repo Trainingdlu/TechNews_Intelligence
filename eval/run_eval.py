@@ -57,6 +57,37 @@ EXPERIMENT_ENV_KEYS = (
 )
 
 
+def _resolve_langsmith_endpoint() -> str:
+    explicit = str(os.getenv("LANGSMITH_ENDPOINT", "")).strip()
+    if explicit:
+        return explicit
+    compatibility = str(os.getenv("LANGCHAIN_ENDPOINT", "")).strip()
+    if compatibility:
+        return compatibility
+    return "https://api.smith.langchain.com"
+
+
+def _print_langsmith_runtime_snapshot() -> None:
+    tracing = str(os.getenv("LANGSMITH_TRACING", "")).strip().lower()
+    if not tracing:
+        tracing = str(os.getenv("LANGCHAIN_TRACING_V2", "")).strip().lower()
+    tracing_on = tracing in {"1", "true", "yes", "on"}
+    project = str(os.getenv("LANGSMITH_PROJECT", "")).strip()
+    if not project:
+        project = str(os.getenv("LANGCHAIN_PROJECT", "")).strip()
+    workspace = str(os.getenv("LANGSMITH_WORKSPACE_ID", "")).strip()
+    endpoint = _resolve_langsmith_endpoint()
+    print(
+        "[Eval][LangSmith] tracing=%s project=%s endpoint=%s workspace_id=%s"
+        % (
+            "on" if tracing_on else "off",
+            project or "<unset>",
+            endpoint,
+            "<set>" if workspace else "<unset>",
+        )
+    )
+
+
 def _bootstrap_imports() -> tuple[Any, Any, Any, Any]:
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
@@ -587,6 +618,7 @@ def main() -> int:
     env_path = project_root / "agent" / ".env"
     if env_path.exists():
         load_dotenv(dotenv_path=env_path, override=False)
+    _print_langsmith_runtime_snapshot()
 
     dataset_path = _resolve_dataset_path(eval_dir, args)
     if not dataset_path.exists():

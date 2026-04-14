@@ -92,6 +92,18 @@ python eval/run_eval.py \
 
 ## LangSmith + Ragas
 
+先在 `agent/.env` 配置（或通过系统环境变量注入）：
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGCHAIN_TRACING_V2=true
+LANGSMITH_API_KEY=lsv2_...
+LANGSMITH_PROJECT=technews-agent-local
+# 可选：一个 key 绑定多个 workspace 时再填
+LANGSMITH_WORKSPACE_ID=
+```
+
 1) 运行评测时开启追踪并导出 Ragas 输入：
 
 ```bash
@@ -111,6 +123,15 @@ python eval/run_eval.py \
 python eval/ragas_langsmith_eval.py \
   --rows-jsonl eval/reports/ragas/input_latest.jsonl \
   --output eval/reports/ragas/latest.json
+```
+
+若你不使用 `agent/.env`，可追加 `--env-file` 指定 dotenv 文件：
+
+```bash
+python eval/ragas_langsmith_eval.py \
+  --rows-jsonl eval/reports/ragas/input_latest.jsonl \
+  --output eval/reports/ragas/latest.json \
+  --env-file path/to/eval.env
 ```
 
 3) 可选：上传到 LangSmith Dataset（便于对比与留档）：
