@@ -208,10 +208,13 @@
 
     function applyChatSuccess(text, data) {
         const reply = String(data.reply || '').trim();
+        const citationUrls = Array.isArray(data.citation_urls)
+            ? data.citation_urls.map((u) => String(u || '').trim()).filter(Boolean)
+            : [];
         history.push({ role: 'user', parts: [{ text }] });
         history.push({ role: 'model', parts: [{ text: reply }] });
 
-        appendMessage('agent', reply);
+        appendMessage('agent', reply, { citationUrls });
         const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
         const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
         updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
@@ -483,9 +486,17 @@
         return map;
     }
 
-    function _prepareAgentMarkdown(rawText) {
+    function _prepareAgentMarkdown(rawText, citationUrls = []) {
         const { body, source } = _splitBodyAndSource(rawText);
         const citationMap = _extractCitationUrlMap(source);
+        if (Array.isArray(citationUrls) && citationUrls.length) {
+            citationUrls.forEach((url, i) => {
+                const normalized = String(url || '').trim();
+                if (normalized) {
+                    citationMap[String(i + 1)] = normalized;
+                }
+            });
+        }
 
         // Body: [n] -> linked [n](url) when url exists; otherwise keep as literal [n].
         const linkedBody = String(body || '').replace(/\[(\d{1,3})\](?!\()/g, (full, idx) => {
@@ -505,7 +516,7 @@
         return `${linkedBody}\n${normalizedSource}`.trim();
     }
 
-    function appendMessage(role, text) {
+    function appendMessage(role, text, meta = {}) {
         const msg = document.createElement('div');
         msg.className = 'msg ' + role;
 
@@ -519,7 +530,8 @@
         const content = document.createElement('div');
         content.className = 'msg-content';
         if (role === 'agent') {
-            content.innerHTML = marked.parse(_prepareAgentMarkdown(text));
+            const citationUrls = Array.isArray(meta.citationUrls) ? meta.citationUrls : [];
+            content.innerHTML = marked.parse(_prepareAgentMarkdown(text, citationUrls));
         } else {
             content.textContent = text;
         }

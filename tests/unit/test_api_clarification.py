@@ -179,6 +179,7 @@ def test_clarification_followup_retries_with_merged_message(api_client) -> None:
             "kind": "answer",
             "text": "分析结论 [1]\n\n## 来源\n- [1] https://example.com/a",
             "url_title_map": {"https://example.com/a": "Example A"},
+            "citation_urls": ["https://example.com/a"],
         }
 
     api_mod.generate_response_payload = _fake_generate
@@ -211,6 +212,7 @@ def test_clarification_followup_retries_with_merged_message(api_client) -> None:
     second_data = second.json()
     assert second_data["kind"] == "answer"
     assert second_data["reply"].startswith("分析结论")
+    assert second_data["citation_urls"] == ["https://example.com/a"]
     assert len(seen_messages) == 2
     assert "原问题：帮我分析 AI 行业" in seen_messages[1]
     assert f"用户补充澄清：{followup}" in seen_messages[1]
@@ -223,6 +225,7 @@ def test_chat_normal_answer_path_unchanged(api_client) -> None:  # noqa: ANN001
         "kind": "answer",
         "text": "正常回答 [1]\n\n## 来源\n- [1] https://example.com/n",
         "url_title_map": {"https://example.com/n": "Example N"},
+        "citation_urls": ["https://example.com/n"],
     }
 
     response = client.post(
@@ -235,5 +238,6 @@ def test_chat_normal_answer_path_unchanged(api_client) -> None:  # noqa: ANN001
     data = response.json()
     assert data["kind"] == "answer"
     assert data["reply"].startswith("正常回答")
+    assert data["citation_urls"] == ["https://example.com/n"]
     assert data["clarification"] is None
     assert refund_spy.call_count == 0

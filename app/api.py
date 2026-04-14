@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import HTMLResponse, StreamingResponse
 from cachetools import TTLCache
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from psycopg2.extras import Json
 
 from agent import AgentGenerationError, generate_response_payload
@@ -256,6 +256,7 @@ class ChatResponse(BaseModel):
     reply: str
     kind: str = "answer"
     clarification: ClarificationResponsePayload | None = None
+    citation_urls: list[str] = Field(default_factory=list)
     remaining: int
     quota: int
 
@@ -826,15 +827,20 @@ async def chat(
             reply=question,
             kind="clarification_required",
             clarification=clarification_payload if isinstance(clarification_payload, dict) else None,
+            citation_urls=[],
             remaining=_remaining_after_refund(reservation),
             quota=int(reservation["quota"]),
         )
 
     reply = str(payload.get("text", "")).strip()
+    citation_urls = payload.get("citation_urls", [])
+    if not isinstance(citation_urls, list):
+        citation_urls = []
     _maybe_send_quota_exhausted_notifications(token_info, reservation)
     return ChatResponse(
         reply=reply,
         kind="answer",
+        citation_urls=[str(url).strip() for url in citation_urls if str(url).strip()],
         remaining=max(int(reservation["remaining"]), 0),
         quota=int(reservation["quota"]),
     )
@@ -967,17 +973,22 @@ async def chat_stream(
                     "kind": "clarification_required",
                     "reply": question,
                     "clarification": clarification_payload if isinstance(clarification_payload, dict) else None,
+                    "citation_urls": [],
                     "remaining": _remaining_after_refund(reservation),
                     "quota": int(reservation["quota"]),
                 })
                 return
 
             reply = str(payload.get("text", "")).strip()
+            citation_urls = payload.get("citation_urls", [])
+            if not isinstance(citation_urls, list):
+                citation_urls = []
             _maybe_send_quota_exhausted_notifications(token_info, reservation)
             completed = True
             yield _sse_event("final", {
                 "kind": "answer",
                 "reply": reply,
+                "citation_urls": [str(url).strip() for url in citation_urls if str(url).strip()],
                 "remaining": max(int(reservation["remaining"]), 0),
                 "quota": int(reservation["quota"]),
             })
