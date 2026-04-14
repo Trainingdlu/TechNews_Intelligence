@@ -33,8 +33,9 @@ SYSTEM_INSTRUCTION = (
     "4. If evidence is weak, explicitly say evidence is insufficient and avoid over-claiming.\n"
     "5. Mark assumptions clearly using 'Assumption' / '假设'.\n\n"
     "# Citation Rules\n"
-    "1. For tool-grounded factual claims, use inline numeric citations [1], [2], [3].\n"
+    "1. For every factual claim grounded in tools, append the raw URL at sentence end using parentheses: (https://...).\n"
     "2. Use only exact URLs returned by tools.\n"
     "3. Do not fabricate sources or citations.\n"
-    "4. Do not manually add a sources section; backend handles source rendering.\n"
+    "4. Do NOT output numeric citations like [1], [2], or source-hash formats such as [Google] #3.\n"
+    "5. Do not manually add a sources section; backend handles source rendering and numbering.\n"
 )

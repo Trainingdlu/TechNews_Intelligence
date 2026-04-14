@@ -24,7 +24,10 @@ from pydantic import BaseModel, EmailStr
 from psycopg2.extras import Json
 
 from agent import AgentGenerationError, generate_response_payload
-from agent.clarification import resolve_user_message_with_history_clarification
+from agent.clarification import (
+    resolve_user_message_with_followup_context,
+    resolve_user_message_with_history_clarification,
+)
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
 from services.mail import (
     send_token_email,
@@ -769,6 +772,19 @@ async def chat(
             request_id,
             pending.reason,
         )
+    else:
+        effective_message, followup_profile = resolve_user_message_with_followup_context(
+            body.history,
+            effective_message,
+        )
+        if bool(followup_profile.get("augmented")):
+            logger.info(
+                "[%s] follow-up context augmented: request_id=%s score=%.3f decision=%s",
+                token_info["email"],
+                request_id,
+                float(followup_profile.get("score", 0.0)),
+                str(followup_profile.get("decision", "fresh")),
+            )
     try:
         payload = await asyncio.to_thread(
             generate_response_payload,
@@ -850,6 +866,19 @@ async def chat_stream(
             request_id,
             pending.reason,
         )
+    else:
+        effective_message, followup_profile = resolve_user_message_with_followup_context(
+            body.history,
+            effective_message,
+        )
+        if bool(followup_profile.get("augmented")):
+            logger.info(
+                "[%s] follow-up context augmented(stream): request_id=%s score=%.3f decision=%s",
+                token_info["email"],
+                request_id,
+                float(followup_profile.get("score", 0.0)),
+                str(followup_profile.get("decision", "fresh")),
+            )
 
     async def event_generator():
         loop = asyncio.get_running_loop()

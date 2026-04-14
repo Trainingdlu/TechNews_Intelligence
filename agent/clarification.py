@@ -120,7 +120,16 @@ _KNOWN_ENTITIES = (
     "Apple",
     "NVIDIA",
     "Tesla",
+    "Elon Musk",
+    "Musk",
+    "马斯克",
     "xAI",
+    "X Chat",
+    "xchat",
+    "X",
+    "SpaceX",
+    "Neuralink",
+    "Boring Company",
     "DeepSeek",
     "字节跳动",
     "阿里巴巴",
@@ -132,6 +141,192 @@ _KNOWN_ENTITIES = (
     "苹果",
     "特斯拉",
 )
+
+_FOLLOWUP_REFERENCE_RE = re.compile(
+    r"(上条|上面那条|上一条|刚才|之前|前一条|没提|补充一下|展开一下|"
+    r"that one|previous|earlier|last answer|follow[- ]?up|why.*mention|didn'?t.*mention)",
+    re.IGNORECASE,
+)
+
+
+def _tokenize_for_overlap(text: str) -> set[str]:
+    source = str(text or "").lower()
+    if not source:
+        return set()
+    tokens = re.findall(r"[a-z0-9][a-z0-9+._-]{1,}|\d+|[\u4e00-\u9fff]{2,}", source)
+    out: set[str] = set()
+    for token in tokens:
+        normalized = token.strip()
+        if not normalized:
+            continue
+        out.add(normalized)
+    return out
+
+
+def _jaccard_similarity(a: str, b: str) -> float:
+    ta = _tokenize_for_overlap(a)
+    tb = _tokenize_for_overlap(b)
+    if not ta or not tb:
+        return 0.0
+    inter = len(ta & tb)
+    union = len(ta | tb)
+    if union <= 0:
+        return 0.0
+    return inter / union
+
+
+def _latest_user_and_model_text(history: list[dict] | None) -> tuple[str, str]:
+    prev_user = ""
+    prev_model = ""
+    for item in reversed(history or []):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role", "")).strip().lower()
+        text = _extract_message_text(item)
+        if not text:
+            continue
+        if not prev_model and role == "model":
+            prev_model = text
+            continue
+        if not prev_user and role == "user":
+            prev_user = text
+            if prev_model:
+                break
+    return prev_user, prev_model
+
+
+def _standalone_inverse_score(user_message: str) -> float:
+    scope = _query_scope_signals(user_message)
+    specified = int(scope.get("specified_count", 0) or 0)
+    if specified >= 3:
+        return 0.1
+    if specified == 2:
+        return 0.35
+    if specified == 1:
+        return 0.7
+    return 0.9
+
+
+def _entity_continuity_score(user_message: str, prev_user: str, prev_model: str) -> float:
+    cur_entities = _extract_entity_candidates(user_message)
+    prev_entities = _extract_entity_candidates("\n".join([prev_user, prev_model]))
+    if not cur_entities and not prev_entities:
+        return 0.0
+    if not cur_entities:
+        if _FOLLOWUP_REFERENCE_RE.search(user_message):
+            return 0.4
+        return 0.0
+    prev_set = {x.lower() for x in prev_entities}
+    if not prev_set:
+        return 0.0
+    hit = sum(1 for entity in cur_entities if entity.lower() in prev_set)
+    return min(1.0, hit / max(1, len(cur_entities)))
+
+
+def evaluate_followup_confidence(
+    history: list[dict] | None,
+    user_message: str,
+) -> dict[str, Any]:
+    """Evaluate whether the current message is context-dependent follow-up.
+
+    Returns:
+    - score: float in [0, 1]
+    - decision: followup_strong | followup_dual_path | fresh
+    - features: scoring feature breakdown
+    """
+    text = str(user_message or "").strip()
+    prev_user, prev_model = _latest_user_and_model_text(history)
+    if not text or (not prev_user and not prev_model):
+        return {
+            "score": 0.0,
+            "decision": "fresh",
+            "features": {
+                "semantic_continuity": 0.0,
+                "entity_continuity": 0.0,
+                "reference_dependency": 0.0,
+                "standalone_inverse": 0.0,
+            },
+            "previous_user": prev_user,
+            "previous_model": prev_model,
+            "augmented": False,
+        }
+
+    semantic_continuity = max(
+        _jaccard_similarity(text, prev_user),
+        _jaccard_similarity(text, prev_model),
+    )
+    entity_continuity = _entity_continuity_score(text, prev_user, prev_model)
+    reference_dependency = 1.0 if _FOLLOWUP_REFERENCE_RE.search(text) else 0.0
+    standalone_inverse = _standalone_inverse_score(text)
+
+    score = (
+        0.25 * semantic_continuity
+        + 0.20 * entity_continuity
+        + 0.35 * reference_dependency
+        + 0.20 * standalone_inverse
+    )
+    if reference_dependency >= 1.0 and (prev_user or prev_model):
+        score = max(score, 0.62)
+        scope = _query_scope_signals(text)
+        if not bool(scope.get("has_time")) and not bool(scope.get("has_source")):
+            score = max(score, 0.74)
+    score = max(0.0, min(1.0, score))
+
+    if score >= 0.72:
+        decision = "followup_strong"
+    elif score >= 0.52:
+        decision = "followup_dual_path"
+    else:
+        decision = "fresh"
+
+    return {
+        "score": round(score, 4),
+        "decision": decision,
+        "features": {
+            "semantic_continuity": round(semantic_continuity, 4),
+            "entity_continuity": round(entity_continuity, 4),
+            "reference_dependency": round(reference_dependency, 4),
+            "standalone_inverse": round(standalone_inverse, 4),
+        },
+        "previous_user": prev_user,
+        "previous_model": prev_model,
+        "augmented": False,
+    }
+
+
+def resolve_user_message_with_followup_context(
+    history: list[dict] | None,
+    user_message: str,
+) -> tuple[str, dict[str, Any]]:
+    """Augment message when follow-up confidence indicates context dependence."""
+    text = str(user_message or "").strip()
+    profile = evaluate_followup_confidence(history, text)
+    decision = str(profile.get("decision", "fresh"))
+    if decision == "fresh":
+        return text, profile
+
+    previous_user = str(profile.get("previous_user", "")).strip()
+    previous_model = str(profile.get("previous_model", "")).strip()
+    previous_model_short = previous_model[:480].strip()
+
+    if decision == "followup_strong":
+        augmented = (
+            f"Current user follow-up question: {text}\n"
+            f"Previous user question: {previous_user}\n"
+            f"Previous assistant answer: {previous_model_short}\n"
+            "Instruction: resolve references in the follow-up using prior context, "
+            "then answer with concrete entities and evidence."
+        )
+    else:
+        augmented = (
+            f"User question: {text}\n"
+            f"Related previous context: {previous_user}\n"
+            "Instruction: if this question depends on previous context, resolve it before retrieval."
+        )
+
+    profile["augmented"] = True
+    profile["effective_message_preview"] = augmented[:220]
+    return augmented, profile
 
 
 @dataclass

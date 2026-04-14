@@ -22,6 +22,7 @@ from telegram.ext import (
 from agent import AgentGenerationError, generate_response_payload
 from agent.clarification import (
     build_clarification_history_item,
+    resolve_user_message_with_followup_context,
     resolve_user_message_with_history_clarification,
 )
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
@@ -768,6 +769,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id,
                 pending.reason,
             )
+        else:
+            effective_message, followup_profile = resolve_user_message_with_followup_context(
+                history,
+                effective_message,
+            )
+            if bool(followup_profile.get("augmented")):
+                logger.info(
+                    "[chat_id=%s] follow-up context augmented: score=%.3f decision=%s",
+                    chat_id,
+                    float(followup_profile.get("score", 0.0)),
+                    str(followup_profile.get("decision", "fresh")),
+                )
 
         payload = await asyncio.to_thread(generate_response_payload, history, effective_message)
         kind = str(payload.get("kind", "answer")).strip().lower()

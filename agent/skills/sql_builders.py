@@ -12,6 +12,11 @@ _DEFAULT_TOPIC_QUERY_EXPANSIONS: dict[str, list[str]] = {
     "ai": ["AI", "人工智能", "大模型", "LLM", "智能体", "GPT", "Gemini", "Claude", "Copilot"],
     "business": ["business", "commercial", "market", "finance", "enterprise", "商业", "市场", "金融", "营收", "盈利", "IPO", "并购"],
     "security": ["security", "cyber", "cybersecurity", "vulnerability", "breach", "安全", "网络安全", "漏洞", "威胁", "攻防", "勒索"],
+    "musk": ["Elon Musk", "Musk", "马斯克", "Tesla", "SpaceX", "xAI", "X", "X Chat", "Neuralink", "Boring Company"],
+    "xchat": ["X Chat", "xchat", "X messaging", "X DM", "Twitter DM", "聊天"],
+    "tesla": ["Tesla", "特斯拉", "Cybercab", "Optimus", "FSD"],
+    "spacex": ["SpaceX", "Starlink", "Falcon", "Starship"],
+    "xai": ["xAI", "Grok", "Musk AI", "X AI"],
 }
 
 TOPIC_QUERY_EXPANSIONS: dict[str, list[str]] = dict(_DEFAULT_TOPIC_QUERY_EXPANSIONS)
@@ -78,6 +83,16 @@ def _expand_topic_terms(topic: str) -> list[str]:
         canonical = "business"
     elif normalized in {"security", "cybersecurity", "cyber", "安全", "网络安全"}:
         canonical = "security"
+    elif normalized in {"musk", "elon musk", "马斯克"}:
+        canonical = "musk"
+    elif normalized in {"xchat", "x chat", "x聊天", "x 聊天"}:
+        canonical = "xchat"
+    elif normalized in {"tesla", "特斯拉"}:
+        canonical = "tesla"
+    elif normalized in {"spacex", "space x"}:
+        canonical = "spacex"
+    elif normalized in {"xai", "x ai"}:
+        canonical = "xai"
 
     expansions = load_topic_query_expansions()
     terms = [base]
@@ -94,7 +109,7 @@ def _expand_topic_terms(topic: str) -> list[str]:
             continue
         seen.add(key)
         dedup.append(t)
-    return dedup[:12]
+    return dedup[:16]
 
 
 def _build_topic_where_clause(topic: str, table_alias: str = "") -> tuple[str, list[Any]]:

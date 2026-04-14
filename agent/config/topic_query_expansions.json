@@ -1,6 +1,10 @@
 {
   "ai": ["AI", "人工智能", "大模型", "LLM", "智能体", "GPT", "Gemini", "Claude", "Copilot"],
   "business": ["business", "commercial", "market", "finance", "enterprise", "商业", "市场", "金融", "营收", "盈利", "IPO", "并购"],
-  "security": ["security", "cyber", "cybersecurity", "vulnerability", "breach", "安全", "网络安全", "漏洞", "威胁", "攻防", "勒索"]
+  "security": ["security", "cyber", "cybersecurity", "vulnerability", "breach", "安全", "网络安全", "漏洞", "威胁", "攻防", "勒索"],
+  "musk": ["Elon Musk", "Musk", "马斯克", "Tesla", "SpaceX", "xAI", "X", "X Chat", "Neuralink", "Boring Company"],
+  "xchat": ["X Chat", "xchat", "X messaging", "X DM", "Twitter DM", "聊天"],
+  "tesla": ["Tesla", "特斯拉", "Cybercab", "Optimus", "FSD"],
+  "spacex": ["SpaceX", "Starlink", "Falcon", "Starship"],
+  "xai": ["xAI", "Grok", "Musk AI", "X AI"]
 }
-

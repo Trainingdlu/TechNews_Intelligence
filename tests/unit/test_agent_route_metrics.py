@@ -139,6 +139,31 @@ class TestEvidence:
         text = "Main content without refs.\n\n## Sources\n- [1] https://example.com"
         assert not has_inline_citation_in_body(text)
 
+    def test_decorate_parenthesized_raw_urls_into_numbered_citations(self):
+        from agent.core.evidence import decorate_response_with_sources
+
+        text = (
+            "OpenAI released an update (https://example.com/openai).\n"
+            "Google responded with its own launch (https://example.com/google)."
+        )
+        out, _ = decorate_response_with_sources(text, "recent ai updates")
+
+        body = out.split("## Sources", 1)[0]
+        assert "https://example.com/openai" not in body
+        assert "https://example.com/google" not in body
+        assert "[1]" in body
+        assert "[2]" in body
+        assert "- [1] https://example.com/openai" in out
+        assert "- [2] https://example.com/google" in out
+
+
+class TestPromptContract:
+    def test_prompt_enforces_sentence_tail_url_mode(self):
+        from agent.prompts import SYSTEM_INSTRUCTION
+
+        assert "append the raw URL at sentence end using parentheses" in SYSTEM_INSTRUCTION
+        assert "Do NOT output numeric citations like [1], [2]" in SYSTEM_INSTRUCTION
+
 
 # ---------------------------------------------------------------------------
 # Tests: agent module structure

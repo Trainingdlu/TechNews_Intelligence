@@ -7,7 +7,20 @@ import re
 from typing import Callable
 
 
-_CJK_BASIC_RE = re.compile(r"[一-鿿]")  # CJK统一表意文字基本区：U+4E00 到 U+9FFF
+_CJK_BASIC_RE = re.compile(r"[\u4e00-\u9fff]")
+_SOURCE_HEADER_RE = re.compile(
+    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|sources?|evidence\s+sources?)\s*:?.*",
+    re.IGNORECASE,
+)
+_INLINE_CITATION_RE = re.compile(r"\[(\d{1,3})\]")
+_INLINE_CITATION_LIST_RE = re.compile(
+    r"\[\d{1,3}\](?:\s*(?:[,，、;]|(?:and|or|和|或)\s*)\[\d{1,3}\])+",
+    re.IGNORECASE,
+)
+_PAREN_CITATION_RE = re.compile(r"[\(（]\s*\[(\d{1,3})\]\s*[\)）]")
+_SOURCE_HASH_CITATION_RE = re.compile(r"\[[^\]\n]{1,80}\]\s*[#＃]\s*(\d{1,3})")
+_NESTED_CITATION_RE = re.compile(r"(?:\[\[|\(\[|\[\^|\[#)\s*(\d{1,3})\s*(?:\]\]|\]\)|\]\^|\])")
+_BRACKET_MULTI_CITATION_RE = re.compile(r"\[((?:\d{1,3}\s*(?:[,，、;/]\s*\d{1,3}\s*)+))\]")
 
 
 def contains_cjk(text: str) -> bool:
@@ -25,17 +38,6 @@ def extract_urls(text: str) -> list[str]:
             dedup.append(url)
             seen.add(url)
     return dedup
-
-
-_SOURCE_HEADER_RE = re.compile(
-    r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|source(?:s)?|evidence\s+sources?)\s*:?.*",
-    re.IGNORECASE,
-)
-_INLINE_CITATION_RE = re.compile(r"\[(\d{1,3})\]")
-_INLINE_CITATION_LIST_RE = re.compile(
-    r"\[\d{1,3}\](?:\s*(?:[,，、;；/]|(?:and|or|与|和))\s*\[\d{1,3}\])+",
-    re.IGNORECASE,
-)
 
 
 def strip_existing_source_section(text: str) -> str:
@@ -59,22 +61,23 @@ def apply_inline_citations(text: str, ordered_urls: list[str]) -> str:
     return out
 
 
-_PAREN_CITATION_RE = re.compile(r"[（(]\s*\[(\d{1,3})\]\s*[）)]")
-_SOURCE_HASH_CITATION_RE = re.compile(r"\[[^\]\n]{1,80}\]\s*[#＃]\s*(\d{1,3})")
-_NESTED_CITATION_RE = re.compile(r"(?:\[\[|\(\[|\[\^|\[#)\s*(\d{1,3})\s*(?:\]\]|\]\)|\]\^|\]|(?:\^\]))")
-
-
 def normalize_inline_citation_styles(text: str) -> str:
-    """Normalize citation marker variants into canonical [n] form.
-
-    Examples:
-    - ([1]) / （[1]） -> [1]
-    - [Google] #3 / [Google] ＃3 -> [3]
-    - [[1]] / [^1^] / [#1] -> [1]
-    """
+    """Normalize citation variants into canonical [n] form."""
     body = text or ""
     if not body:
         return body
+
+    def _expand_multi(match: re.Match[str]) -> str:
+        nums = re.findall(r"\d{1,3}", match.group(1))
+        dedup: list[str] = []
+        seen: set[str] = set()
+        for num in nums:
+            if num not in seen:
+                seen.add(num)
+                dedup.append(num)
+        return ", ".join(f"[{num}]" for num in dedup)
+
+    body = _BRACKET_MULTI_CITATION_RE.sub(_expand_multi, body)
     body = _PAREN_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
     body = _SOURCE_HASH_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
     body = _NESTED_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
@@ -82,7 +85,6 @@ def normalize_inline_citation_styles(text: str) -> str:
 
 
 def has_inline_citation_in_body(text: str) -> bool:
-    """Return True if the main body (excluding source section) contains [n]."""
     normalized = normalize_inline_citation_styles(text or "")
     body = strip_existing_source_section(normalized)
     return bool(_INLINE_CITATION_RE.search(body))
@@ -95,7 +97,7 @@ def max_inline_citation_index(text: str) -> int:
             idx = int(m.group(1))
         except Exception:
             continue
-        if 1 <= idx <= 200 and idx > maximum:
+        if 1 <= idx <= 999 and idx > maximum:
             maximum = idx
     return maximum
 
@@ -108,7 +110,7 @@ def citation_indices_in_order(text: str) -> list[int]:
             idx = int(m.group(1))
         except Exception:
             continue
-        if idx < 1 or idx > 200:
+        if idx < 1 or idx > 999:
             continue
         if idx in seen:
             continue
@@ -130,8 +132,6 @@ def remap_inline_citations(text: str, index_map: dict[int, int], strip_unmapped:
             if matches:
                 has_valid = any(int(m) in index_map for m in matches if m.isdigit())
                 has_invalid = any(int(m) not in index_map for m in matches if m.isdigit())
-
-                # If the line ONLY has invalid citations, drop the line entirely
                 if has_invalid and not has_valid:
                     continue
 
@@ -145,8 +145,7 @@ def remap_inline_citations(text: str, index_map: dict[int, int], strip_unmapped:
                 return "" if strip_unmapped else match.group(0)
             return f"[{new}]"
 
-        remapped_line = _INLINE_CITATION_RE.sub(_replace, line)
-        out_lines.append(remapped_line)
+        out_lines.append(_INLINE_CITATION_RE.sub(_replace, line))
 
     return "\n".join(out_lines)
 
@@ -176,34 +175,29 @@ def dedupe_redundant_inline_citation_runs(text: str) -> str:
             unique.append(idx)
         if len(unique) == len(refs):
             return segment
-
-        if "、" in segment:
-            sep = "、"
-        elif "，" in segment:
-            sep = "， "
-        elif "；" in segment:
-            sep = "； "
-        elif ";" in segment:
-            sep = "; "
-        elif "/" in segment:
-            sep = "/"
-        elif re.search(r"\band\b", segment, flags=re.IGNORECASE):
-            sep = " and "
-        elif re.search(r"\bor\b", segment, flags=re.IGNORECASE):
-            sep = " or "
-        elif "和" in segment:
-            sep = " 和 "
-        elif "与" in segment:
-            sep = " 与 "
-        else:
-            sep = ", "
-
-        return sep.join(f"[{idx}]" for idx in unique)
+        return ", ".join(f"[{idx}]" for idx in unique)
 
     return _INLINE_CITATION_LIST_RE.sub(_replace, body)
 
 
-def compact_citations_and_urls(cited_body: str, ordered_urls: list[str], valid_urls: list[str] | set[str] | None = None) -> tuple[str, list[str]]:
+def _cleanup_citation_artifacts(text: str) -> str:
+    body = text or ""
+    if not body:
+        return body
+    body = re.sub(r"\[\s*[,，;、/]\s*", "[", body)
+    body = re.sub(r"\s*[,，;、/]\s*\]", "]", body)
+    body = re.sub(r"\[\s*\]", "", body)
+    body = re.sub(r"\(\s*[,，;、/]\s*\)", "", body)
+    body = re.sub(r"(,\s*){2,}", ", ", body)
+    body = re.sub(r"\],\s*(and|or|和|或)\s+\[", r"] \1 [", body, flags=re.IGNORECASE)
+    return body
+
+
+def compact_citations_and_urls(
+    cited_body: str,
+    ordered_urls: list[str],
+    valid_urls: list[str] | set[str] | None = None,
+) -> tuple[str, list[str]]:
     refs = citation_indices_in_order(cited_body)
     if not refs:
         return cited_body, ordered_urls
@@ -220,15 +214,20 @@ def compact_citations_and_urls(cited_body: str, ordered_urls: list[str], valid_u
 
     compact_body = remap_inline_citations(cited_body, index_map, strip_unmapped=(valid_urls is not None))
     compact_body = dedupe_redundant_inline_citation_runs(compact_body)
+    compact_body = _cleanup_citation_artifacts(compact_body)
     return compact_body, compact_urls
 
 
 def max_source_urls() -> int:
+    """Return URL cap. <=0 means no truncation."""
     try:
-        raw = os.getenv("AGENT_MAX_SOURCE_URLS", os.getenv("BOT_MAX_CITATION_URLS", "12"))
-        return max(1, min(80, int(raw)))
+        raw = os.getenv("AGENT_MAX_SOURCE_URLS", os.getenv("BOT_MAX_CITATION_URLS", "0"))
+        cap = int(raw)
+        if cap <= 0:
+            return 1000
+        return max(1, min(1000, cap))
     except Exception:
-        return 12
+        return 1000
 
 
 def build_source_section(ordered_urls: list[str], user_message: str, title_map: dict[str, str] | None = None) -> str:
@@ -258,7 +257,7 @@ def decorate_response_with_sources(
     urls = extract_urls(body) if body else []
     if not urls:
         urls = extract_urls(raw)
-        
+
     if not urls and valid_urls:
         if isinstance(valid_urls, list):
             urls = []
@@ -275,7 +274,7 @@ def decorate_response_with_sources(
 
     required_urls = max_inline_citation_index(body if body else raw)
     url_cap = max(max_source_urls(), required_urls)
-    ordered_urls = urls[:url_cap]
+    ordered_urls = urls[:url_cap] if url_cap > 0 else list(urls)
 
     title_map: dict[str, str] = {}
     if lookup_url_titles is not None:
@@ -294,14 +293,21 @@ def decorate_response_with_sources(
         final_urls = [u for u in final_urls if u in valid_urls]
 
     if not final_urls:
-        return compact_body.rstrip(), title_map
+        return _cleanup_citation_artifacts(compact_body).rstrip(), title_map
+
+    # Final consistency guard: do not allow citation index above source count.
+    max_index = len(final_urls)
+    identity_map = {idx: idx for idx in range(1, max_index + 1)}
+    compact_body = remap_inline_citations(compact_body, identity_map, strip_unmapped=True)
+    compact_body = dedupe_redundant_inline_citation_runs(compact_body)
+    compact_body = _cleanup_citation_artifacts(compact_body)
 
     source_section = build_source_section(final_urls, user_message, title_map=title_map)
     merged = f"{compact_body.rstrip()}\n\n{source_section}".strip()
     return merged, title_map
 
 
-def ensure_evidence_section(answer: str, source_output: str, user_message: str, max_urls: int = 8) -> str:
+def ensure_evidence_section(answer: str, source_output: str, user_message: str, max_urls: int = 0) -> str:
     """Ensure answer includes an evidence URL section based on source output."""
     if not answer:
         return answer
@@ -316,6 +322,9 @@ def ensure_evidence_section(answer: str, source_output: str, user_message: str, 
 
     header = "## 来源" if contains_cjk(user_message) else "## Sources"
     required_urls = max_inline_citation_index(answer)
-    effective_max = max(max_urls, required_urls)
+    if max_urls <= 0:
+        effective_max = max(len(source_urls), required_urls)
+    else:
+        effective_max = max(max_urls, required_urls)
     lines = [f"{url}" for url in source_urls[:effective_max]]
     return f"{answer.rstrip()}\n\n{header}\n" + "\n".join(lines)
