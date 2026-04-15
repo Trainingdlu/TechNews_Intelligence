@@ -420,6 +420,37 @@ class TestAgentSafety:
         assert payload["kind"] == "answer"
         assert payload["citation_urls"] == ["https://a.example.com"]
 
+    def test_generate_response_blocks_when_output_has_url_outside_valid_set(self):
+        from agent.agent import AgentGenerationError, generate_response
+        from agent.core.metrics import get_route_metrics_snapshot, reset_route_metrics
+
+        reset_route_metrics()
+        with patch(
+            "agent.agent._run_generation_core",
+            return_value=("Main analysis cites https://evil.example.com/x", {"https://a.example.com"}),
+        ):
+            with pytest.raises(AgentGenerationError) as ei:
+                generate_response([], "recent ai updates")
+
+        assert ei.value.code == "react_url_outside_valid_set"
+        snapshot = get_route_metrics_snapshot()
+        assert snapshot.get("react_url_outside_valid_set_blocked", 0) == 1
+
+    def test_generate_response_allows_url_subset_of_valid_urls(self):
+        from agent.agent import generate_response
+
+        with patch(
+            "agent.agent._run_generation_core",
+            return_value=("Main analysis references https://a.example.com only.", {"https://a.example.com", "https://b.example.com"}),
+        ):
+            with patch(
+                "agent.agent._decorate_response_with_sources",
+                return_value=("Main analysis [1].\n\n## Sources\n- [1] https://a.example.com", {}),
+            ):
+                out = generate_response([], "recent ai updates")
+
+        assert "[1]" in out
+
 
     def test_generate_response_core_allows_smalltalk_without_evidence_when_no_tools(self):
         from agent.agent import _generate_response_core

@@ -172,27 +172,18 @@ def _build_ragas_dataset_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 def _build_ragas_runtime():
-    provider = os.getenv("AGENT_MODEL_PROVIDER", "gemini_api").strip().lower()
-    if provider in {"vertex", "vertex_ai", "gcp"}:
-        from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
+    from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
 
-        llm = ChatVertexAI(
-            model_name=os.getenv("VERTEX_MODEL", "gemini-3.1-pro-preview").strip(),
-            temperature=0.0,
-        )
-        embeddings = VertexAIEmbeddings(
-            model_name=os.getenv("VERTEX_EMBEDDING_MODEL", "text-embedding-005").strip()
-        )
-    else:
-        from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-
-        llm = ChatGoogleGenerativeAI(
-            model=os.getenv("GEMINI_MODEL", "gemini-2.5-pro").strip(),
-            temperature=0.0,
-        )
-        embeddings = GoogleGenerativeAIEmbeddings(
-            model=os.getenv("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004").strip()
-        )
+    # 强绑定：审核模型/评价节点统一采用 gemini-3.1-pro-preview
+    llm = ChatVertexAI(
+        model_name="gemini-3.1-pro-preview",
+        temperature=0.0,
+        max_retries=3,
+    )
+    # 强绑定：Embeddings 统一采用 text-embedding-004
+    embeddings = VertexAIEmbeddings(
+        model_name="text-embedding-004"
+    )
 
     return llm, embeddings
 
@@ -203,6 +194,9 @@ def run_ragas(rows: list[dict[str, Any]]) -> dict[str, Any]:
     from ragas.embeddings import LangchainEmbeddingsWrapper
     from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import answer_relevancy, context_precision, context_recall, faithfulness
+
+    # 设置 RAGAS 网络波动容忍度 (应对 429 时的部分失败)
+    os.environ["RAGAS_MAX_RETRIES"] = os.getenv("RAGAS_MAX_RETRIES", "3")
 
     ragas_rows = _build_ragas_dataset_rows(rows)
     if not ragas_rows:
@@ -220,6 +214,9 @@ def run_ragas(rows: list[dict[str, Any]]) -> dict[str, Any]:
         metrics=metrics,
         llm=LangchainLLMWrapper(llm),
         embeddings=LangchainEmbeddingsWrapper(embeddings),
+        # 核心：解决 Vertex AI 429 报错，强制降级并发，默认通常并发太高
+        max_workers=2, 
+        raise_exceptions=False,
     )
 
     if hasattr(result, "to_pandas"):

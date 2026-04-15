@@ -28,6 +28,7 @@ from .clarification import (
 )
 from .core.evidence import (
     decorate_response_with_sources as _decorate_response_with_sources_core,
+    extract_urls as _extract_urls_core,
     has_inline_citation_in_body as _has_inline_citation_in_body_core,
 )
 from .core.intent import classify_user_intent
@@ -675,6 +676,97 @@ def _enforce_inline_citation_guard(
     )
 
 
+def _normalize_url_for_guard(url: str) -> str:
+    return str(url or "").strip().rstrip(".,;:!?)")
+
+
+def _enforce_output_urls_in_valid_set(
+    text: str, user_message: str, valid_urls: list[str] | set[str] | None
+) -> None:
+    """Block when model output contains URLs outside current valid_urls set."""
+    if not valid_urls:
+        return
+
+    allowed: set[str] = set()
+    for item in valid_urls:
+        normalized = _normalize_url_for_guard(str(item))
+        if normalized:
+            allowed.add(normalized)
+    if not allowed:
+        return
+
+    unknown: list[str] = []
+    seen_unknown: set[str] = set()
+    for url in _extract_urls_core(str(text or "")):
+        normalized = _normalize_url_for_guard(url)
+        if not normalized or normalized in allowed:
+            continue
+        if normalized in seen_unknown:
+            continue
+        seen_unknown.add(normalized)
+        unknown.append(normalized)
+
+    if not unknown:
+        return
+
+    _metrics_inc("react_url_outside_valid_set_blocked")
+    preview = ", ".join(unknown[:3])
+    if _contains_cjk(user_message):
+        raise AgentGenerationError(
+            f"抱歉，本次输出包含未在证据集合中的 URL，已拦截。异常 URL：{preview}",
+            code="react_url_outside_valid_set",
+        )
+    raise AgentGenerationError(
+        f"Blocked: output contains URLs outside current valid_urls set: {preview}",
+        code="react_url_outside_valid_set",
+    )
+
+
+def _build_hitl_soft_followup(
+    *,
+    user_message: str,
+    risk_reason: str,
+    risk_context: dict[str, Any],
+) -> str:
+    """Generate a dynamic HITL follow-up question via the current model."""
+    fallback = (
+        f"为提高本次结论置信度，我建议你补充一个约束条件后我再继续："
+        f"时间范围、来源范围或分析维度。你希望先收敛哪一项？"
+    )
+    context_preview = {
+        "reason": str(risk_reason or "").strip(),
+        "source_count": int(risk_context.get("source_count", 0) or 0),
+        "url_count": int(risk_context.get("url_count", 0) or 0),
+        "time_span_days": risk_context.get("time_span_days"),
+        "entity_candidates": risk_context.get("entity_candidates", []),
+        "tool_calls": risk_context.get("tool_calls", []),
+        "ambiguous_scope_reasons": risk_context.get("ambiguous_scope_reasons", []),
+    }
+    prompt = (
+        "你是新闻分析系统里的 HITL 澄清助手。"
+        "请基于用户原问题，写一段自然中文追问，用于让用户补充约束条件。\n"
+        "要求：\n"
+        "1) 只输出最终追问文本，不要解释推理过程；\n"
+        "2) 1-3 句，语气专业简洁；\n"
+        "3) 不要输出模板编号，不要输出 URL，不要输出 [1] 这类引用；\n"
+        "4) 追问应贴合当前问题，不要泛化。\n\n"
+        f"用户问题：{user_message}\n"
+        f"风险信号：{context_preview}\n"
+    )
+    try:
+        model = _build_chat_model()
+        result = model.invoke([HumanMessage(content=prompt)])
+        text = _coerce_to_text(getattr(result, "content", result)).strip()
+        text = re.sub(r"https?://[^\s)\]]+", "", text).strip()
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            return fallback
+        return text
+    except Exception as exc:
+        print(f"[Agent][Warn] hitl soft follow-up generation failed: {type(exc).__name__}: {exc}")
+        return fallback
+
+
 # ---------------------------------------------------------------------------
 # Core generation
 # ---------------------------------------------------------------------------
@@ -758,6 +850,14 @@ def _generate_response_core(
 
         if _should_block_empty_evidence(user_message, valid_urls, tool_calls):
             reason = infer_clarification_reason(user_message)
+            print(
+                "[Agent][Clarification] request_id=%s reason=%s stage=empty_evidence tool_calls=%s"
+                % (
+                    _get_current_request_id() or "-",
+                    reason,
+                    sorted(tool_calls),
+                )
+            )
             clarification = build_clarification_payload(
                 user_message=user_message,
                 reason=reason,
@@ -772,12 +872,22 @@ def _generate_response_core(
             tool_calls=tool_calls,
         )
         if risk_reason:
-            clarification = build_clarification_payload(
-                user_message=user_message,
-                reason=risk_reason,
-                context=risk_context,
+            print(
+                "[Agent][Clarification] request_id=%s reason=%s stage=risk_guard risk_context=%s"
+                % (
+                    _get_current_request_id() or "-",
+                    risk_reason,
+                    risk_context,
+                )
             )
-            raise ClarificationRequiredError(clarification)
+            _metrics_inc("react_hitl_soft_prompt")
+            followup = _build_hitl_soft_followup(
+                user_message=user_message,
+                risk_reason=risk_reason,
+                risk_context=risk_context,
+            )
+            if followup:
+                result = f"{result.rstrip()}\n\n{followup.strip()}".strip()
 
         _metrics_inc("react_success")
         return result, valid_urls
@@ -857,6 +967,24 @@ def _resolve_trace_error_code(error: Exception) -> str:
     return f"runtime_{type(error).__name__.lower()}"
 
 
+def _build_runtime_invoke_context() -> tuple[dict[str, Any], list[str]]:
+    """Build per-request invoke metadata/tags for LangSmith correlation."""
+    metadata: dict[str, Any] = {"entrypoint": "runtime"}
+    tags: list[str] = ["runtime"]
+
+    request_id = _get_current_request_id()
+    if request_id:
+        metadata["request_id"] = str(request_id)
+        tags.append(f"request:{request_id}")
+
+    thread_id = _get_current_thread_id()
+    if thread_id:
+        metadata["thread_id"] = str(thread_id)
+        tags.append(f"thread:{thread_id}")
+
+    return metadata, tags
+
+
 def _run_generation_core(
     history: list[dict],
     user_message: str,
@@ -869,8 +997,14 @@ def _run_generation_core(
             thread_id=_get_current_thread_id(),
             user_message=user_message,
         )
+        invoke_metadata, invoke_tags = _build_runtime_invoke_context()
         _emit_progress("understanding")
-        core_text, valid_urls = _generate_response_core(history, user_message)
+        core_text, valid_urls = _generate_response_core(
+            history,
+            user_message,
+            invoke_metadata=invoke_metadata,
+            invoke_tags=invoke_tags,
+        )
         _emit_progress("finalizing")
         return core_text, valid_urls
 
@@ -900,6 +1034,7 @@ def generate_response(
                 progress_callback=progress_callback,
             )
             core_text = _strip_generic_analysis_leadin(core_text)
+            _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
             final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
             _enforce_inline_citation_guard(final_text, user_message, valid_urls)
             _finalize_request_trace(
@@ -960,6 +1095,7 @@ def generate_response_payload(
                 progress_callback=progress_callback,
             )
             core_text = _strip_generic_analysis_leadin(core_text)
+            _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
             final_text, title_map = _decorate_response_with_sources(core_text, user_message, valid_urls)
             _enforce_inline_citation_guard(final_text, user_message, valid_urls)
             _finalize_request_trace(
@@ -1057,6 +1193,7 @@ def generate_response_eval_payload(
                     invoke_tags=invoke_tags,
                 )
                 core_text = _strip_generic_analysis_leadin(core_text)
+                _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
                 final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
                 _enforce_inline_citation_guard(final_text, user_message, valid_urls)
                 tool_calls = sorted(_get_accumulated_tool_calls())
