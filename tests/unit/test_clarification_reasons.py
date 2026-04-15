@@ -241,3 +241,30 @@ def test_detect_reason_for_analysis_heavy_broad_query_still_triggers_clarificati
 
     assert reason == CLARIFICATION_REASON_AMBIGUOUS_SCOPE
     assert int(context.get("ambiguous_scope_score", 0)) >= 5
+
+
+def test_detect_reason_for_targeted_compare_skips_ambiguous_scope() -> None:
+    reason, context = detect_scope_or_conflict_reason(
+        user_message="对比一下OpenAI和Google",
+        candidate_answer=(
+            "OpenAI 与 Google 近期走势对比如下："
+            "覆盖 OpenAI、Google、Anthropic、Meta、Microsoft 的近期动态，"
+            "包含多来源样本与争议信号。"
+        ),
+        valid_urls=[
+            "https://news.ycombinator.com/item?id=1001",
+            "https://news.ycombinator.com/item?id=1002",
+            "https://news.ycombinator.com/item?id=1003",
+            "https://news.ycombinator.com/item?id=1004",
+            "https://news.ycombinator.com/item?id=1005",
+            "https://techcrunch.com/2026/04/10/openai-a/",
+            "https://techcrunch.com/2026/04/11/openai-b/",
+            "https://techcrunch.com/2026/04/12/google-a/",
+            "https://techcrunch.com/2026/04/13/google-b/",
+            "https://techcrunch.com/2026/04/14/google-c/",
+        ],
+        tool_calls={"compare_topics", "query_news"},
+    )
+
+    assert reason is None
+    assert context.get("ambiguous_scope_reasons") == ["targeted_compare_request"]

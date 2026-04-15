@@ -153,14 +153,18 @@ class TestEvidence:
         from agent.core.evidence import decorate_response_with_sources
 
         text = (
-            "OpenAI released an update (https://example.com/openai).\n"
-            "Google responded with its own launch (https://example.com/google)."
+            "OpenAI released an update（https://example.com/openai）。Google responded with its own launch "
+            "(https://example.com/google)."
         )
         out, _ = decorate_response_with_sources(text, "recent ai updates")
 
         body = out.split("## Sources", 1)[0]
         assert "https://example.com/openai" not in body
         assert "https://example.com/google" not in body
+        assert "([1])" not in body
+        assert "([2])" not in body
+        assert "（[1]）" not in body
+        assert "（[2]）" not in body
         assert "[1]" in body
         assert "[2]" in body
         assert "- [1] https://example.com/openai" in out

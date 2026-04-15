@@ -7,7 +7,7 @@ import re
 from typing import Callable
 
 
-_CJK_BASIC_RE = re.compile(r"[\u4e00-\u9fff]")
+_CJK_BASIC_RE = re.compile(r"[一-龥]")
 _SOURCE_HEADER_RE = re.compile(
     r"^\s{0,3}(?:#{1,6}\s*)?(?:来源|证据来源|sources?|evidence\s+sources?)\s*:?.*",
     re.IGNORECASE,
@@ -17,14 +17,14 @@ _INLINE_CITATION_LIST_RE = re.compile(
     r"\[\d{1,3}\](?:\s*(?:[,，、;]|(?:and|or|和|或)\s*)\[\d{1,3}\])+",
     re.IGNORECASE,
 )
-_PAREN_CITATION_RE = re.compile(r"(?:\(|\uFF08)\s*\[(\d{1,3})\]\s*(?:\)|\uFF09)")
-_PAREN_PLAIN_CITATION_RE = re.compile(r"(?:\(|\uFF08)\s*(\d{1,3})\s*(?:\)|\uFF09)")
+_PAREN_CITATION_RE = re.compile(r"(?:\(|（)\s*\[(\d{1,3})\]\s*(?:\)|）)")
+_PAREN_PLAIN_CITATION_RE = re.compile(r"(?:\(|（)\s*(\d{1,3})\s*(?:\)|）)")
 _PAREN_MULTI_CITATION_RE = re.compile(
-    r"(?:\(|\uFF08)\s*((?:\d{1,3}\s*(?:[,/\uFF0C\u3001;]\s*\d{1,3}\s*)+))\s*(?:\)|\uFF09)"
+    r"(?:\(|（)\s*((?:\d{1,3}\s*(?:[,/，、;]\s*\d{1,3}\s*)+))\s*(?:\)|）)"
 )
 _SOURCE_HASH_CITATION_RE = re.compile(r"\[[^\]\n]{1,80}\]\s*[#＃]\s*(\d{1,3})")
 _NESTED_CITATION_RE = re.compile(r"(?:\[\[|\(\[|\[\^|\[#)\s*(\d{1,3})\s*(?:\]\]|\]\)|\]\^|\])")
-_BRACKET_MULTI_CITATION_RE = re.compile(r"\[((?:\d{1,3}\s*(?:[,/\uFF0C\u3001;]\s*\d{1,3}\s*)+))\]")
+_BRACKET_MULTI_CITATION_RE = re.compile(r"\[((?:\d{1,3}\s*(?:[,/，、;]\s*\d{1,3}\s*)+))\]")
 
 
 def contains_cjk(text: str) -> bool:
@@ -34,10 +34,13 @@ def contains_cjk(text: str) -> bool:
 def extract_urls(text: str) -> list[str]:
     if not text:
         return []
-    urls = re.findall(r"https?://[^\s)\]]+", text)
+    urls = re.findall(r"https?://[^\s<>\]\)）】\"']+", text)
     dedup: list[str] = []
     seen: set[str] = set()
-    for url in urls:
+    for raw in urls:
+        url = re.sub(r"[)\]\}）】》》。,，;；:：!！?？、]+$", "", str(raw or "").strip())
+        if not url:
+            continue
         if url not in seen:
             dedup.append(url)
             seen.add(url)
@@ -292,6 +295,8 @@ def decorate_response_with_sources(
 
     render_body = normalize_inline_citation_styles(body if body else raw)
     cited_body = apply_inline_citations(render_body, ordered_urls)
+    # Normalize again after URL -> [n] substitution so "(url)" becomes "[n]".
+    cited_body = normalize_inline_citation_styles(cited_body)
     compact_body, compact_urls = compact_citations_and_urls(cited_body, ordered_urls, valid_urls=valid_urls)
     final_urls = compact_urls if compact_urls else ordered_urls
 

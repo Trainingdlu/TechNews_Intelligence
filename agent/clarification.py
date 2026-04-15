@@ -148,12 +148,17 @@ _FOLLOWUP_REFERENCE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_COMPARE_REQUEST_RE = re.compile(
+    r"(?:对比|比较|compare|comparison|vs|versus)",
+    re.IGNORECASE,
+)
+
 
 def _tokenize_for_overlap(text: str) -> set[str]:
     source = str(text or "").lower()
     if not source:
         return set()
-    tokens = re.findall(r"[a-z0-9][a-z0-9+._-]{1,}|\d+|[\u4e00-\u9fff]{2,}", source)
+    tokens = re.findall(r"[a-z0-9][a-z0-9+._-]{1,}|\d+|[一-龥]{2,}", source)
     out: set[str] = set()
     for token in tokens:
         normalized = token.strip()
@@ -635,7 +640,7 @@ def _has_specific_topic(user_message: str) -> bool:
     if any(token not in _GENERIC_TOPIC_TOKENS for token in english_tokens):
         return True
 
-    cjk_chunks = re.findall(r"[\u4e00-\u9fff]{2,}", text)
+    cjk_chunks = re.findall(r"[一-龥]{2,}", text)
     for chunk in cjk_chunks:
         if len(chunk) <= 2:
             continue
@@ -705,6 +710,15 @@ def detect_scope_or_conflict_reason(
         if conflict_summary:
             context["conflict_summary"] = conflict_summary
         return CLARIFICATION_REASON_SOURCE_CONFLICT, context
+
+    if _is_targeted_compare_request(
+        user_message=intent_text,
+        scope=scope,
+        intent_label=user_intent,
+    ):
+        context["ambiguous_scope_score"] = 0
+        context["ambiguous_scope_reasons"] = ["targeted_compare_request"]
+        return None, context
 
     ambiguous_hit, ambiguous_score, ambiguous_reasons = _detect_ambiguous_scope(
         scope=scope,
@@ -1016,6 +1030,25 @@ def _detect_ambiguous_scope(
     if score >= threshold:
         return True, score, reasons
     return False, score, reasons
+
+
+def _is_targeted_compare_request(
+    *,
+    user_message: str,
+    scope: dict[str, Any],
+    intent_label: str,
+) -> bool:
+    if intent_label not in {"analysis", "conflict_resolution", "generic"}:
+        return False
+    text = _extract_user_intent_text(user_message)
+    if not text:
+        return False
+    if not _COMPARE_REQUEST_RE.search(text):
+        return False
+    if not bool(scope.get("has_topic")):
+        return False
+    entities = _extract_entity_candidates(text)
+    return len(entities) >= 2
 
 
 def _detect_source_conflict(
