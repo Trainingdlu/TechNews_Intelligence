@@ -17,10 +17,14 @@ _INLINE_CITATION_LIST_RE = re.compile(
     r"\[\d{1,3}\](?:\s*(?:[,，、;]|(?:and|or|和|或)\s*)\[\d{1,3}\])+",
     re.IGNORECASE,
 )
-_PAREN_CITATION_RE = re.compile(r"[\(（]\s*\[(\d{1,3})\]\s*[\)）]")
+_PAREN_CITATION_RE = re.compile(r"(?:\(|\uFF08)\s*\[(\d{1,3})\]\s*(?:\)|\uFF09)")
+_PAREN_PLAIN_CITATION_RE = re.compile(r"(?:\(|\uFF08)\s*(\d{1,3})\s*(?:\)|\uFF09)")
+_PAREN_MULTI_CITATION_RE = re.compile(
+    r"(?:\(|\uFF08)\s*((?:\d{1,3}\s*(?:[,/\uFF0C\u3001;]\s*\d{1,3}\s*)+))\s*(?:\)|\uFF09)"
+)
 _SOURCE_HASH_CITATION_RE = re.compile(r"\[[^\]\n]{1,80}\]\s*[#＃]\s*(\d{1,3})")
 _NESTED_CITATION_RE = re.compile(r"(?:\[\[|\(\[|\[\^|\[#)\s*(\d{1,3})\s*(?:\]\]|\]\)|\]\^|\])")
-_BRACKET_MULTI_CITATION_RE = re.compile(r"\[((?:\d{1,3}\s*(?:[,，、;/]\s*\d{1,3}\s*)+))\]")
+_BRACKET_MULTI_CITATION_RE = re.compile(r"\[((?:\d{1,3}\s*(?:[,/\uFF0C\u3001;]\s*\d{1,3}\s*)+))\]")
 
 
 def contains_cjk(text: str) -> bool:
@@ -75,10 +79,12 @@ def normalize_inline_citation_styles(text: str) -> str:
             if num not in seen:
                 seen.add(num)
                 dedup.append(num)
-        return ", ".join(f"[{num}]" for num in dedup)
+        return "".join(f"[{num}]" for num in dedup)
 
     body = _BRACKET_MULTI_CITATION_RE.sub(_expand_multi, body)
+    body = _PAREN_MULTI_CITATION_RE.sub(_expand_multi, body)
     body = _PAREN_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
+    body = _PAREN_PLAIN_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
     body = _SOURCE_HASH_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
     body = _NESTED_CITATION_RE.sub(lambda m: f"[{m.group(1)}]", body)
     return body
@@ -328,3 +334,4 @@ def ensure_evidence_section(answer: str, source_output: str, user_message: str, 
         effective_max = max(max_urls, required_urls)
     lines = [f"{url}" for url in source_urls[:effective_max]]
     return f"{answer.rstrip()}\n\n{header}\n" + "\n".join(lines)
+

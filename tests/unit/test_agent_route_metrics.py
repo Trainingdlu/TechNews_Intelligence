@@ -100,7 +100,17 @@ class TestEvidence:
         assert "（[2]）" not in out
         assert "[1]" in out
         assert "[2]" in out
+    def test_normalize_plain_parenthesized_numeric_citations(self):
+        from agent.core.evidence import normalize_inline_citation_styles
 
+        text = "A finding (1) and grouped refs (1,2) and full-width （2，3）."
+        out = normalize_inline_citation_styles(text)
+        assert "(1)" not in out
+        assert "(1,2)" not in out
+        assert "（2，3）" not in out
+        assert "[1]" in out
+        assert "[1][2]" in out
+        assert "[2][3]" in out
     def test_normalize_source_hash_citation(self):
         from agent.core.evidence import normalize_inline_citation_styles
 
@@ -448,3 +458,4 @@ class TestAgentSafety:
         payload = ei.value.clarification.to_dict()
         assert payload["kind"] == "clarification_required"
         assert payload["reason"] in {"insufficient_evidence", "ambiguous_scope"}
+
