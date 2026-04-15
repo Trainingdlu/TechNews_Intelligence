@@ -102,6 +102,11 @@ def generate_ragas_testset():
     print(f"🚀 generating {test_size} questions with gemini-3/3.1")
     
     os.environ["RAGAS_MAX_RETRIES"] = "3"
+    
+    # 彻底关闭 LangSmith Tracing 防止 Ragas 和 LLM 强行把几十万个 Sub-span 都塞到免费版限制上导致 429 报错打断测试集生成
+    # 或者如果被设置为了 true，我们也用 python os.environ 屏蔽
+    os.environ["LANGSMITH_TRACING"] = "false"
+    os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
     # Ragas 0.3.x 接口
     testset = generator.generate_with_langchain_docs(
