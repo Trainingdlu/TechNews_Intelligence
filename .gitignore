@@ -42,3 +42,12 @@ agents/__pycache__/
 .idea/
 .vscode/*
 !.vscode/settings.json
+
+# Agent / skills install artifacts
+.agents/
+
+# Skills lock is environment-specific (generated during install)
+skills-lock.json
+
+# Local AI assistant metadata
+.claude/
