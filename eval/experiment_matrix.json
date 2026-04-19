@@ -1,19 +1,15 @@
 {
-  "name": "rag_agent_eval_matrix_v2",
-  "description": "Six-group matrix to isolate retrieval-recall, rerank, and agent-body contributions.",
+  "name": "task_eval_v1_matrix",
+  "description": "Six-group matrix for task-driven layered evaluation (v1).",
+  "runner": "task_eval_v1",
+  "runner_script": "run_task_eval_v1.py",
   "baseline_group": "G0_baseline",
-  "frozen_dataset_version": "v20260417_1642",
-  "default_run_eval_args": [
-    "--dataset",
-    "eval/datasets/versions/v20260417_1642/regression.jsonl",
-    "--runs-per-question",
-    "3",
-    "--include-trace-summary"
-  ],
+  "frozen_dataset_version": "v_task_latest",
+  "default_runner_args": [],
   "groups": [
     {
       "id": "G0_baseline",
-      "description": "R0 + A0 (current baseline)",
+      "description": "R0 + A0 baseline",
       "env": {
         "EVAL_RETRIEVAL_VARIANT": "baseline",
         "EVAL_AGENT_VARIANT": "baseline",
@@ -22,7 +18,7 @@
     },
     {
       "id": "G1_recall_only",
-      "description": "Recall optimization only; rerank disabled; agent baseline",
+      "description": "Recall optimization only; rerank off; agent baseline",
       "env": {
         "EVAL_RETRIEVAL_VARIANT": "recall_optimized",
         "EVAL_AGENT_VARIANT": "baseline",
@@ -49,7 +45,7 @@
     },
     {
       "id": "G4_agent_only",
-      "description": "Agent-body optimization only; retrieval baseline",
+      "description": "Agent optimization only; retrieval baseline",
       "env": {
         "EVAL_RETRIEVAL_VARIANT": "baseline",
         "EVAL_AGENT_VARIANT": "agent_optimized",

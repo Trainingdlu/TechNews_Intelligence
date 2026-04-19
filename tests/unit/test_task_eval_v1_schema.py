@@ -107,6 +107,54 @@ def test_normalize_case_rejects_invalid_gold_ids() -> None:
         )
 
 
+def test_normalize_case_backfills_gold_doc_ids_from_urls() -> None:
+    task = _task_type()
+    case = normalize_case(
+        {
+            "expected_question": "请总结 OpenAI 相关新闻",
+            "expected_answer": "这是基于新闻池的中文参考答案。",
+            "expected_tool_paths": [[{"tool": "query_news", "args": {"query": "OpenAI"}}]],
+            "retrieval_evaluable": True,
+            "retrieval_gold_doc_ids": [],
+            "retrieval_gold_urls": ["https://a.example.com"],
+            "verifiable_claims": [],
+        },
+        task_type=task,
+        case_id="case-backfill-url",
+        pool_id="pool-backfill-url",
+        input_news_pool=_pool(),
+    )
+    assert case["retrieval_gold_doc_ids"] == ["doc_1"]
+    assert case["retrieval_gold_urls"] == ["https://a.example.com"]
+
+
+def test_normalize_case_backfills_gold_doc_ids_from_claim_evidence() -> None:
+    task = _task_type()
+    case = normalize_case(
+        {
+            "expected_question": "请总结 OpenAI 相关新闻",
+            "expected_answer": "这是基于新闻池的中文参考答案。",
+            "expected_tool_paths": [[{"tool": "query_news", "args": {"query": "OpenAI"}}]],
+            "retrieval_evaluable": True,
+            "retrieval_gold_doc_ids": [],
+            "retrieval_gold_urls": [],
+            "verifiable_claims": [
+                {
+                    "claim": "A happened",
+                    "evidence_doc_ids": ["doc_2"],
+                    "claim_type": "fact",
+                }
+            ],
+        },
+        task_type=task,
+        case_id="case-backfill-claim",
+        pool_id="pool-backfill-claim",
+        input_news_pool=_pool(),
+    )
+    assert case["retrieval_gold_doc_ids"] == ["doc_2"]
+    assert case["retrieval_gold_urls"] == ["https://b.example.com"]
+
+
 def test_normalize_case_rejects_non_chinese_expected_question() -> None:
     task = _task_type()
     with pytest.raises(ValueError, match="expected_question must contain Chinese text"):

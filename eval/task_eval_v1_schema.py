@@ -100,6 +100,18 @@ def _as_str_list(value: Any) -> list[str]:
     return [text]
 
 
+def _dedupe_keep_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        text = str(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
 def _contains_zh(text: str) -> bool:
     return any("\u4e00" <= ch <= "\u9fff" for ch in str(text or ""))
 
@@ -357,6 +369,12 @@ def normalize_case(
         for doc in input_news_pool
         if str(doc.get("url", "")).strip()
     }
+    id_to_url = {
+        str(doc.get("doc_id", "")).strip(): str(doc.get("url", "")).strip()
+        for doc in input_news_pool
+        if str(doc.get("doc_id", "")).strip() and str(doc.get("url", "")).strip()
+    }
+    url_to_id = {url: doc_id for doc_id, url in id_to_url.items()}
 
     expected_question = _as_non_empty_str(raw_case.get("expected_question"), "expected_question")
     expected_answer = _as_non_empty_str(raw_case.get("expected_answer"), "expected_answer")
@@ -380,32 +398,6 @@ def normalize_case(
     if set(required_tools).intersection(forbidden_tools):
         raise ValueError(f"{case_id}: required_tools overlaps forbidden_tools.")
 
-    retrieval_evaluable = bool(raw_case.get("retrieval_evaluable", task_type["retrieval_mode"] == "evaluable"))
-    retrieval_gold_doc_ids = _as_str_list(raw_case.get("retrieval_gold_doc_ids", []))
-    retrieval_gold_urls = _as_str_list(raw_case.get("retrieval_gold_urls", []))
-
-    if retrieval_evaluable:
-        if not retrieval_gold_doc_ids:
-            raise ValueError(f"{case_id}: retrieval_evaluable case requires retrieval_gold_doc_ids.")
-        if not set(retrieval_gold_doc_ids).issubset(pool_doc_ids):
-            raise ValueError(f"{case_id}: retrieval_gold_doc_ids must be subset of input_news_pool doc_id.")
-        if retrieval_gold_urls and not set(retrieval_gold_urls).issubset(pool_urls):
-            raise ValueError(f"{case_id}: retrieval_gold_urls must be subset of input_news_pool urls.")
-    else:
-        retrieval_gold_doc_ids = []
-        retrieval_gold_urls = []
-
-    if not retrieval_gold_urls and retrieval_gold_doc_ids:
-        id_to_url = {
-            str(doc.get("doc_id", "")).strip(): str(doc.get("url", "")).strip()
-            for doc in input_news_pool
-        }
-        retrieval_gold_urls = [
-            id_to_url.get(doc_id, "")
-            for doc_id in retrieval_gold_doc_ids
-            if id_to_url.get(doc_id, "")
-        ]
-
     claims_raw = raw_case.get("verifiable_claims", [])
     if not isinstance(claims_raw, list):
         raise ValueError(f"{case_id}: verifiable_claims must be a list.")
@@ -413,6 +405,50 @@ def normalize_case(
         _normalize_claim(item, case_id=case_id, pool_doc_ids=pool_doc_ids)
         for item in claims_raw
     ]
+    claim_evidence_doc_ids = _dedupe_keep_order(
+        [
+            str(doc_id).strip()
+            for claim in verifiable_claims
+            for doc_id in claim.get("evidence_doc_ids", [])
+            if str(doc_id).strip()
+        ]
+    )
+
+    retrieval_evaluable = bool(raw_case.get("retrieval_evaluable", task_type["retrieval_mode"] == "evaluable"))
+    retrieval_gold_doc_ids = _dedupe_keep_order(_as_str_list(raw_case.get("retrieval_gold_doc_ids", [])))
+    retrieval_gold_urls = _dedupe_keep_order(_as_str_list(raw_case.get("retrieval_gold_urls", [])))
+
+    if retrieval_evaluable:
+        if retrieval_gold_urls and not set(retrieval_gold_urls).issubset(pool_urls):
+            raise ValueError(f"{case_id}: retrieval_gold_urls must be subset of input_news_pool urls.")
+        if retrieval_gold_doc_ids and not set(retrieval_gold_doc_ids).issubset(pool_doc_ids):
+            raise ValueError(f"{case_id}: retrieval_gold_doc_ids must be subset of input_news_pool doc_id.")
+
+        if not retrieval_gold_doc_ids and retrieval_gold_urls:
+            retrieval_gold_doc_ids = [
+                url_to_id[url]
+                for url in retrieval_gold_urls
+                if url in url_to_id
+            ]
+        if not retrieval_gold_doc_ids and claim_evidence_doc_ids:
+            retrieval_gold_doc_ids = [
+                doc_id
+                for doc_id in claim_evidence_doc_ids
+                if doc_id in pool_doc_ids
+            ]
+        if not retrieval_gold_doc_ids:
+            raise ValueError(f"{case_id}: retrieval_evaluable case requires retrieval_gold_doc_ids.")
+        if not set(retrieval_gold_doc_ids).issubset(pool_doc_ids):
+            raise ValueError(f"{case_id}: retrieval_gold_doc_ids must be subset of input_news_pool doc_id.")
+        if not retrieval_gold_urls:
+            retrieval_gold_urls = [
+                id_to_url.get(doc_id, "")
+                for doc_id in retrieval_gold_doc_ids
+                if id_to_url.get(doc_id, "")
+            ]
+    else:
+        retrieval_gold_doc_ids = []
+        retrieval_gold_urls = []
 
     difficulty = str(raw_case.get("difficulty", task_type.get("difficulty", "medium"))).strip().lower()
     if difficulty not in VALID_DIFFICULTY:
@@ -511,9 +547,27 @@ def validate_case(case: dict[str, Any], *, strict_skill: bool = True) -> None:
         raise ValueError(f"{case_id}: required_tools overlaps forbidden_tools.")
 
     retrieval_evaluable = bool(case.get("retrieval_evaluable"))
-    retrieval_gold_doc_ids = _as_str_list(case.get("retrieval_gold_doc_ids"))
-    retrieval_gold_urls = _as_str_list(case.get("retrieval_gold_urls"))
+    retrieval_gold_doc_ids = _dedupe_keep_order(_as_str_list(case.get("retrieval_gold_doc_ids")))
+    retrieval_gold_urls = _dedupe_keep_order(_as_str_list(case.get("retrieval_gold_urls")))
+    pool_id_to_url = {
+        str(doc.get("doc_id", "")).strip(): str(doc.get("url", "")).strip()
+        for doc in input_news_pool
+        if str(doc.get("doc_id", "")).strip() and str(doc.get("url", "")).strip()
+    }
+    pool_url_to_id = {url: doc_id for doc_id, url in pool_id_to_url.items()}
     if retrieval_evaluable:
+        if not retrieval_gold_doc_ids and retrieval_gold_urls:
+            retrieval_gold_doc_ids = [
+                pool_url_to_id[url]
+                for url in retrieval_gold_urls
+                if url in pool_url_to_id
+            ]
+        if not retrieval_gold_urls and retrieval_gold_doc_ids:
+            retrieval_gold_urls = [
+                pool_id_to_url.get(doc_id, "")
+                for doc_id in retrieval_gold_doc_ids
+                if pool_id_to_url.get(doc_id, "")
+            ]
         if not retrieval_gold_doc_ids:
             raise ValueError(f"{case_id}: retrieval_evaluable requires retrieval_gold_doc_ids.")
         if not set(retrieval_gold_doc_ids).issubset(doc_ids):

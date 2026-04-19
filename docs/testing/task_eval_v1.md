@@ -2,7 +2,7 @@
 
 ## 1. Scope
 - This pipeline is independent from legacy evaluation chains.
-- Legacy files are kept in repository, but this v1 flow does not depend on them.
+- Legacy report-chain files were removed; this v1 flow is the active path.
 - Layered outputs are independent: `intent`, `tool`, `retrieval`, `analysis`, `system`.
 
 ## 2. Core Files
@@ -125,6 +125,7 @@ Primary cause for each case is stored in case-level `attribution`.
 ## 9. Notes
 - Gatekeeping thresholds are intentionally deferred in this v1 implementation.
 - To enforce gates later, consume `report.summary.<layer>` directly with hard per-layer thresholds.
+- One-click matrix + leaderboard execution: `deployment/scripts/eval/run_skill_matrix_pipeline.sh`.
 Path scoring rule:
 - Tool-path evaluation uses `acceptable_tool_paths` set, not a single path.
 - Runtime scoring selects the best matching path by priority:

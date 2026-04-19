@@ -41,7 +41,9 @@ def test_load_matrix_config_reads_baseline_and_default_args() -> None:
 
     assert config.baseline_group == "G0_baseline"
     assert config.frozen_dataset_version
-    assert "--dataset" in config.default_run_eval_args
+    assert config.runner == "task_eval_v1"
+    assert config.runner_script == "run_task_eval_v1.py"
+    assert config.default_run_eval_args == []
 
 
 def test_load_matrix_groups_rejects_duplicate_ids() -> None:
@@ -68,6 +70,9 @@ def test_resolve_forwarded_run_eval_args_defaults_and_conflict() -> None:
     defaults = run_matrix_eval.resolve_forwarded_run_eval_args([])
     assert defaults == ["--suite", "default", "--runs-per-question", "3"]
 
+    v1_defaults = run_matrix_eval.resolve_forwarded_run_eval_args([], runner="task_eval_v1")
+    assert v1_defaults == ["--runs-per-case", "1"]
+
     merged = run_matrix_eval.resolve_forwarded_run_eval_args(
         ["--runs-per-question", "1"],
         default_run_eval_args=["--dataset", "eval/datasets/versions/v20260417_1642/regression.jsonl"],
@@ -77,6 +82,12 @@ def test_resolve_forwarded_run_eval_args_defaults_and_conflict() -> None:
 
     with pytest.raises(ValueError, match="--output/--experiment-group"):
         run_matrix_eval.resolve_forwarded_run_eval_args(["--suite", "smoke", "--output", "x.json"])
+
+    with pytest.raises(ValueError, match="Do not pass --output"):
+        run_matrix_eval.resolve_forwarded_run_eval_args(
+            ["--output", "x.json"],
+            runner="task_eval_v1",
+        )
 
 
 def test_build_run_eval_command_includes_group_and_output() -> None:
