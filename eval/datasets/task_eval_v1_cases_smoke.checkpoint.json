@@ -1,6 +1,6 @@
 {
   "status": "in_progress",
-  "generated_at_utc": "2026-04-19T10:15:06.334705+00:00",
+  "generated_at_utc": "2026-04-19T11:22:14.555884+00:00",
   "task_type_file": "C:\\Users\\chenxl007\\Desktop\\TechNews_Intelligence\\eval\\config\\task_types_v1.json",
   "dataset_path": "C:\\Users\\chenxl007\\Desktop\\TechNews_Intelligence\\eval\\datasets\\task_eval_v1_cases_smoke.jsonl",
   "provider": "vertex",
@@ -9,7 +9,11 @@
   "llm_max_retries": 4,
   "llm_backoff_sec": 3.0,
   "completed_task_ids": [
-    "analyze_landscape.coverage.conflict"
+    "analyze_landscape.coverage.conflict",
+    "analyze_landscape.coverage.empty",
+    "analyze_landscape.default_entities.normal",
+    "build_timeline.auto_expand.boundary",
+    "build_timeline.chronological.normal"
   ],
   "tasks": [
     {
@@ -18,6 +22,42 @@
       "retrieval_mode": "non_retrieval",
       "scenario": "conflict",
       "candidate_docs": 300,
+      "pool_count": 2,
+      "generated_cases": 2
+    },
+    {
+      "task_id": "analyze_landscape.coverage.empty",
+      "skill": "analyze_landscape",
+      "retrieval_mode": "non_retrieval",
+      "scenario": "empty",
+      "candidate_docs": 300,
+      "pool_count": 2,
+      "generated_cases": 2
+    },
+    {
+      "task_id": "analyze_landscape.default_entities.normal",
+      "skill": "analyze_landscape",
+      "retrieval_mode": "non_retrieval",
+      "scenario": "normal",
+      "candidate_docs": 300,
+      "pool_count": 2,
+      "generated_cases": 2
+    },
+    {
+      "task_id": "build_timeline.auto_expand.boundary",
+      "skill": "build_timeline",
+      "retrieval_mode": "non_retrieval",
+      "scenario": "boundary",
+      "candidate_docs": 300,
+      "pool_count": 2,
+      "generated_cases": 2
+    },
+    {
+      "task_id": "build_timeline.chronological.normal",
+      "skill": "build_timeline",
+      "retrieval_mode": "non_retrieval",
+      "scenario": "normal",
+      "candidate_docs": 158,
       "pool_count": 2,
       "generated_cases": 2
     }
@@ -363,6 +403,1553 @@
       "tags": [
         "conflict",
         "coverage"
+      ]
+    },
+    {
+      "case_id": "analyze_landscape.coverage.empty.001",
+      "pool_id": "analyze_landscape.coverage.empty.pool.001",
+      "input_news_pool_hash": "e3cf231d4a63b0e729cd6b6e0969201163a69a00",
+      "task_type": "analyze_landscape.coverage.empty",
+      "skill": "analyze_landscape",
+      "intent_label": "analyze_landscape",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_849b60d128ff",
+          "url": "https://blog.google/products-and-platforms/products/search/google-finance-expansion/",
+          "title": "[AI] 谷歌推出AI版Google Finance并扩展至全球百余国家",
+          "summary": "谷歌宣布将全新AI版Google Finance扩展至全球百余个国家，包含澳大利亚、巴西、加拿大等地，并提供完整本地语言支持。该工具已在美国和印度上线，核心新增四项功能：支持复杂市场数据问答的AI研究模块、集成技术指标的高级可视化图表、覆盖大宗商品与加密货币的实时资讯流，以及提供AI同步摘要的财报直播功能。",
+          "published_at": "2026-04-08T15:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_63d3550f4aba",
+          "url": "https://darkbloom.dev",
+          "title": "[AI] Darkbloom：基于闲置Mac的去中心化隐私AI推理网络",
+          "summary": "Eigen Labs推出Darkbloom去中心化推理网络，利用逾1亿台闲置Apple Silicon设备构建AI算力池。平台通过端到端密文路由、Apple安全隔区密钥绑定及OS级运行时锁定，实现硬件级数据防窥。接口完全兼容OpenAI标准，支持文本、图像与语音模态，推理报价较中心化平台下降50%，硬件贡献方获得100%收益。",
+          "published_at": "2026-04-16T05:00:05.053000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 460,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_68b94ff597b4",
+          "url": "https://techcrunch.com/2026/04/15/accel-raises-5b-to-back-late-stage-bets/",
+          "title": "[商业] Accel完成50亿美元融资，押注AI后期项目",
+          "summary": "风投机构Accel宣布完成50亿美元新一轮融资。其中40亿美元将投入后期领导力基金，计划进行至少20笔投资，单笔平均规模达2亿美元；另有6.5亿美元用于侧车基金。该基金重点布局AI软件、硬件、机器人、国防科技及数据中心基础设施。目前Accel已投资超800家企业，涵盖Anthropic等知名公司，旨在把握AI行业机遇并维持市场竞争力。",
+          "published_at": "2026-04-15T17:37:56",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_10d1e8273076",
+          "url": "https://blog.google/innovation-and-ai/products/gemini-app/notebooks-gemini-notebooklm/",
+          "title": "[AI] Gemini应用新增笔记本功能以整合项目与资料管理",
+          "summary": "Google为Gemini应用推出笔记本功能，作为跨端个人知识库同步整合聊天、文件与自定义指令。该功能支持与NotebookLM无缝对接，用户可按订阅方案扩展资料来源并结合网页搜索获取回复。本周起率先面向Web端Ultra、Pro及Plus订阅者开放，后续将逐步扩展至移动端、欧洲地区及免费用户，目前暂不向未成年人及企业教育账户开放。",
+          "published_at": "2026-04-08T13:45:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_71fa7286d20c",
+          "url": "https://chatgpt.com/apps/spreadsheets/",
+          "title": "[AI] ChatGPT推出Excel插件，支持自然语言构建与分析电子表格",
+          "summary": "OpenAI发布ChatGPT for Excel（Beta版）插件。该工具直接集成于Excel内，支持通过自然语言构建电子表格、跨标签分析数据、诊断公式错误及实时更新工作簿。面向ChatGPT Business、Enterprise、教育及Pro/Plus用户开放（欧盟地区除外）。目前功能处于测试阶段，暂不支持VBA、Power Query等高级功能，且默认不共享企业用户数据以优化模型。",
+          "published_at": "2026-04-15T23:00:04.745000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 316,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_9d291dc672ba",
+          "url": "https://techcrunch.com/2026/04/15/anthropic-shrugs-off-vc-funding-offers-valuing-it-at-800b-for-now/",
+          "title": "[商业] Anthropic暂拒估值超8000亿美元的新一轮风投报价",
+          "summary": "Anthropic暂拒外部风投超8000亿美元估值的新一轮注资。公司资本开支规模庞大，已承诺投入500亿美元自建数据中心及300亿美元用于微软云，每年另在AWS支出数十亿美元。财务数据显示其营收呈快速增长态势，截至3月底达300亿美元，较2025年底的90亿美元显著提升。尽管二级市场股份需求强劲，且新一轮融资有望超越竞争对手估值，Anthropic目前暂未接受相关条款，官方未予置评。",
+          "published_at": "2026-04-15T16:21:21",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_b089bb1b5e90",
+          "url": "https://blog.google/products-and-platforms/products/education/catholic-school-ai-literacy/",
+          "title": "[AI] 谷歌联合NCEA向全美天主教学校推广AI素养培训",
+          "summary": "谷歌与全美天主教教育协会（NCEA）合作推出专项教育者小组，面向全美天主教学校教师开放AI素养工具与培训。该计划隶属Google AI教育者系列，预计覆盖14万名教育工作者及160万名学生。首批6名教师将赴谷歌总部学习AI基础与行政效率优化策略，并负责区域级落地推广。谷歌同步在明尼阿波利斯NCEA大会提供现场实操培训。",
+          "published_at": "2026-04-07T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_bef1b1cbbc4e",
+          "url": "https://www.dbreunig.com/2026/04/14/cybersecurity-is-proof-of-work-now.html",
+          "title": "[AI] 网络安全正演变为工作量证明模式",
+          "summary": "经AISI测试，Anthropic安全大模型Mythos在模拟企业网络攻击中成功率显著，且随1亿Token预算增加未见收益递减。文章据此提出新安全经济学观点：防御方需投入超越攻击方的Token以发现漏洞，使安全防护演变为依赖算力消耗的工作量证明机制。该趋势凸显了开源依赖库的高风险性，并预示软件开发流程将新增自动化安全加固阶段。",
+          "published_at": "2026-04-15T22:00:04.990000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 529,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_5dde142b0718",
+          "url": "https://techcrunch.com/2026/04/14/anthropics-rise-is-giving-some-openai-investors-second-thoughts/",
+          "title": "[商业] Anthropic崛起引发部分OpenAI投资者疑虑",
+          "summary": "OpenAI 8520亿美元估值面临部分投资者质疑，公司正转向企业市场以应对Anthropic竞争。受编程工具需求推动，Anthropic年化营收由2025年底的90亿美元跃升至今年3月的300亿美元。投资者指出，支撑OpenAI此轮融资需假设其IPO估值达1.2万亿美元，相比之下Anthropic 380亿美元估值更具性价比。二级市场显示Anthropic股份需求旺盛，而OpenAI股份呈折价交易。Iconiq Capital合伙人强调头部企业将获取超额收益，OpenAI首席财务官则以1220亿美元创纪录融资额回应市场信心。",
+          "published_at": "2026-04-15T02:31:04",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_cf13960dbc88",
+          "url": "https://blog.google/innovation-and-ai/technology/health/mental-health-updates/",
+          "title": "[AI] 谷歌更新Gemini心理健康功能并出资3000万美元支持全球危机热线",
+          "summary": "谷歌宣布更新Gemini模型，新增针对心理健康危机的“一键求助”界面，直接对接危机热线。Google.org承诺未来三年提供3000万美元资金用于扩容全球危机援助网络。同时扩展与ReflexAI的合作，投入400万美元将其训练平台接入Gemini，提升社会组织人员干预能力。此次更新还强化了针对未成年人的情感依赖防护及急性心理危机识别机制。",
+          "published_at": "2026-04-07T10:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_28baf5ce988d",
+          "url": "https://github.com/saffron-health/libretto",
+          "title": "[开发] Libretto：面向AI编码代理的确定性浏览器自动化开发工具包",
+          "summary": "Saffron Health开源浏览器自动化开发工具包Libretto，专为AI编码代理设计。该工具提供轻量级CLI与实时浏览器环境，支持网页DOM解析、网络流量抓包及用户行为录制回放，可自动将操作转化为Playwright脚本。通过调用外部大语言模型进行页面快照分析，有效降低上下文开销。内置会话管理与状态保存功能，支持OpenAI、Anthropic及Gemini等主流模型，旨在提升Web集成开发与维护的确定性。",
+          "published_at": "2026-04-15T19:00:04.717000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 108,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_5bfbfe17c177",
+          "url": "https://techcrunch.com/2026/04/14/ai-datacenter-startup-fluidstack-in-talks-for-1b-round-at-18b-valuation-months-after-hitting-7-5b-says-report/",
+          "title": "[商业] AI数据中心初创公司Fluidstack正洽谈10亿美元融资，估值达180亿美元",
+          "summary": "AI数据中心初创公司Fluidstack正洽谈10亿美元融资，估值达180亿美元，较数月前75亿美元估值实现翻倍，本轮或由Jane Street领投。此前该公司已获Anthropic价值500亿美元的定制数据中心订单，业务涵盖得克萨斯州与纽约州项目。为聚焦美国市场，Fluidstack已将总部迁至纽约，并退出法国百亿欧元AI项目。目前其客户还包括Meta、Poolside及Mistral等。",
+          "published_at": "2026-04-14T21:33:38",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "分析一下过去30天内，关于“可持续航空燃料”这个主题，特别是“SkyFuel Innovations”和“BioJet Corp”这两家公司的行业格局。",
+      "expected_answer": "在过去30天内，关于“可持续航空燃料”主题以及实体“SkyFuel Innovations”和“BioJet Corp”的信息非常有限，无法生成相关的行业格局分析。",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "analyze_landscape",
+            "args": {
+              "topic": "niche micro domain",
+              "days": 30,
+              "entities": "rare_entity_alpha,rare_entity_beta",
+              "limit_per_entity": 3
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "analyze_landscape"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [],
+      "should_clarify": false,
+      "retrieval_evaluable": false,
+      "difficulty": "medium",
+      "tags": [
+        "empty",
+        "coverage"
+      ]
+    },
+    {
+      "case_id": "analyze_landscape.coverage.empty.002",
+      "pool_id": "analyze_landscape.coverage.empty.pool.002",
+      "input_news_pool_hash": "997ee282c0629cbad9db1ed77dd678e25960ac56",
+      "task_type": "analyze_landscape.coverage.empty",
+      "skill": "analyze_landscape",
+      "intent_label": "analyze_landscape",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_6dba2e25226e",
+          "url": "https://blog.google/company-news/inside-google/around-the-globe/google-europe/reaffirming-commitment-to-child-safety/",
+          "title": "[生态] 面对欧盟立法滞后，谷歌重申保护儿童安全承诺",
+          "summary": "2026年4月3日欧盟《电子隐私指令》相关豁免条款到期，导致哈希匹配等儿童性侵内容检测技术面临法律不确定性。在此背景下，谷歌联合Meta、微软及Snap发布联合声明，明确将在相关通信服务中继续采取自愿性内容检测与拦截行动。声明指出欧盟未能就维持现有保护机制达成协议，并敦促其尽快完成监管框架谈判。",
+          "published_at": "2026-04-03T20:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_c7de359edb0d",
+          "url": "https://www.eff.org/deeplinks/2026/04/google-broke-its-promise-me-now-ice-has-my-data",
+          "title": "[生态] 谷歌违反隐私通知承诺向美移民及海关执法局移交用户数据",
+          "summary": "康奈尔大学博士生参加抗议活动离境后，其谷歌账号数据遭美国移民及海关执法局行政传票调取。谷歌未遵守用户事先通知承诺，在未提供申诉机会的情况下直接移交IP日志、物理地址及会话时间等元数据。电子前沿基金会已向加州及纽约州总检察长提交投诉，指控谷歌涉嫌欺骗性商业行为并协助政府监控。",
+          "published_at": "2026-04-15T19:00:04.706000",
+          "source": "HackerNews",
+          "sentiment": "Negative",
+          "points": 1592,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_cf2ed9bdb790",
+          "url": "https://techcrunch.com/2026/04/14/anthropic-co-founder-confirms-the-company-briefed-the-trump-administration-on-mythos/",
+          "title": "[商业] Anthropic联合创始人确认已向特朗普政府简报Mythos模型",
+          "summary": "Anthropic联合创始人Jack Clark确认已向特朗普政府简报未公开的新型AI模型Mythos。该模型因网络安全能力较强暂未发布。此前Anthropic曾起诉国防部将其列为供应链风险，双方就AI用于大规模监控与自主武器存在分歧，该军方合同最终由OpenAI获得。Clark将争议定性为合同问题，强调政企需就国家安全事项保持合作。特朗普政府已鼓励多家华尔街银行测试该模型。在就业影响方面，Clark指出目前仅见部分应届生就业疲软，建议高校教育应侧重跨学科综合分析与逻辑推理能力培养。",
+          "published_at": "2026-04-14T18:09:12",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_67b63260d402",
+          "url": "https://blog.google/innovation-and-ai/technology/developers-tools/gemma-4/",
+          "title": "[AI] Google发布Gemma 4开源模型家族",
+          "summary": "Google DeepMind发布Gemma 4开源模型家族，提供E2B、E4B、26B MoE与31B Dense四种规格，采用Apache 2.0协议。该系列基于Gemini 3技术构建，31B版本在Arena AI文本榜单位列开源第三，性能超越20倍体量模型。模型原生支持多模态输入、智能体工作流及代码生成，上下文窗口扩展至128K至256K，并针对移动设备与本地GPU进行端侧优化，实现高参数效率下的前沿推理能力。",
+          "published_at": "2026-04-02T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_4df32f939427",
+          "url": "https://deepmind.google/blog/gemini-robotics-er-1-6/",
+          "title": "[AI] Google DeepMind发布Gemini Robotics-ER 1.6，强化具身推理与机器人任务能力",
+          "summary": "Google DeepMind正式发布Gemini Robotics-ER 1.6模型，专注提升机器人具身推理能力。该版本强化了空间推理、多视角理解与任务成功检测，并新增仪表读取功能，可精准解析压力表与液位计，相关能力经与Boston Dynamics合作验证。模型采用代理视觉与代码执行结合架构，通过放大图像与比例估算实现高精度读数。相比前代及Gemini 3.0 Flash，其在指针定位、计数及安全合规（文本风险识别提升6%，视频提升10%）方面表现更优，目前已通过Gemini API与Google AI Studio向开发者开放。",
+          "published_at": "2026-04-15T16:00:05.063000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 198,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_6498fc0399f6",
+          "url": "https://techcrunch.com/2026/04/14/google-adds-ai-skills-to-chrome-to-help-you-save-favorite-workflows/",
+          "title": "[AI] Google 为 Chrome 推出 AI Skills 功能，支持保存与复用常用提示词工作流",
+          "summary": "Google 宣布在 Chrome 浏览器集成 Gemini AI 并上线 Skills 功能，支持用户将常用提示词保存为跨网页复用的技能模块。用户可直接从对话历史保存提示词，并在浏览任意页面时通过斜杠或加号键一键调用，支持多标签页协同处理。官方同步提供涵盖生产力、购物等场景的预设 Skills 库。该功能即日起面向桌面端推送，初期仅限英语（美国）版本。",
+          "published_at": "2026-04-14T17:00:00",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_f2b31c55fc99",
+          "url": "https://blog.google/innovation-and-ai/technology/developers-tools/introducing-flex-and-priority-inference/",
+          "title": "[AI] Gemini API推出Flex与Priority推理层级以平衡成本与可靠性",
+          "summary": "Google为Gemini API新增Flex与Priority两种服务层级。Flex层级定价降低百分之五十，采用同步接口，适用于后台延迟容忍型任务。Priority层级提供最高可靠性保障，流量超限时自动降级至标准层以确保业务连续性。两项功能均支持GenerateContent与Interactions API，旨在消除异步批处理复杂度，帮助开发者通过单一接口优化成本与可靠性。",
+          "published_at": "2026-04-02T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_f349c7f413cf",
+          "url": "https://www.gizmoweek.com/gemma-4-runs-iphone/",
+          "title": "[AI] 谷歌Gemma 4原生运行于iPhone实现完全离线推理",
+          "summary": "谷歌开源模型Gemma 4已实现iPhone端原生部署，支持完全离线推理。其中31B版本性能与Qwen 3.5的27B模型相近，而专为移动端优化的E2B与E4B变体更注重运行效率。用户可通过Google AI Edge Gallery应用调用iPhone GPU执行本地计算，响应延迟显著降低。该方案无需云端依赖，适用于对数据隐私有严格要求的医疗及现场作业等企业级场景。",
+          "published_at": "2026-04-15T12:00:42.926000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 238,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_7a432c3c6e13",
+          "url": "https://techcrunch.com/2026/04/14/google-brings-its-gemini-personal-intelligence-feature-to-india/",
+          "title": "[AI] Google将Gemini个人智能功能引入印度市场",
+          "summary": "谷歌宣布在印度推出Gemini个人智能功能，支持绑定Gmail、Google Photos及YouTube账户以生成定制化问答。该功能初期仅限AI Pro与AI Ultra付费订阅者，拟于数周内开放至免费用户。此为继美、日市场后的区域扩展。配合近期在印度上线的Chrome端Gemini及接入Zomato等平台的餐饮预订智能体，谷歌正加速本土化AI服务部署。官方同时指出，模型在复杂上下文与情感关联解析上仍存局限。",
+          "published_at": "2026-04-14T14:48:34",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_ab324ca76ade",
+          "url": "https://blog.google/products-and-platforms/products/workspace/google-vids-updates-lyria-veo/",
+          "title": "[AI] Google Vids集成Veo 3.1与Lyria 3模型，开放免费视频生成与AI配乐功能",
+          "summary": "Google Vids发布版本更新，集成Veo 3.1与Lyria 3模型以提供AI视频生成与定制配乐功能。普通账号每月可免费生成10条视频，Google AI Pro与Ultra订阅者支持生成最长3分钟音频及使用可自定义外观的AI虚拟化身。Ultra账号月生成配额提升至1000条。平台同步上线Chrome浏览器屏幕录制扩展及YouTube一键发布通道。",
+          "published_at": "2026-04-02T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_174425f454f7",
+          "url": "https://support.claude.com/en/articles/14328960-identity-verification-on-claude",
+          "title": "[AI] Claude平台推出身份验证功能以强化合规与安全管控",
+          "summary": "Anthropic宣布在Claude平台逐步推行身份验证机制，旨在防范系统滥用并满足法律合规要求。该流程由Persona Identities提供技术支持，要求用户提交政府签发的实体证件与实时自拍，验证耗时通常在五分钟内。官方明确承诺，验证数据仅用于身份核验，绝不用于AI模型训练，且采用行业标准加密措施存储，不与第三方共享。若验证失败或遭遇封号，用户可多次重试或提交官方申诉。",
+          "published_at": "2026-04-15T11:00:42.736000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 31,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_88558602673a",
+          "url": "https://techcrunch.com/2026/04/13/openai-has-bought-ai-personal-finance-startup-hiro/",
+          "title": "[商业] OpenAI收购AI个人理财初创公司Hiro",
+          "summary": "OpenAI已确认收购AI个人理财初创公司Hiro。交易条款未披露，实质为人才收购，约10名核心员工将随创始人加入OpenAI。Hiro成立于2023年，主打AI财务规划与高精度数学运算，曾获Ribbit与General Catalyst等机构投资。该公司定于4月20日停止运营，并于5月13日彻底清除服务器数据。此次交易旨在强化OpenAI在商业金融垂直领域的团队规模与技术应用储备。",
+          "published_at": "2026-04-14T00:23:33",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "我想了解一下最近30天关于“神经形态计算”这个领域的情况，特别是“Synaptic AI”和“BrainChipX”这两家公司，帮我分析一下格局。",
+      "expected_answer": "根据现有信息，在过去30天内，没有找到关于“神经形态计算”主题以及“Synaptic AI”和“BrainChipX”这两个实体的足够新闻，因此无法进行格局分析。",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "analyze_landscape",
+            "args": {
+              "topic": "niche micro domain",
+              "days": 30,
+              "entities": "rare_entity_alpha,rare_entity_beta",
+              "limit_per_entity": 3
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "analyze_landscape"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [],
+      "should_clarify": false,
+      "retrieval_evaluable": false,
+      "difficulty": "medium",
+      "tags": [
+        "empty",
+        "coverage"
+      ]
+    },
+    {
+      "case_id": "analyze_landscape.default_entities.normal.001",
+      "pool_id": "analyze_landscape.default_entities.normal.pool.001",
+      "input_news_pool_hash": "bfd0d5ebf572fe39ae00eaebb8513af8a46fa98d",
+      "task_type": "analyze_landscape.default_entities.normal",
+      "skill": "analyze_landscape",
+      "intent_label": "analyze_landscape",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_36f025c0fd9f",
+          "url": "https://blog.google/company-news/outreach-and-initiatives/grow-with-google/ai-transformation-summit/",
+          "title": "[AI] Google举办AI转型峰会，探讨企业级AI落地与领导力重塑",
+          "summary": "Google在纽约举办AI转型峰会，邀请逾50名财富500强企业高管参会。会议聚焦企业AI落地路径，指出技术整合属战略设计选择。沃尔玛正为160万名员工提供Google AI认证，花旗银行推行全员提示词培训。峰会强调领导者需以身作则开展负责任的技术试验，通过人机协作提升组织效能并释放员工潜力。",
+          "published_at": "2026-04-16T15:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_dbb8f0fc8bf3",
+          "url": "https://kdenlive.org/news/2026/state-2026/",
+          "title": "[开发] Kdenlive 2025年度开发进展与2026年路线图",
+          "summary": "开源视频编辑器Kdenlive发布2025年度开发报告。全年推出25.04至25.12三个版本，重点提升系统稳定性与交互体验，新增基于SAM2的背景移除、OpenTimelineIO重写及音频优化功能。2025年官网下载量达1150万次，吸引38名开发者贡献代码。2026年路线图规划了监视器镜像、关键帧Dopesheet时间轴、10/12位色彩支持、OpenFX集成及Microsoft Store上架计划。",
+          "published_at": "2026-04-18T13:00:04.626000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 407,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_82778617265b",
+          "url": "https://techcrunch.com/2026/04/17/anthropic-launches-claude-design-a-new-product-for-creating-quick-visuals/",
+          "title": "[AI] Anthropic推出Claude Design，支持快速生成原型与演示文稿等视觉内容",
+          "summary": "Anthropic发布实验性产品Claude Design，由Claude Opus 4.7驱动。该工具面向非设计人员，支持自然语言生成原型与幻灯片，并提供即时修改功能。成果可导出为PDF或PPTX，亦能同步至Canva协作。系统可解析企业代码与设计文件以统一视觉规范。目前Pro及以上订阅用户已可用，标志其加速进军企业级市场。",
+          "published_at": "2026-04-17T15:00:00",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_f017d909b9b9",
+          "url": "https://blog.google/products/ads-commerce/2025-ads-safety-report/",
+          "title": "[安全] Google 2025年广告安全报告：Gemini拦截超99%违规广告",
+          "summary": "Google发布2025年广告安全报告，披露其基于Gemini的AI防御体系已拦截超99%的违规广告。全年共阻止或移除83亿条广告，封禁2490万个违规账户，其中涉诈广告达6.02亿条、涉诈账户400万个。该模型通过分析账户年龄、行为特征及投放模式实时识别恶意意图，使用户反馈处理量同比提升4倍，错误封禁率降低80%，实时审查能力正逐步覆盖更多广告格式。",
+          "published_at": "2026-04-16T15:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_b2e720f969a8",
+          "url": "https://awnist.com/slop-cop",
+          "title": "[AI] Slop Cop：浏览器端大模型文本特征检测编辑器",
+          "summary": "Slop Cop是一款运行于浏览器的文本编辑工具，专门用于识别和标记大语言模型生成的通用行文特征与结构模式。该工具支持本地直接运行，并提供Anthropic API密钥接入选项，以启用深度分析与自动编辑功能。其设计旨在帮助创作者快速甄别并优化AI辅助生成的文本，提升内容的原创性与可读性。",
+          "published_at": "2026-04-18T00:00:06.271000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 214,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_ce365502ee8c",
+          "url": "https://techcrunch.com/2026/04/17/with-us-spy-laws-set-to-expire-lawmakers-are-split-over-protecting-americans-from-warrantless-surveillance/",
+          "title": "[生态] 美国监控法案即将到期，国会议员就禁止无证监听产生分歧",
+          "summary": "美国《外国情报监视法》第702条款将于4月20日到期，该条款允许情报机构无证收集海外通信并波及本国公民隐私。两党议员推动《政府监控改革法案》，旨在封堵后门搜索漏洞，禁止政府从数据经纪商处无证购买商业位置数据。FBI已确认此操作，且该数据采购涉及AI模型分析限制，成为政府与Anthropic及OpenAI谈判的阻碍。即使法案到期，因FISC年度认证机制，监控程序仍可延续至2027年3月。",
+          "published_at": "2026-04-17T14:00:00",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_41d293379198",
+          "url": "https://blog.google/products-and-platforms/products/maps/new-ways-were-protecting-businesses-on-maps/",
+          "title": "[安全] Google Maps引入三项新机制升级商家反诈骗与信息保护能力",
+          "summary": "Google Maps宣布升级信任与安全系统，引入Gemini模型加速识别并拦截违规内容编辑，上线防敲诈勒索评论拦截机制及商家资料变更邮件预警功能。2025年数据显示，该平台全年共移除2.92亿条违规评论，拦截7900万次不实信息编辑，限制超78万个违规账号并清理1300万个虚假商家档案，旨在提升本地商业信息的准确性与安全性。",
+          "published_at": "2026-04-16T13:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_53e28a9e5765",
+          "url": "https://www.claudecodecamp.com/p/i-measured-claude-4-7-s-new-tokenizer-here-s-what-it-costs-you",
+          "title": "[AI] Claude Opus 4.7单次会话成本增加20%至30%",
+          "summary": "Anthropic推出Claude Opus 4.7，实测其新分词器使技术文档与代码的Token消耗量达4.6版本的1.325至1.45倍。在单价不变的情况下，单次长会话成本上升约20%至30%，缓存写入量增加且速率限制窗口缩短。IFEval基准测试显示，4.7在严格指令遵循指标上提升约5个百分点。此次更新以Token使用量增加为代价，换取了更精确的指令执行表现。",
+          "published_at": "2026-04-17T17:00:04.978000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 678,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_1e3616d2d00c",
+          "url": "https://techcrunch.com/2026/04/17/googles-ai-mode-can-now-help-you-find-products-in-stock-nearby/",
+          "title": "[AI] 谷歌AI模式新增本地库存查询与酒店价格追踪功能",
+          "summary": "谷歌AI模式集成代理AI技术，支持代用户致电本地商店核实特定商品库存，即将在美国上线。搜索功能同步新增具体酒店价格追踪开关，价格变动时自动发送邮件提醒。数据显示，过去一年“AI旅行助手”搜索热度上升350%，“AI机票预订”查询量增长315%，反映智能规划工具应用场景持续扩展。",
+          "published_at": "2026-04-17T14:00:00",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_a797ae4cd684",
+          "url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-tts/",
+          "title": "[AI] Gemini 3.1 Flash TTS发布：新一代高表现力AI语音模型",
+          "summary": "谷歌正式发布Gemini 3.1 Flash TTS语音合成模型。该模型支持70余种语言，在人工分析TTS基准测试中获得1211分的Elo评分。模型新增基于自然语言的音频标签功能，支持开发者通过文本指令精准调控语音节奏、音色与多角色对话语境，相关配置可直接导出为API代码。所有生成音频均强制内置SynthID隐形水印以标识AI生成内容。该模型现已在Google AI Studio、Vertex AI及Google Vids平台开放预览。",
+          "published_at": "2026-04-15T15:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_afabafae0730",
+          "url": "https://www.anthropic.com/news/claude-design-anthropic-labs",
+          "title": "[开发] Anthropic推出AI视觉协作工具Claude Design",
+          "summary": "Anthropic Labs正式发布AI视觉设计工具Claude Design，底层搭载Claude Opus 4.7模型。产品面向付费订阅用户开放，支持通过自然语言生成UI设计稿、交互原型与演示文稿，具备自动同步企业设计规范、精细化参数调节及组织级协同编辑功能。成品可直接交付Claude Code进入代码开发流程，或无缝跳转至Canva进行二次排版，旨在缩短从概念构思到原型落地的周期。",
+          "published_at": "2026-04-17T16:00:05.199000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 1167,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_ad8bafe75482",
+          "url": "https://techcrunch.com/video/are-we-tokenmaxxing-our-way-to-nowhere/",
+          "title": "[AI] 我们是否正通过“Token最大化”走向虚无？",
+          "summary": "本期TechCrunch Equity播客聚焦AI行业内部与公众认知的差距扩大现象。OpenAI近期收购财务应用与媒体内容；运动品牌Allbirds出售核心业务后转型AI基础设施；Anthropic发布新一代大模型，以安全为由暂不公开，但已向美联储主席进行内部演示。节目系统梳理了当前AI基础设施的实际部署情况，并评估了OpenAI与Anthropic在企业级市场的竞争态势。",
+          "published_at": "2026-04-17T13:00:00",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "请分析过去30天「AI foundation model」相关赛道的竞争格局。",
+      "expected_answer": "根据最近30天的新闻，人工智能基础模型领域主要由Google和Anthropic引领，双方都在积极推出新产品和功能以抢占市场。\n\n**Google方面：**\n*   **模型与产品发布**：发布了新一代高表现力语音合成模型Gemini 3.1 Flash TTS，支持超过70种语言，并允许通过自然语言指令进行精细调控。该模型已在多个Google平台开放预览。\n*   **AI应用落地**：将Gemini模型应用于广告安全和地图服务，有效拦截了大量违规广告和不实信息。同时，AI模式新增了本地商品库存查询功能。\n*   **企业战略**：在纽约举办了AI转型峰会，与财富500强企业高管探讨AI在企业中的落地路径，并与沃尔玛、花旗银行等合作进行AI技能培训。\n\n**Anthropic方面：**\n*   **新产品推出**：发布了由Claude Opus 4.7驱动的实验性产品Claude Design，该工具让非设计人员也能通过自然语言快速生成原型和演示文稿，加速其向企业级市场的扩张。\n*   **模型更新与成本**：其最新的Claude Opus 4.7模型虽然在指令遵循上有所提升，但新的分词器导致单次会话成本增加了约20%至30%。\n\n总体来看，Google正通过将其AI能力深度整合到现有产品生态和企业服务中来巩固优势，而Anthropic则通过推出创新的、面向特定工作流的工具来开拓新市场。",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "analyze_landscape",
+            "args": {
+              "topic": "AI foundation model",
+              "days": 30,
+              "entities": "",
+              "limit_per_entity": 3
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "analyze_landscape"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [
+        {
+          "claim": "Anthropic发布了由Claude Opus 4.7驱动的实验性产品Claude Design，用于快速生成视觉内容。",
+          "evidence_doc_ids": [
+            "doc_82778617265b",
+            "doc_afabafae0730"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "Google发布了Gemini 3.1 Flash TTS语音合成模型，支持超过70种语言。",
+          "evidence_doc_ids": [
+            "doc_a797ae4cd684"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "Claude Opus 4.7的新分词器导致单次长会话成本上升约20%至30%。",
+          "evidence_doc_ids": [
+            "doc_53e28a9e5765"
+          ],
+          "claim_type": "number"
+        },
+        {
+          "claim": "Google利用Gemini模型拦截了超过99%的违规广告。",
+          "evidence_doc_ids": [
+            "doc_f017d909b9b9"
+          ],
+          "claim_type": "number"
+        }
+      ],
+      "should_clarify": false,
+      "retrieval_evaluable": false,
+      "difficulty": "medium",
+      "tags": [
+        "normal"
+      ]
+    },
+    {
+      "case_id": "analyze_landscape.default_entities.normal.002",
+      "pool_id": "analyze_landscape.default_entities.normal.pool.002",
+      "input_news_pool_hash": "f602059f671213f28f52b4e5888195c019180eb2",
+      "task_type": "analyze_landscape.default_entities.normal",
+      "skill": "analyze_landscape",
+      "intent_label": "analyze_landscape",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_3f21cc54238a",
+          "url": "https://blog.google/innovation-and-ai/technology/developers-tools/prepay-gemini-api/",
+          "title": "[开发] Google推出Gemini API预付费计费模式",
+          "summary": "Google AI Studio正式推出Gemini API预付费计费模式。开发者可在绑定云端账单时直接购买API额度，支持低余额自动充值与实时消耗监控，以规避月末意外扣费风险。该功能目前面向美国新账户开放，后续将逐步全球推广。用户在建立稳定支付记录并达到高级用量层级后，可切换至标准后付费模式，从而整合云端账单并获取更高API调用配额。",
+          "published_at": "2026-04-15T14:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_c715a2162a69",
+          "url": "https://blog.vidocsecurity.com/blog/we-reproduced-anthropics-mythos-findings-with-public-models",
+          "title": "[AI] 使用公开模型复现Anthropic Mythos漏洞研究成果",
+          "summary": "VIDOC团队使用GPT-5.4与Claude Opus 4.6模型及opencode开源智能体，复现Anthropic Mythos项目的公开漏洞案例。测试覆盖FreeBSD、OpenBSD、Botan等五个项目，单次扫描成本低于30美元。结果显示，两款模型均在Botan与FreeBSD案例中实现完全复现，仅Claude复现OpenBSD逻辑漏洞，FFmpeg与wolfSSL为部分发现。研究指出公开模型已具备前沿安全研究能力，防御重心应转向输出验证与优先级排序。",
+          "published_at": "2026-04-17T15:00:05.109000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 49,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_65e56e4a08bc",
+          "url": "https://techcrunch.com/2026/04/16/new-leaders-new-fund-sequoia-has-raised-7b-to-expand-its-ai-bets/",
+          "title": "[商业] 红杉资本募集70亿美元新基金以扩大AI投资布局",
+          "summary": "红杉资本近期完成约70亿美元新基金募集，资金将用于其晚期投资策略及欧美市场扩张。该规模接近2022年同类基金的两倍，主要投向AI底层技术与应用企业。目前其投资组合已覆盖OpenAI、Anthropic等基础模型厂商，以及Physical Intelligence与Factory等新兴项目。本轮募资系新任联合管理人Alfred Lin与Pat Grady上任后的首次重大资本运作。",
+          "published_at": "2026-04-17T02:55:06",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_e06d0ffc12f6",
+          "url": "https://blog.google/products-and-platforms/products/search/google-apps-windows-english/",
+          "title": "[AI] 谷歌桌面版应用正式面向全球Windows用户推出",
+          "summary": "谷歌正式面向全球Windows用户推出英文版桌面应用，深度集成AI搜索模式。用户可通过快捷键跨平台检索网页、本地文件、已安装应用及云端文档。应用支持屏幕共享与实时提问，并内置视觉识别功能以提取屏幕内容。该工具旨在优化桌面工作流，提供即时AI反馈与来源链接，目前已开放下载。",
+          "published_at": "2026-04-14T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_1e0f8f16fed0",
+          "url": "https://tomtunguz.com/ai-compute-crisis-2026/",
+          "title": "[AI] AI算力短缺时代的开端",
+          "summary": "英伟达Blackwell GPU租赁价格在两个月内上涨48%至每小时4.08美元。CoreWeave提价20%并将最低合同期延至三年。Anthropic最新模型仅向约四十家机构开放，OpenAI高管亦指出算力不足导致项目取舍。当前AI市场呈现关系型销售、竞价优先、响应延迟及价格通胀特征。开发者被迫转向小型或本地部署模型，充裕的AI算力时代预计将结束数年。",
+          "published_at": "2026-04-17T06:00:04.957000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 124,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_21811dbfa03e",
+          "url": "https://techcrunch.com/2026/04/16/openai-takes-aim-at-anthropic-with-beefed-up-codex-that-gives-it-more-power-over-your-desktop/",
+          "title": "[AI] OpenAI升级Codex：新增后台桌面控制与多智能体功能，强化企业工作流整合",
+          "summary": "OpenAI更新AI编程工具Codex，支持后台部署多智能体并行操作桌面应用与浏览器。新增内置浏览器指令控制、跨会话记忆功能及图像生成能力，并集成111款第三方插件以自动化处理日程与代码审查等辅助任务。公司面向企业客户推出按量付费选项，旨在提升工具在多场景企业工作流中的覆盖率，直接对标Anthropic同类竞品。",
+          "published_at": "2026-04-16T19:18:41",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_587c63d046ac",
+          "url": "https://blog.google/innovation-and-ai/models-and-research/google-deepmind/gemini-robotics-er-1-6/",
+          "title": "[AI] Google发布Gemini Robotics-ER 1.6模型，增强机器人真实任务推理与空间理解能力",
+          "summary": "Google DeepMind发布Gemini Robotics-ER 1.6推理模型，现已通过Gemini API与Google AI Studio向开发者开放。该版本强化了空间逻辑与多视角理解能力，专注环境感知、任务规划与成功检测。新增基于与波士顿动力合作发现的复杂仪表读取功能，并在对抗性空间推理任务中展现出更高的安全策略合规性。",
+          "published_at": "2026-04-14T15:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_3d0375cf4e19",
+          "url": "https://openai.com/index/introducing-gpt-rosalind/",
+          "title": "[AI] OpenAI发布生命科学专用推理模型GPT-Rosalind",
+          "summary": "OpenAI推出专注于生命科学的前沿推理模型GPT-Rosalind，旨在加速生物学与药物研发。该模型集成50余种科学工具与数据库插件，在LABBench2基准测试中于6项任务超越GPT-5.4。在Dyno Therapeutics的RNA序列预测评估中，其表现位列人类专家前5%。目前模型通过受信任访问计划面向合格企业用户开放API及ChatGPT与Codex内测，并已与Amgen及Moderna等机构建立合作。",
+          "published_at": "2026-04-17T00:00:05.049000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 88,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_6c5cc5e6835c",
+          "url": "https://techcrunch.com/2026/04/16/anthropic-cpo-leaves-figmas-board-after-reports-he-will-offer-a-competing-product/",
+          "title": "[商业] Anthropic首席产品官退出Figma董事会，因拟推出竞争产品",
+          "summary": "2026年4月14日，Anthropic首席产品官Mike Krieger正式辞去Figma董事会职务。据披露，Anthropic下一代模型Opus 4.7将集成设计工具，可能与Figma核心业务形成竞争。受AI实验室侵蚀SaaS市场担忧影响，主要软件ETF年内已下跌近18%。Anthropic目前估值超8000亿美元，并拒绝外部投资意向。Figma股价在消息公布后上涨5%，市场正评估新模型发布对设计软件领域的实际冲击。",
+          "published_at": "2026-04-16T18:28:42",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_376fe5dc4284",
+          "url": "https://blog.google/innovation-and-ai/models-and-research/quantum-computing/world-quantum-day-2026/",
+          "title": "[硬件] 谷歌世界量子日内容解析量子计算原理与纠错进展",
+          "summary": "谷歌在世界量子日发布科普内容，解析量子计算技术路径。Google Quantum AI聚焦大规模容错量子计算机研发，核心依赖可处于叠加态的量子比特。当前工程挑战集中于对抗环境噪声导致的“退相干”以延长信息维持时间。该技术旨在突破经典计算机算力瓶颈，主要应用场景覆盖新型材料研发与药物发现等领域。",
+          "published_at": "2026-04-14T14:21:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_43f484906c2b",
+          "url": "https://simonwillison.net/2026/Apr/16/qwen-beats-opus/",
+          "title": "[AI] Qwen3.6-35B-A3B在本地生成SVG图形效果优于Claude Opus 4.7",
+          "summary": "阿里Qwen3.6-35B-A3B模型（20.9GB Q4量化版）在本地MacBook M5运行，与Anthropic最新发布的Claude Opus 4.7进行SVG图像生成对比测试。在指定图形生成任务中，本地部署的Qwen在细节准确度上优于Opus。该对比虽属非正式基准测试，但反映出当前量化模型在特定垂直任务上的性能表现。整体而言，本地运行版Qwen在特定SVG生成场景具备更优输出质量。",
+          "published_at": "2026-04-16T20:00:05.557000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 390,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_82a2dc4652f9",
+          "url": "https://techcrunch.com/2026/04/16/google-now-lets-you-explore-the-web-side-by-side-with-ai-mode/",
+          "title": "[AI] 谷歌Chrome桌面端AI模式支持分屏浏览与跨标签页搜索",
+          "summary": "谷歌宣布为Chrome桌面端AI模式推出两项功能更新。其一为分屏浏览模式，用户点击搜索结果链接后，网页将与AI对话框并排显示，支持在保留原始搜索上下文的前提下进行多页对比与追问。其二为跨标签页上下文搜索功能，允许用户将当前已打开的标签页、图片或文件直接纳入AI检索范围。该更新目前已在美国地区上线，后续将逐步扩展至更多区域。",
+          "published_at": "2026-04-16T17:00:00",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "请分析过去30天「AI foundation model」相关赛道的竞争格局。",
+      "expected_answer": "在过去30天里，人工智能基础模型领域的竞争日益激烈，主要参与者OpenAI、Google和Anthropic均有重要更新，同时行业也面临算力短缺的挑战。\n\n**主要公司动态：**\n*   **OpenAI**：发布了专为生命科学领域设计的推理模型GPT-Rosalind，并在其AI编程工具Codex中增加了后台桌面控制和多智能体功能，以对标Anthropic的竞品。\n*   **Google**：在产品和开发者生态上持续发力。为Gemini API推出了预付费模式，方便开发者管理成本；发布了增强机器人空间理解能力的Gemini Robotics-ER 1.6模型；并推出了集成AI搜索的Windows桌面应用。\n*   **Anthropic**：其下一代模型Opus 4.7将集成设计工具，此举导致其首席产品官从Figma董事会辞职，显示出AI公司向SaaS领域扩张的趋势。然而，公司也面临算力不足的限制，新模型仅向少数机构开放。\n\n**行业趋势与挑战：**\n*   **AI算力危机**：市场正经历算力短缺，表现为英伟达GPU租赁价格在两个月内上涨48%，CoreWeave等供应商提价并延长合同期。这迫使开发者转向小型或本地模型。\n*   **资本动向**：红杉资本募集了70亿美元的新基金，将主要用于扩大对AI底层技术和应用企业的投资，其投资组合已包括OpenAI和Anthropic，显示出资本市场对该赛道的持续看好。",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "analyze_landscape",
+            "args": {
+              "topic": "AI foundation model",
+              "days": 30,
+              "entities": "",
+              "limit_per_entity": 3
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "analyze_landscape"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [
+        {
+          "claim": "OpenAI发布了专注于生命科学的推理模型GPT-Rosalind。",
+          "evidence_doc_ids": [
+            "doc_3d0375cf4e19"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "由于Anthropic计划推出可能与Figma竞争的设计产品，其首席产品官Mike Krieger已从Figma董事会辞职。",
+          "evidence_doc_ids": [
+            "doc_6c5cc5e6835c"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "英伟达Blackwell GPU的租赁价格在两个月内上涨了48%。",
+          "evidence_doc_ids": [
+            "doc_1e0f8f16fed0"
+          ],
+          "claim_type": "number"
+        },
+        {
+          "claim": "红杉资本近期完成了约70亿美元的新基金募集，以扩大其在AI领域的投资。",
+          "evidence_doc_ids": [
+            "doc_65e56e4a08bc"
+          ],
+          "claim_type": "number"
+        },
+        {
+          "claim": "Google为开发者推出了Gemini API的预付费计费模式。",
+          "evidence_doc_ids": [
+            "doc_3f21cc54238a"
+          ],
+          "claim_type": "fact"
+        }
+      ],
+      "should_clarify": false,
+      "retrieval_evaluable": false,
+      "difficulty": "medium",
+      "tags": [
+        "normal"
+      ]
+    },
+    {
+      "case_id": "build_timeline.auto_expand.boundary.001",
+      "pool_id": "build_timeline.auto_expand.boundary.pool.001",
+      "input_news_pool_hash": "51c9583192cb5fb032db2dcb7a206b4429248cce",
+      "task_type": "build_timeline.auto_expand.boundary",
+      "skill": "build_timeline",
+      "intent_label": "build_timeline",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_554a4e3bf872",
+          "url": "https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-live/",
+          "title": "[AI] Gemini 3.1 Flash Live发布：提升语音交互自然性与可靠性",
+          "summary": "Google发布Gemini 3.1 Flash Live音频模型，在ComplexFuncBench Audio得分90.8%，Scale AI Audio MultiChallenge得分36.1%。支持200多个国家的多语言实时对话，具备声学细节识别与动态响应能力，并通过SynthID对生成音频添加不可感知水印。",
+          "published_at": "2026-03-26T15:21:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_701c32ae7260",
+          "url": "https://www.wired.com/story/openai-backs-bill-exempt-ai-firms-model-harm-lawsuits/",
+          "title": "[生态] OpenAI支持伊利诺伊州法案以限制AI重大损害责任",
+          "summary": "伊利诺伊州拟推行SB 3444法案，针对造成百人伤亡或超10亿美元财产损失等关键危害的前端AI模型，豁免开发方民事赔偿责任。OpenAI转变策略公开支持该提案，条件是企业需发布安全透明度报告且非故意致害。公司主张借此建立联邦统一监管标准，规避各州立法碎片化风险。该提案在当地面临高反对率，且目前联邦层面尚无明确责任界定。",
+          "published_at": "2026-04-10T14:00:41.967000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 354,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_04d7beee6a79",
+          "url": "https://techcrunch.com/2026/04/07/adobe-launches-acrobat-spaces-a-free-ai-powered-study-tool-for-students/",
+          "title": "[AI] Adobe推出免费AI学习工具Acrobat Spaces",
+          "summary": "Adobe发布面向学生的AI工具Acrobat Spaces，该工具完全免费且无需登录即可访问。用户可上传PDF、文档、网页链接及手写笔记，利用生成式AI自动制作抽认卡、思维导图、测验、双人播客及演示文稿。内置对话助手严格基于上传文档提供回答以降低幻觉风险。该产品已完成500名高校学生的测试，旨在打造文档阅读与学习资料生成的统一平台，与Google NotebookLM等现有工具形成直接竞争。",
+          "published_at": "2026-04-07T13:00:00",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_53ab99f218a6",
+          "url": "https://blog.google/products-and-platforms/products/search/search-live-global-expansion/",
+          "title": "[AI] Search Live依托Gemini 3.1 Flash Live实现全球多语言实时交互",
+          "summary": "Google Search Live现已覆盖200多个国家和地区，支持语音与摄像头实时交互。其核心由多语言AI模型Gemini 3.1 Flash Live驱动，用户可通过Google App或Google Lens发起自然对话，获取音频回应与网页链接。",
+          "published_at": "2026-03-26T15:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_f99ef55d0b6a",
+          "url": "https://github.com/aloshdenny/reverse-SynthID",
+          "title": "[安全] GitHub项目逆向解析并绕过Gemini图像水印SynthID",
+          "summary": "该项目通过频谱分析逆向解析Google Gemini的SynthID图像水印系统。研究表明水印载体频率依赖图像分辨率，但相位模板保持跨图像一致。其V3多分辨率频谱绕过方案采用直接信号减除法，实现90%检测准确率。实测数据显示，该工具可使载体能量下降75.8%，相位相干性降低91.4%，并维持43.5 dB PSNR与0.997 SSIM的高输出质量。",
+          "published_at": "2026-04-09T22:00:32.815000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 160,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_26343622776f",
+          "url": "https://techcrunch.com/2026/04/06/openai-alums-have-been-quietly-investing-from-a-new-potentially-100m-fund/",
+          "title": "[商业] OpenAI前员工创立新基金，目标规模一亿美元",
+          "summary": "OpenAI前核心成员联合创立的风险投资基金Zero Shot已完成首期两千万美元融资，总目标为一亿美元。该基金由五位合伙人发起，目前已投资Worktrace AI与Foundry Robotics等早期项目。团队表示将依托对AI技术路线的深度理解，明确规避情感编码与数字孪生等方向，并邀请多位前OpenAI高管担任顾问分享收益分成。",
+          "published_at": "2026-04-06T21:54:26",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_30da3de965a8",
+          "url": "https://blog.google/innovation-and-ai/technology/developers-tools/lyria-3-developers/",
+          "title": "[AI] 谷歌推出Lyria 3音乐生成模型，支持图像输入与歌词控制",
+          "summary": "谷歌DeepMind发布Lyria 3音乐生成模型，提供Pro（完整歌曲）和Clip（30秒片段）两个版本，支持通过文本或图像控制节奏、歌词及时长。所有生成音频嵌入SynthID数字水印以确保可追溯性，现已通过Gemini API和Google AI Studio向开发者开放公测。",
+          "published_at": "2026-03-25T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_608656ece38d",
+          "url": "https://www.theregister.com/2026/04/09/openai_puts_stargate_uk_on/",
+          "title": "[商业] OpenAI因能源成本与监管问题暂停英国数据中心项目",
+          "summary": "OpenAI宣布暂缓英国星门数据中心建设，主因是能源成本高企及监管环境复杂。该项目原计划首批采购八千枚英伟达GPU，远期扩至三点一万枚，合作方涉及英国算力企业Nscale。尽管基建计划延期，公司表示将持续评估投资条件，并优先落实与英国政府在公共领域应用前沿AI的备忘录承诺。",
+          "published_at": "2026-04-09T21:00:33.003000",
+          "source": "HackerNews",
+          "sentiment": "Negative",
+          "points": 40,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_90df520b6d46",
+          "url": "https://techcrunch.com/2026/04/06/google-quietly-releases-an-offline-first-ai-dictation-app-on-ios/",
+          "title": "[AI] 谷歌悄然发布iOS离线优先AI听写应用",
+          "summary": "谷歌面向iOS平台推出免费离线优先AI听写应用Eloquent。该应用内置基于Gemma的语音识别模型，支持纯本地运行，提供实时转录、自动过滤语气词及多风格文本改写功能。用户可关闭云端模式实现本地处理，或选择调用Gemini模型优化文本。应用支持同步Gmail专有名词与添加自定义词汇，并提供历史记录检索与语速统计。官方描述提及后续将推出安卓版本，支持全局键盘替换与悬浮窗快捷调用。",
+          "published_at": "2026-04-06T18:54:33",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_6e0262faec67",
+          "url": "https://blog.google/products/ads-commerce/tips-to-collaborate-with-agentic-advisors/",
+          "title": "[AI] 与智能代理顾问协作的五种方式",
+          "summary": "Google Ads与Analytics Advisor作为智能代理，支持自然语言交互、自动挖掘隐藏数据趋势、诊断广告停投原因、生成创意文案，并通过用户反馈持续优化建议。其核心能力在于连接数据洞察与业务决策，但最终判断仍需人工审核。",
+          "published_at": "2026-03-25T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_1c6c5958a31d",
+          "url": "https://chatgpt.com/pricing/",
+          "title": "[AI] ChatGPT推出每月100美元起的Pro订阅计划",
+          "summary": "OpenAI更新ChatGPT订阅定价体系，新增每月100美元起的Pro计划。该层级提供GPT-5.4 Pro模型访问权限，具备5至20倍用量额度及400K推理上下文窗口，支持无限制图像生成与深度研究。Go与Plus计划逐级扩展GPT-5.3用量、记忆长度及多模态功能。企业与商业版强化单点登录、数据驻留及SOC 2合规等企业级安全管控。全系计划均整合智能体模式与代码开发工具。",
+          "published_at": "2026-04-09T19:00:32.755000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 140,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_02c9f059801d",
+          "url": "https://techcrunch.com/2026/04/06/iran-threatens-stargate-ai-data-centers/",
+          "title": "[商业] 伊朗威胁打击中东AI数据中心及Stargate项目",
+          "summary": "伊朗军方宣布若美国继续打击其民用设施，将报复性袭击美方在当地的能源与科技基建，并公开点名阿联酋Stargate AI数据中心。该项目由OpenAI、软银与甲骨文联合注资五百亿美元建设。受区域战事影响，亚马逊云科技巴林节点与甲骨文迪拜中心此前已遭导弹袭击，英伟达及苹果亦被列为潜在目标，区域科技资产运营面临直接物理威胁。",
+          "published_at": "2026-04-06T18:06:28",
+          "source": "TechCrunch",
+          "sentiment": "Negative",
+          "points": 0,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "请构建过去30天「low frequency topic」的关键事件时间线，最多12条。",
+      "expected_answer": "根据过去30天的新闻，以下是关于SynthID的主要事件时间线：\n\n*   **2026年4月9日**：一个GitHub项目通过频谱分析成功逆向解析并绕过了谷歌Gemini的SynthID图像水印系统，该方法实现了90%的检测准确率。\n*   **2026年3月26日**：谷歌发布的Gemini 3.1 Flash Live音频模型被披露会使用SynthID技术，为生成的音频添加不可感知的水印。\n*   **2026年3月25日**：谷歌DeepMind发布的Lyria 3音乐生成模型宣布，所有由其生成的音频都会嵌入SynthID数字水印以确保可追溯性。",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "query_news",
+            "args": {
+              "query": "low frequency topic",
+              "days": 30,
+              "sort": "time_desc",
+              "limit": 12
+            }
+          },
+          {
+            "tool": "build_timeline",
+            "args": {
+              "topic": "low frequency topic",
+              "days": 14,
+              "limit": 12
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "build_timeline"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [
+        {
+          "claim": "2026年4月9日，一个GitHub项目成功逆向并绕过了SynthID图像水印系统。",
+          "evidence_doc_ids": [
+            "doc_f99ef55d0b6a"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "谷歌的Lyria 3音乐生成模型会为生成的音频嵌入SynthID数字水印。",
+          "evidence_doc_ids": [
+            "doc_30da3de965a8"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "Gemini 3.1 Flash Live音频模型也会使用SynthID技术添加水印。",
+          "evidence_doc_ids": [
+            "doc_554a4e3bf872"
+          ],
+          "claim_type": "fact"
+        }
+      ],
+      "should_clarify": false,
+      "retrieval_evaluable": false,
+      "difficulty": "hard",
+      "tags": [
+        "boundary"
+      ]
+    },
+    {
+      "case_id": "build_timeline.auto_expand.boundary.002",
+      "pool_id": "build_timeline.auto_expand.boundary.pool.002",
+      "input_news_pool_hash": "63fdefd1d3018e2b21c88739059ce57b679b90de",
+      "task_type": "build_timeline.auto_expand.boundary",
+      "skill": "build_timeline",
+      "intent_label": "build_timeline",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_29b1f31ce51d",
+          "url": "https://blog.google/innovation-and-ai/technology/ai/lyria-3-pro/",
+          "title": "[AI] Lyria 3 Pro支持生成3分钟结构化音乐，集成至多款Google产品",
+          "summary": "Google DeepMind发布Lyria 3 Pro，可生成含主歌、副歌等结构的3分钟音乐，已集成至Vertex AI、Gemini API、Google Vids、Gemini应用及ProducerAI。输出带SynthID水印，不模仿特定艺人，并与音乐人合作开发以保障创作权益。",
+          "published_at": "2026-03-25T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_a25ba9f95bfb",
+          "url": "https://braw.dev/blog/2026-04-06-reallocating-100-month-claude-spend/",
+          "title": "[AI] 将每月100美元Claude Code订阅转向Zed与OpenRouter",
+          "summary": "本文探讨将每月100美元Anthropic订阅预算重新分配至Zed编辑器与OpenRouter API的成本优化方案。针对订阅制额度易耗尽问题，作者建议采用Zed（10美元/月）结合OpenRouter预付费信用点（90美元/月）模式。该方案支持信用点累积与365天滚动有效，并兼容Cursor、OpenCode等AI智能体框架。通过环境变量配置Claude Code对接OpenRouter，可在保留原工作流的同时实现按量计费与多模型调度。",
+          "published_at": "2026-04-09T12:00:32.575000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 312,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_aac82aa49af2",
+          "url": "https://techcrunch.com/2026/04/06/openais-vision-for-the-ai-economy-public-wealth-funds-robot-taxes-and-a-four-day-work-week/",
+          "title": "[商业] OpenAI发布AI经济政策框架，提议征收机器人税与推行四天工作制",
+          "summary": "OpenAI正式发布AI经济政策框架，旨在广泛分配技术红利并降低系统性风险。核心提议包括将税负重心由劳动力转向资本，探讨提高企业税或引入“机器人税”。计划设立公共财富基金，使公众自动持有AI基础设施股份并获取分红。企业责任方面，建议资助不降薪的四天工作制、提升退休与医疗福利，并推出跨岗位便携福利账户。该框架同步提出建立AI遏制机制与新监管机构，以应对超智能时代的经济重构挑战。",
+          "published_at": "2026-04-06T15:55:55",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_f349da3546f8",
+          "url": "https://blog.google/innovation-and-ai/technology/safety-security/cryptography-migration-timeline/",
+          "title": "[安全] Google设定2029年完成抗量子加密迁移",
+          "summary": "Google宣布将于2029年前完成向后量子密码学（PQC）的迁移，以应对量子计算机对现有加密体系的威胁。Android 17已集成基于NIST标准的ML-DSA数字签名方案，并在Chrome和Google Cloud中部署PQC技术。",
+          "published_at": "2026-03-25T13:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_bf13233d1db7",
+          "url": "https://theamericanscholar.org/the-importance-of-being-idle/",
+          "title": "[AI] 论“闲适”的价值",
+          "summary": "本文以Anthropic的Claude模型可能取代人类写作为切入点，探讨人工智能时代的工作模式变迁。文章结合保罗·拉法格1883年著作《懒惰权》，分析在自动化进程中劳动者应追求从劳动中解放的“闲适权”。作者指出，面对AI技术引发的就业焦虑，社会应推动劳动理性化，将技术演进转化为拓展人类精神闲暇与自由生活的契机。",
+          "published_at": "2026-04-09T05:00:33.488000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 282,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_04493a0126da",
+          "url": "https://techcrunch.com/2026/04/06/how-to-use-chatgpt-apps-doordash-spotify-uber/",
+          "title": "[AI] OpenAI推出ChatGPT应用集成功能，支持DoorDash与Spotify等平台",
+          "summary": "OpenAI已在美加地区上线ChatGPT第三方应用集成功能，涵盖DoorDash、Spotify、Uber及Booking.com等平台。用户绑定账号后，AI助手可直接执行点餐、打车、酒店预订及歌单创建等任务。该集成涉及跨平台数据共享，用户需审阅授权范围。公司计划于2026年引入PayPal等新合作伙伴，持续扩展智能体服务矩阵。",
+          "published_at": "2026-04-06T14:11:42",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_1cc92be3cbb7",
+          "url": "https://blog.google/products/ads-commerce/effective-lead-gen-practices/",
+          "title": "[商业] Ads Decoded第五集探讨高效线索生成广告的挑战与成效",
+          "summary": "Google Ads团队讨论如何通过高质量线索提升转化，强调避免低意向表单填充，并指出YouTube作为被低估的绩效渠道。专家建议优化客户旅程追踪以确保销售闭环。",
+          "published_at": "2026-03-25T13:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_1d6e10a93e38",
+          "url": "https://github.com/skrun-dev/skrun",
+          "title": "[AI] 开源工具Skrun：将任意Agent技能部署为多模型API",
+          "summary": "Skrun是一款基于TypeScript的开源CLI框架，支持将符合SKILL.md标准的AI智能体技能通过POST /run端点直接部署为API。该工具集成Anthropic、OpenAI、Google等多模型支持及自动降级机制，内置键值对状态管理、CLI脚本与MCP服务器双重工具调用能力。提供完整的本地开发、测试、打包与发布工作流，采用MIT许可证，目前处于v0.1.1版本阶段。",
+          "published_at": "2026-04-08T23:00:32.816000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 49,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_f4c5dc2536d9",
+          "url": "https://techcrunch.com/2026/04/05/copilot-is-for-entertainment-purposes-only-according-to-microsofts-terms-of-service/",
+          "title": "[商业] 微软Copilot使用条款标注“仅供娱乐用途”并将更新免责表述",
+          "summary": "微软Copilot当前服务条款中明确标注“仅供娱乐用途”，并警告用户勿将其输出作为重要建议依据。微软回应称该表述为2025年10月遗留条款，将随下次更新调整以匹配产品现状。目前OpenAI与xAI等机构亦采用类似免责声明，以规避AI模型输出事实性错误带来的责任风险。",
+          "published_at": "2026-04-05T18:51:37",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_87e5d6abbfc8",
+          "url": "https://blog.google/company-news/inside-google/fast-company-innovative-companies/",
+          "title": "[AI] 谷歌登顶Fast Company全球最具创新力公司榜单",
+          "summary": "谷歌位列Fast Company 2026年全球最具创新力公司榜首，并在人工智能类别中排名第一。Fast Company指出， Sundar Pichai自2016年提出的“通用助手”愿景正接近实现，Gemini正成为其核心驱动力。",
+          "published_at": "2026-03-24T17:30:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_7ad326304d86",
+          "url": "https://swift.org/blog/expanding-swift-ide-support/",
+          "title": "[开发] Swift官方扩展正式登陆Open VSX，全面支持Cursor等现代IDE",
+          "summary": "Swift官方扩展已正式上线由Eclipse基金会托管的Open VSX注册表。该扩展全面支持Swift Package Manager项目，提供代码补全、重构、完整调试及DocC文档功能，实现macOS、Linux与Windows跨平台无缝开发。此次更新使Cursor、VSCodium、AWS Kiro及Google Antigravity等编辑器均可直接调用Swift语言服务，AI智能体IDE亦支持自动安装，进一步拓宽了Swift在多元开发环境中的兼容性。",
+          "published_at": "2026-04-08T22:00:33.340000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 124,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_216547e3d64d",
+          "url": "https://techcrunch.com/2026/04/04/anthropic-says-claude-code-subscribers-will-need-to-pay-extra-for-openclaw-support/",
+          "title": "[商业] Anthropic宣布Claude Code用户需为OpenClaw第三方工具额外付费",
+          "summary": "Anthropic自4月4日起调整Claude Code政策，用户调用OpenClaw等第三方工具将不再消耗订阅额度，需转为独立按量付费。公司表示原架构难以支撑此类调用模式，此举旨在缓解工程压力并保障服务可持续性。此外，OpenClaw创始人已转投OpenAI，OpenAI亦下架Sora以集中算力攻坚企业级代码市场，凸显厂商间对开发者资源的争夺。",
+          "published_at": "2026-04-04T16:32:22",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "请构建过去30天「low frequency topic」的关键事件时间线，最多12条。",
+      "expected_answer": "在过去14天内没有关于后量子密码学（PQC）的直接新闻。不过，在稍早的2026年3月25日，谷歌宣布了一项重要的迁移计划。该公司计划在2029年前完成向后量子密码学（PQC）的迁移，以应对未来量子计算机对现有加密体系构成的威胁。作为该计划的一部分，Android 17已经集成了基于NIST标准的ML-DSA数字签名方案。",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "query_news",
+            "args": {
+              "query": "low frequency topic",
+              "days": 30,
+              "sort": "time_desc",
+              "limit": 12
+            }
+          },
+          {
+            "tool": "build_timeline",
+            "args": {
+              "topic": "low frequency topic",
+              "days": 14,
+              "limit": 12
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "build_timeline"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [
+        {
+          "claim": "谷歌宣布将在2029年前完成向后量子密码学（PQC）的迁移。",
+          "evidence_doc_ids": [
+            "doc_f349da3546f8"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "Android 17已集成基于NIST标准的ML-DSA数字签名方案。",
+          "evidence_doc_ids": [
+            "doc_f349da3546f8"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "关于后量子密码学的新闻发生在2026年3月25日。",
+          "evidence_doc_ids": [
+            "doc_f349da3546f8"
+          ],
+          "claim_type": "fact"
+        }
+      ],
+      "should_clarify": false,
+      "retrieval_evaluable": false,
+      "difficulty": "hard",
+      "tags": [
+        "boundary"
+      ]
+    },
+    {
+      "case_id": "build_timeline.chronological.normal.001",
+      "pool_id": "build_timeline.chronological.normal.pool.001",
+      "input_news_pool_hash": "31809e6c8e1cb13da2bb809888cfbfe09177e6fd",
+      "task_type": "build_timeline.chronological.normal",
+      "skill": "build_timeline",
+      "intent_label": "build_timeline",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_0abd5c5007ef",
+          "url": "https://techcrunch.com/2026/04/03/anthropic-is-having-a-moment-in-the-private-markets-spacex-could-spoil-the-party/",
+          "title": "[商业] 私募市场中Anthropic受追捧，SpaceX IPO或分流资金",
+          "summary": "私募二级市场数据显示，Anthropic股份需求激增且卖方稀缺，而OpenAI约6亿美元待售股份缺乏买家，其二级交易估值约为7650亿美元，低于8520亿美元的一级估值。SpaceX已秘密提交IPO申请，计划募资500亿至750亿美元，公司估值超万亿美元。分析指出，SpaceX作为先行者将大量吸收市场流动性，可能使后续寻求上市的OpenAI与Anthropic面临资本分流与更严格的市场审查。",
+          "published_at": "2026-04-04T01:31:00",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_26e37fad1423",
+          "url": "https://www.forbes.com/sites/phoebeliu/2026/03/31/openai-graveyard-deals-and-products-havent-happened-openai/",
+          "title": "[商业] OpenAI多项高调产品与合作项目终止或搁置",
+          "summary": "OpenAI已终止Sora视频生成应用及与迪士尼的10亿美元合作，因日均烧钱1500万美元而用户收入不足300万。购物功能Instant Checkout因转化率过低被弃用。GPT-4o模型因过度讨好用户被下线。与Oracle、SoftBank的5000亿美元Stargate数据中心计划停滞。Nvidia和AMD的百亿美元级投资协议均附带严苛条件，目前仅部分兑现。",
+          "published_at": "2026-04-01T18:00:15.682000",
+          "source": "HackerNews",
+          "sentiment": "Negative",
+          "points": 215,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_b23f9902668c",
+          "url": "https://techcrunch.com/2026/04/03/openai-executive-shuffle-new-roles-coo-brad-lightcap-fidji-simo-kate-rouch/",
+          "title": "[商业] OpenAI高管调整：首席运营官将转任特别项目主管",
+          "summary": "据彭博社报道，OpenAI实施管理层架构调整。首席运营官Brad Lightcap转岗负责涉及复杂交易与投资的“特别项目”，直接向CEO汇报。新任首席营收官Denise Dresser暂代运营职责。AGI负责人Fidji Simo因神经免疫疾病休病假，期间产品业务由联合创始人Greg Brockman接管。营销主管Kate Rouch因癌症治疗离职，公司正招聘新CMO。官方声明管理层变动不影响其推进前沿研发及服务近10亿用户的核心目标。",
+          "published_at": "2026-04-03T20:35:34",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_a3af10b49803",
+          "url": "https://www.bloomberg.com/news/articles/2026-04-01/openai-demand-sinks-on-secondary-market-as-anthropic-runs-hot",
+          "title": "[商业] OpenAI二级市场需求下滑，Anthropic受投资者青睐",
+          "summary": "OpenAI股份在二级市场遇冷，部分持仓机构近期试图抛售约6亿美元股份但难以脱手。投资者正快速转向其竞争对手Anthropic，尽管OpenAI仍在努力筹集数十亿美元资金。",
+          "published_at": "2026-04-01T15:00:31.826000",
+          "source": "HackerNews",
+          "sentiment": "Negative",
+          "points": 97,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_987df718f697",
+          "url": "https://techcrunch.com/2026/04/02/openai-acquires-tbpn-the-buzzy-founder-led-business-talk-show/",
+          "title": "[商业] OpenAI收购知名科技商业脱口秀节目TBPN",
+          "summary": "OpenAI完成对科技商业脱口秀TBPN的首次媒体资产收购。该节目年营收预计超3000万美元，主要聚焦科技、商业与AI议题。收购后，TBPN将向OpenAI首席政治运营官汇报，并保留独立编辑权。此举旨在借助主持人的传播经验优化AI技术公众认知与政策沟通。创始人表示将从评论转向技术落地推动，管理层预期节目将继续保持独立立场。",
+          "published_at": "2026-04-02T19:21:00",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_3aac4c05155f",
+          "url": "https://www.cnbc.com/2026/03/31/openai-funding-round-ipo.html",
+          "title": "[商业] OpenAI完成1220亿美元融资，估值达8520亿美元",
+          "summary": "OpenAI宣布完成1220亿美元融资，投后估值达8520亿美元，较此前公布的1100亿美元有所上调。公司目前月收入20亿美元，去年总收入131亿美元，尚未盈利。软银、Andreessen Horowitz等领投，个人投资者贡献30亿美元。",
+          "published_at": "2026-03-31T20:07:30",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 490,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_28a251c1acb2",
+          "url": "https://techcrunch.com/2026/04/02/microsoft-takes-on-ai-rivals-with-three-new-foundational-models/",
+          "title": "[AI] 微软发布三款基础AI模型，涵盖文本转录、语音与视频生成",
+          "summary": "微软AI实验室正式发布MAI-Transcribe-1、MAI-Voice-1与MAI-Image-2三款基础模型，分别支持25种语言语音转录、高并发语音定制生成及视频图像生成。新模型已上线Microsoft Foundry与MAI Playground平台。定价方面，转录服务起步价为0.36美元/小时，语音模型为22美元/百万字符，图像模型输入与输出Token分别定价为5美元与33美元。微软强调该系列在成本上具备竞争优势，同时重申与OpenAI的现有合作关系。",
+          "published_at": "2026-04-02T16:48:16",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_d68cd4c3a051",
+          "url": "https://martinvol.pe/blog/2026/03/30/how-the-ai-bubble-bursts/",
+          "title": "[商业] AI泡沫破裂的催化剂已就位",
+          "summary": "核心议题：AI投资泡沫面临破裂风险，因大模型公司融资困难、成本高企且盈利模式存疑。技术分歧：Google凭借资本优势可拖垮对手，而OpenAI和Anthropic难以为继。可行方案：IPO或被收购成唯一出路。",
+          "published_at": "2026-03-30T12:28:36",
+          "source": "HackerNews",
+          "sentiment": "Negative",
+          "points": 292,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_1d1b605dc3c1",
+          "url": "https://techcrunch.com/2026/04/01/startup-funding-shatters-all-records-in-q1/",
+          "title": "[商业] 初创企业第一季度融资额创历史新高",
+          "summary": "2026年第一季度全球初创企业融资达2970亿美元，为史上最高单季纪录，较上一季度增长2.5倍。其中OpenAI、Anthropic、xAI和Waymo四家公司的融资总额达1880亿美元，占季度总融资额的63%以上。",
+          "published_at": "2026-04-01T20:25:28",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_46014f0b71fc",
+          "url": "https://www.hollywoodreporter.com/business/digital/openai-shutting-down-sora-ai-video-app-1236546187/",
+          "title": "[商业] 迪士尼终止与OpenAI的10亿美元投资协议",
+          "summary": "OpenAI宣布关闭Sora视频生成应用，迪士尼随即退出去年12月签署的10亿美元投资协议，并终止授权部分IP用于Sora的计划。迪士尼表示将转向其他AI平台探索技术整合可能，而Google目前成为具备规模优势的AI视频生成唯一主要玩家。",
+          "published_at": "2026-03-24T21:01:21",
+          "source": "HackerNews",
+          "sentiment": "Negative",
+          "points": 149,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_ea01bf20f3f1",
+          "url": "https://techcrunch.com/2026/03/31/openai-not-yet-public-raises-3b-from-retail-investors-in-monster-122b-fund-raise/",
+          "title": "[商业] OpenAI完成1220亿美元融资，估值达8520亿美元",
+          "summary": "OpenAI完成1220亿美元融资，估值8520亿美元，其中30亿美元来自散户投资者。公司月收入达20亿美元，周活跃用户超9亿，订阅用户超5000万。广告试点六周内实现超1亿美元年经常性收入，企业业务收入占比已升至40%。",
+          "published_at": "2026-03-31T21:25:04",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_a321270b8686",
+          "url": "https://newsroom.arm.com/blog/introducing-arm-agi-cpu",
+          "title": "[硬件] Arm发布AGI CPU：面向智能体AI时代的服务器级芯片",
+          "summary": "Arm于2026年3月24日发布首款自研数据中心硅片——Arm AGI CPU，基于Neoverse平台，采用1OU双节点参考设计，单刀片272核，30刀片满配8160核/36kW风冷机架；液冷方案支持336颗CPU、超45000核。宣称相较x86系统实现超2倍机架级性能，依托高带宽内存、高效V3单线程核心与资源匹配优化。Meta为联合开发首发客户，OpenAI、Cerebras、Cloudflare等50余家生态伙伴已确认部署。商用服务器由ASRockRack、Lenovo与Supermicro提供。",
+          "published_at": "2026-03-24T17:30:42",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 404,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "请构建过去30天「OpenAI」的关键事件时间线，最多12条。",
+      "expected_answer": "根据近期新闻，以下是过去30天内关于OpenAI的主要事件时间线：\n- **2026年3月24日**: Arm发布了面向智能体AI时代的服务器级芯片AGI CPU，OpenAI是其50余家生态系统合作伙伴之一。\n- **2026年3月24日**: 由于OpenAI宣布关闭Sora视频生成应用，迪士尼终止了与其签订的10亿美元投资协议。\n- **2026年3月31日**: OpenAI宣布完成一轮1220亿美元的融资，公司估值达到8520亿美元。\n- **2026年4月1日**: 报告指出，OpenAI已终止或搁置了多项备受瞩目的项目，包括Sora应用、与迪士尼的合作、Instant Checkout购物功能以及GPT-4o模型。\n- **2026年4月1日**: 数据显示，OpenAI的股份在二级市场需求下滑，而其竞争对手Anthropic则受到投资者青睐。\n- **2026年4月2日**: OpenAI完成了对知名科技商业脱口秀节目TBPN的收购，这是其首次收购媒体资产。\n- **2026年4月3日**: OpenAI进行了管理层调整，首席运营官Brad Lightcap将转任特别项目主管，负责复杂的交易与投资。",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "build_timeline",
+            "args": {
+              "topic": "OpenAI",
+              "days": 30,
+              "limit": 12
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "build_timeline"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [
+        {
+          "claim": "2026年3月31日，OpenAI完成1220亿美元融资，估值达到8520亿美元。",
+          "evidence_doc_ids": [
+            "doc_3aac4c05155f",
+            "doc_ea01bf20f3f1"
+          ],
+          "claim_type": "number"
+        },
+        {
+          "claim": "迪士尼终止了与OpenAI的10亿美元投资协议，原因是OpenAI关闭了Sora视频生成应用。",
+          "evidence_doc_ids": [
+            "doc_46014f0b71fc",
+            "doc_26e37fad1423"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "OpenAI收购了科技商业脱口秀节目TBPN。",
+          "evidence_doc_ids": [
+            "doc_987df718f697"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "OpenAI首席运营官Brad Lightcap转岗负责“特别项目”。",
+          "evidence_doc_ids": [
+            "doc_b23f9902668c"
+          ],
+          "claim_type": "fact"
+        }
+      ],
+      "should_clarify": false,
+      "retrieval_evaluable": false,
+      "difficulty": "easy",
+      "tags": [
+        "normal"
+      ]
+    },
+    {
+      "case_id": "build_timeline.chronological.normal.002",
+      "pool_id": "build_timeline.chronological.normal.pool.002",
+      "input_news_pool_hash": "3fc387e4245e800d56f44302b80696c20497ce55",
+      "task_type": "build_timeline.chronological.normal",
+      "skill": "build_timeline",
+      "intent_label": "build_timeline",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_6cad27e96870",
+          "url": "https://techcrunch.com/2026/03/29/why-openai-really-shut-down-sora/",
+          "title": "[商业] OpenAI因亏损严重关闭Sora视频生成工具",
+          "summary": "OpenAI在Sora日均烧资百万美元、用户数从百万跌至不足50万后决定关停该项目，以释放算力并重聚焦核心业务。迪士尼10亿美元合作亦随之终止。",
+          "published_at": "2026-03-30T03:09:38",
+          "source": "TechCrunch",
+          "sentiment": "Negative",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_82fc7e4b38da",
+          "url": "https://github.com/facebookresearch/hyperagents",
+          "title": "[AI] HyperAgents：自指式自我改进智能体",
+          "summary": "Meta发布HyperAgents框架，支持智能体通过自指机制优化任意可计算任务。项目包含任务代理与元代理核心模块，依赖多模态API（OpenAI/Anthropic/Gemini）。实验日志以分卷压缩包形式存储，附带安全警告提示执行模型生成代码存在潜在风险。",
+          "published_at": "2026-03-24T16:54:10",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 220,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_88a3f5be5b88",
+          "url": "https://techcrunch.com/2026/03/29/soras-shutdown-could-be-a-reality-check-moment-for-ai-video/",
+          "title": "[AI] Sora关停或成AI视频领域冷静期信号",
+          "summary": "OpenAI宣布关闭Sora应用及相关视频模型，聚焦企业级产品；同期字节跳动Seedance 2.0因技术与IP合规问题推迟全球发布，显示AI视频生成距取代影视制作尚远。",
+          "published_at": "2026-03-29T16:30:00",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_5906d19007f7",
+          "url": "https://news.ycombinator.com/item?id=47484047",
+          "title": "[开发] HN热议：跨云与AI服务商成本对比方法",
+          "summary": "核心议题：如何量化比较AWS、GCP、Azure、OCI及各类AI/LLM服务商（如OpenAI、Anthropic、Cohere）在相同工作负载下的实际成本。技术分歧：现有工具仅支持历史支出分析，缺乏跨平台标准化成本建模能力。典型用例：内部定制脚本、多源API对接的轻量级比价工具、手动维护的归一化单位成本（如每千token美元、每vCPU小时美元）表格。",
+          "published_at": "2026-03-23T00:42:42",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 2,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_cee19e471980",
+          "url": "https://techcrunch.com/2026/03/28/mark-zuckerberg-texted-elon-musk-to-offer-help-with-doge/",
+          "title": "[生态] 扎克伯格曾发短信向马斯克提供DOGE相关协助",
+          "summary": "2025年2月，扎克伯格向马斯克发短信表示愿协助其领导的政府效率部（DOGE）应对网络威胁，并称已让Meta团队待命处理针对DOGE成员的恶意内容。马斯克随后邀请其联合竞购OpenAI，但扎克伯格未最终参与。",
+          "published_at": "2026-03-28T21:23:58",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_c7cb1dbde1bc",
+          "url": "https://github.com/mcowger/plexus",
+          "title": "[开发] Plexus – 多AI服务商统一API网关",
+          "summary": "Plexus是一款高性能API网关，支持OpenAI、Anthropic、Gemini等十余家AI服务商的协议转换与统一接入，提供模型别名、智能负载均衡（按成本/延迟/性能）、OAuth免密认证、Vision Fallthrough图像描述回退、AES-256-GCM静态加密、细粒度配额管控及内置管理仪表盘。配置已全面迁移至数据库，需设置ADMIN_KEY环境变量。",
+          "published_at": "2026-03-22T23:51:24",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 1,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_f1f3f204c806",
+          "url": "https://techcrunch.com/2026/03/27/why-softbanks-new-40b-loan-points-to-a-2026-openai-ipo/",
+          "title": "[商业] 软银400亿美元贷款暗示OpenAI将于2026年上市",
+          "summary": "软银通过无担保12个月期400亿美元贷款，为其对OpenAI的300亿美元投资提供资金，累计注资超600亿美元。贷款方包括摩根大通、高盛及四家日本银行，市场推测此举预示OpenAI或于2026年内启动史上最大规模IPO之一。",
+          "published_at": "2026-03-27T21:44:45",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_7593ccd6830c",
+          "url": "https://github.com/askalf/askalf",
+          "title": "[AI] AskAlf——可自托管的24/7运行AI工作团队",
+          "summary": "AskAlf是开源自托管AI工作团队平台，支持一键部署（curl | bash），含109个预置模板、16类任务场景及社区技能库。架构基于Docker+PostgreSQL+pgvector+Redis，集成Claude Code与OpenAI Codex嵌入式终端，具备10层认知记忆系统与自动容器修复能力。运行需4GB+内存及Anthropic/OpenAI API密钥，本地免费或VPS约5美元/月。",
+          "published_at": "2026-03-22T23:47:05",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 1,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_99dffb202116",
+          "url": "https://techcrunch.com/video/openai-shuts-down-sora-while-meta-gets-shut-out-in-court/",
+          "title": "[AI] OpenAI关闭Sora应用，Meta诉讼受挫",
+          "summary": "OpenAI已关闭其视频生成应用Sora，同时Meta在法庭遭遇不利裁决。本期Equity播客探讨AI基础设施扩张与现实阻力间的张力，包括肯塔基州农妇拒绝2600万美元数据中心收购案。",
+          "published_at": "2026-03-27T13:30:00",
+          "source": "TechCrunch",
+          "sentiment": "Negative",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_6b640f9114ae",
+          "url": "https://www.wired.com/story/ai-lab-walmart-openai-shaking-up-agentic-shopping-deal/",
+          "title": "[AI] 沃尔玛与OpenAI调整代理购物合作",
+          "summary": "沃尔玛因OpenAI的Instant Checkout功能表现未达预期，自2026年11月起转向将自有AI购物助手Sparky嵌入ChatGPT与Google Gemini。目前仅开放有限商品在ChatGPT内直购，销售数据不佳，已由沃尔玛执行副总裁向WIRED独家证实。",
+          "published_at": "2026-03-22T22:56:11",
+          "source": "HackerNews",
+          "sentiment": "Negative",
+          "points": 1,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_c2ebba0850dc",
+          "url": "https://techcrunch.com/2026/03/26/openai-abandons-yet-another-side-quest-chatgpts-erotic-mode/",
+          "title": "[AI] OpenAI无限期搁置ChatGPT成人模式开发",
+          "summary": "OpenAI宣布无限期暂停ChatGPT“成人模式”开发，此前该功能因内部争议及外部批评多次推迟。同期公司亦放弃Instant Checkout与Sora项目，聚焦企业用户与开发者市场，以应对Anthropic竞争及巩固国防合同优势。",
+          "published_at": "2026-03-26T18:34:02",
+          "source": "TechCrunch",
+          "sentiment": "Negative",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_c84f2e4c0167",
+          "url": "https://github.com/Chleba/ollamaMQ",
+          "title": "[开发] ollamaMQ v0.2.5发布：Rust构建的高性能Ollama代理与实时TUI调度器",
+          "summary": "ollamaMQ v0.2.5是基于Rust（tokio/axum）构建的异步Ollama代理，支持多后端负载均衡（最少连接+轮询）、按X-User-ID隔离的公平队列、VIP/Boost用户优先级控制及实时TUI监控面板。提供OpenAI兼容接口，支持Docker一键部署与细粒度CLI配置（端口、超时、后端URL等）。日志自动写入ollamamq.log，架构清晰分层（dispatcher/tui/main）。",
+          "published_at": "2026-03-22T21:28:57",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 1,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "请构建过去30天「OpenAI」的关键事件时间线，最多12条。",
+      "expected_answer": "好的，这是基于近期新闻整理的过去30天内关于OpenAI的事件时间线：\n- **2026年3月22日**: 据报道，由于OpenAI的Instant Checkout功能表现未达预期，沃尔玛调整了与其的代理购物合作关系。\n- **2026年3月26日**: OpenAI宣布无限期暂停开发备受争议的ChatGPT“成人模式”。\n- **2026年3月27日**: 软银通过一笔400亿美元的贷款为其对OpenAI的投资提供资金，此举引发市场猜测OpenAI可能在2026年进行IPO。\n- **2026年3月27日**: Equity播客节目讨论了OpenAI关闭其视频生成应用Sora的事件。\n- **2026年3月29日**: 有分析认为，OpenAI关闭Sora应用可能成为AI视频领域进入冷静期的信号。\n- **2026年3月30日**: 报道指出，OpenAI因Sora项目亏损严重而决定将其关停，以重新聚焦核心业务。",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "build_timeline",
+            "args": {
+              "topic": "OpenAI",
+              "days": 30,
+              "limit": 12
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "build_timeline"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [
+        {
+          "claim": "沃尔玛因Instant Checkout功能表现不佳，调整了与OpenAI的合作。",
+          "evidence_doc_ids": [
+            "doc_6b640f9114ae"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "OpenAI宣布无限期暂停ChatGPT“成人模式”的开发。",
+          "evidence_doc_ids": [
+            "doc_c2ebba0850dc"
+          ],
+          "claim_type": "fact"
+        },
+        {
+          "claim": "软银通过一笔400亿美元的贷款为其对OpenAI的投资提供资金，引发了市场对OpenAI可能在2026年IPO的猜测。",
+          "evidence_doc_ids": [
+            "doc_f1f3f204c806"
+          ],
+          "claim_type": "number"
+        },
+        {
+          "claim": "OpenAI因亏损严重关闭了其视频生成工具Sora。",
+          "evidence_doc_ids": [
+            "doc_6cad27e96870",
+            "doc_99dffb202116"
+          ],
+          "claim_type": "fact"
+        }
+      ],
+      "should_clarify": false,
+      "retrieval_evaluable": false,
+      "difficulty": "easy",
+      "tags": [
+        "normal"
       ]
     }
   ]

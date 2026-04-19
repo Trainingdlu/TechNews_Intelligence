@@ -27,7 +27,7 @@ from agent.clarification import (
 )
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / "agent" / ".env", override=False)
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / "agent" / ".env", override=True)
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",

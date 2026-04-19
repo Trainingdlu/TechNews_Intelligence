@@ -36,7 +36,7 @@ from services.mail import (
     send_quota_upgraded,
 )
 
-load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / "agent" / ".env", override=False)
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / "agent" / ".env", override=True)
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
