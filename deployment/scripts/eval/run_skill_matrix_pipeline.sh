@@ -34,6 +34,10 @@ RUNS_PER_CASE="${RUNS_PER_CASE:-3}"
 GROUPS="${GROUPS:-}"
 BASELINE_GROUP="${BASELINE_GROUP:-G0_baseline}"
 MATRIX_FILE="${MATRIX_FILE:-eval/experiment_matrix.json}"
+BUILD_LLM_MAX_RETRIES="${BUILD_LLM_MAX_RETRIES:-2}"
+BUILD_LLM_BACKOFF_SEC="${BUILD_LLM_BACKOFF_SEC:-2}"
+BUILD_INTER_TASK_SLEEP_SEC="${BUILD_INTER_TASK_SLEEP_SEC:-0}"
+BUILD_RESUME_FROM_CHECKPOINT="${BUILD_RESUME_FROM_CHECKPOINT:-1}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing ${ENV_FILE}. Copy from deployment/.env.example first." >&2
@@ -61,6 +65,9 @@ echo "[SkillMatrix] run_id=${RUN_ID}"
 echo "[SkillMatrix] dataset_version=${DATASET_VERSION}"
 echo "[SkillMatrix] provider=${PROVIDER} model=${MODEL} runs_per_case=${RUNS_PER_CASE}"
 echo "[SkillMatrix] matrix_file=${MATRIX_FILE}"
+echo "[SkillMatrix] build_llm_max_retries=${BUILD_LLM_MAX_RETRIES} build_llm_backoff_sec=${BUILD_LLM_BACKOFF_SEC}"
+echo "[SkillMatrix] build_inter_task_sleep_sec=${BUILD_INTER_TASK_SLEEP_SEC}"
+echo "[SkillMatrix] build_resume_from_checkpoint=${BUILD_RESUME_FROM_CHECKPOINT}"
 
 mkdir -p "${REPO_ROOT}/eval/reports/${RUN_ID}"
 mkdir -p "${REPO_ROOT}/eval/datasets/versions"
@@ -69,18 +76,27 @@ mkdir -p "${REPO_ROOT}/eval/datasets/versions"
 compose up -d postgres
 
 # Step 1: build task dataset.
+BUILD_DATASET_ARGS=(
+  --task-types eval/config/task_types_v1.json
+  --output eval/datasets/task_eval_v1_cases.jsonl
+  --manifest-output eval/datasets/task_eval_v1_manifest.json
+  --provider "${PROVIDER}"
+  --model "${MODEL}"
+  --temperature "${TEMPERATURE}"
+  --seed "${SEED}"
+  --llm-max-retries "${BUILD_LLM_MAX_RETRIES}"
+  --llm-backoff-sec "${BUILD_LLM_BACKOFF_SEC}"
+  --inter-task-sleep-sec "${BUILD_INTER_TASK_SLEEP_SEC}"
+)
+if [[ "${BUILD_RESUME_FROM_CHECKPOINT}" == "0" ]]; then
+  BUILD_DATASET_ARGS+=(--no-resume-from-checkpoint)
+fi
+
 compose run --rm --no-deps \
   -e PYTHONUNBUFFERED=1 \
   -v "${REPO_ROOT}/eval/datasets:/app/eval/datasets" \
   bot python -u -m eval.build_task_dataset_v1 \
-    --task-types eval/config/task_types_v1.json \
-    --output eval/datasets/task_eval_v1_cases.jsonl \
-    --manifest-output eval/datasets/task_eval_v1_manifest.json \
-    --provider "${PROVIDER}" \
-    --model "${MODEL}" \
-    --temperature "${TEMPERATURE}" \
-    --seed "${SEED}" \
-    --no-resume-from-checkpoint
+    "${BUILD_DATASET_ARGS[@]}"
 
 # Step 2: freeze dataset version.
 compose run --rm --no-deps \

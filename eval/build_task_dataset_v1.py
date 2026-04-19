@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -45,6 +45,7 @@ except ImportError:  # package-style import fallback
 
 DEFAULT_MODEL = "gemini-2.5-pro"
 DEFAULT_PROVIDER = "vertex"
+T = TypeVar("T")
 
 
 @dataclass
@@ -548,6 +549,13 @@ def _build_pools(task: dict[str, Any], candidates: list[dict[str, Any]], pools_p
     return pools
 
 
+def _chunk_list(items: list[T], chunk_size: int) -> list[list[T]]:
+    size = int(chunk_size)
+    if size <= 0 or len(items) <= size:
+        return [items]
+    return [items[idx : idx + size] for idx in range(0, len(items), size)]
+
+
 def _pools_for_prompt(pools: list[Pool], *, summary_chars: int = 220) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for pool in pools:
@@ -727,55 +735,68 @@ def _generate_for_task(
     *,
     llm_max_retries: int,
     llm_backoff_sec: float,
+    pools_per_generation_call: int,
+    inter_llm_call_sleep_sec: float,
 ) -> list[dict[str, Any]]:
-    system_prompt, user_prompt = _generator_prompts(task, pools)
-    payload = _invoke_json(
-        llm,
-        system_prompt,
-        user_prompt,
-        max_retries=llm_max_retries,
-        backoff_sec=llm_backoff_sec,
-    )
-
-    rows = payload.get("cases", [])
-    if not isinstance(rows, list):
-        raise ValueError(f"{task['task_id']}: generator output missing cases list.")
-
     pool_map = {pool.pool_id: pool.docs for pool in pools}
-    by_pool: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        pool_id = str(row.get("pool_id", "")).strip()
-        if not pool_id:
-            continue
-        by_pool[pool_id] = row
-
-    missing = [pool.pool_id for pool in pools if pool.pool_id not in by_pool]
-    if missing:
-        raise ValueError(f"{task['task_id']}: missing generated cases for pools={missing}")
-
     out_cases: list[dict[str, Any]] = []
-    for pool in pools:
-        suffix_match = re.search(r"\.pool\.(\d+)$", pool.pool_id)
-        if suffix_match:
-            suffix = f"{int(suffix_match.group(1)):03d}"
-        else:
-            suffix = hashlib.sha1(pool.pool_id.encode("utf-8")).hexdigest()[:8]
-        case_id = f"{task['task_id']}.{suffix}"
-        raw_case = _repair_generated_case(
-            by_pool[pool.pool_id],
-            task,
-            pool_map[pool.pool_id],
+    pool_chunks = _chunk_list(pools, int(pools_per_generation_call))
+
+    for chunk_idx, pools_chunk in enumerate(pool_chunks, 1):
+        system_prompt, user_prompt = _generator_prompts(task, pools_chunk)
+        payload = _invoke_json(
+            llm,
+            system_prompt,
+            user_prompt,
+            max_retries=llm_max_retries,
+            backoff_sec=llm_backoff_sec,
         )
-        normalized = normalize_case(
-            raw_case,
-            task_type=task,
-            case_id=case_id,
-            pool_id=pool.pool_id,
-            input_news_pool=pool_map[pool.pool_id],
-        )
-        out_cases.append(normalized)
+
+        rows = payload.get("cases", [])
+        if not isinstance(rows, list):
+            raise ValueError(f"{task['task_id']}: generator output missing cases list.")
+
+        by_pool: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            pool_id = str(row.get("pool_id", "")).strip()
+            if not pool_id:
+                continue
+            by_pool[pool_id] = row
+
+        missing = [pool.pool_id for pool in pools_chunk if pool.pool_id not in by_pool]
+        if missing:
+            raise ValueError(f"{task['task_id']}: missing generated cases for pools={missing}")
+
+        for pool in pools_chunk:
+            suffix_match = re.search(r"\.pool\.(\d+)$", pool.pool_id)
+            if suffix_match:
+                suffix = f"{int(suffix_match.group(1)):03d}"
+            else:
+                suffix = hashlib.sha1(pool.pool_id.encode("utf-8")).hexdigest()[:8]
+            case_id = f"{task['task_id']}.{suffix}"
+            raw_case = _repair_generated_case(
+                by_pool[pool.pool_id],
+                task,
+                pool_map[pool.pool_id],
+            )
+            normalized = normalize_case(
+                raw_case,
+                task_type=task,
+                case_id=case_id,
+                pool_id=pool.pool_id,
+                input_news_pool=pool_map[pool.pool_id],
+            )
+            out_cases.append(normalized)
+
+        if chunk_idx < len(pool_chunks) and float(inter_llm_call_sleep_sec) > 0:
+            sleep_sec = float(inter_llm_call_sleep_sec)
+            print(
+                "[TaskDatasetV1][Throttle] task=%s phase=generation chunk=%s/%s sleep=%.2fs"
+                % (task["task_id"], chunk_idx, len(pool_chunks), sleep_sec)
+            )
+            time.sleep(sleep_sec)
     return out_cases
 
 
@@ -786,29 +807,42 @@ def _audit_cases(
     *,
     llm_max_retries: int,
     llm_backoff_sec: float,
+    cases_per_audit_call: int,
+    inter_llm_call_sleep_sec: float,
 ) -> dict[str, str]:
     if not cases:
         return {}
-    system_prompt, user_prompt = _audit_prompts(task, cases)
-    payload = _invoke_json(
-        llm,
-        system_prompt,
-        user_prompt,
-        max_retries=llm_max_retries,
-        backoff_sec=llm_backoff_sec,
-    )
-    verdicts = payload.get("verdicts", [])
-    if not isinstance(verdicts, list):
-        return {}
+
     rejected: dict[str, str] = {}
-    for row in verdicts:
-        if not isinstance(row, dict):
+    case_chunks = _chunk_list(cases, int(cases_per_audit_call))
+    for chunk_idx, cases_chunk in enumerate(case_chunks, 1):
+        system_prompt, user_prompt = _audit_prompts(task, cases_chunk)
+        payload = _invoke_json(
+            llm,
+            system_prompt,
+            user_prompt,
+            max_retries=llm_max_retries,
+            backoff_sec=llm_backoff_sec,
+        )
+        verdicts = payload.get("verdicts", [])
+        if not isinstance(verdicts, list):
             continue
-        case_id = str(row.get("case_id", "")).strip()
-        accepted = bool(row.get("accepted", False))
-        reason = str(row.get("reason", "")).strip() or "audit_rejected"
-        if case_id and not accepted:
-            rejected[case_id] = reason
+        for row in verdicts:
+            if not isinstance(row, dict):
+                continue
+            case_id = str(row.get("case_id", "")).strip()
+            accepted = bool(row.get("accepted", False))
+            reason = str(row.get("reason", "")).strip() or "audit_rejected"
+            if case_id and not accepted:
+                rejected[case_id] = reason
+
+        if chunk_idx < len(case_chunks) and float(inter_llm_call_sleep_sec) > 0:
+            sleep_sec = float(inter_llm_call_sleep_sec)
+            print(
+                "[TaskDatasetV1][Throttle] task=%s phase=audit chunk=%s/%s sleep=%.2fs"
+                % (task["task_id"], chunk_idx, len(case_chunks), sleep_sec)
+            )
+            time.sleep(sleep_sec)
     return rejected
 
 
@@ -891,6 +925,30 @@ def _parse_args() -> argparse.Namespace:
         type=float,
         default=float(os.getenv("TASK_EVAL_LLM_BACKOFF_SEC", "2.0")),
         help="Base backoff seconds for LLM retries (exponential).",
+    )
+    parser.add_argument(
+        "--pools-per-generation-call",
+        type=int,
+        default=int(os.getenv("TASK_EVAL_POOLS_PER_GENERATION_CALL", "0")),
+        help="If > 0, split one task's pools into multiple generation calls (0 means all pools in one call).",
+    )
+    parser.add_argument(
+        "--cases-per-audit-call",
+        type=int,
+        default=int(os.getenv("TASK_EVAL_CASES_PER_AUDIT_CALL", "0")),
+        help="If > 0, split one task's cases into multiple audit calls (0 means all cases in one call).",
+    )
+    parser.add_argument(
+        "--inter-llm-call-sleep-sec",
+        type=float,
+        default=float(os.getenv("TASK_EVAL_INTER_LLM_CALL_SLEEP_SEC", "0.0")),
+        help="Sleep seconds between chunked generation/audit calls for throttling.",
+    )
+    parser.add_argument(
+        "--inter-task-sleep-sec",
+        type=float,
+        default=float(os.getenv("TASK_EVAL_INTER_TASK_SLEEP_SEC", "0.0")),
+        help="Sleep seconds between task types to reduce sustained quota pressure.",
     )
     parser.add_argument(
         "--checkpoint-path",
@@ -988,7 +1046,8 @@ def main() -> int:
                     % (cp_task_file, expected_task_file)
                 )
 
-    for task in task_types:
+    total_tasks = len(task_types)
+    for task_idx, task in enumerate(task_types, 1):
         task_id = str(task.get("task_id", "")).strip()
         if task_id in completed_task_ids:
             print("[TaskDatasetV1][Skip] task already completed in checkpoint: %s" % task_id)
@@ -1005,6 +1064,8 @@ def main() -> int:
             pools,
             llm_max_retries=int(args.llm_max_retries),
             llm_backoff_sec=float(args.llm_backoff_sec),
+            pools_per_generation_call=int(args.pools_per_generation_call),
+            inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
         )
 
         rejected: dict[str, str] = {}
@@ -1015,6 +1076,8 @@ def main() -> int:
                 generated_cases,
                 llm_max_retries=int(args.llm_max_retries),
                 llm_backoff_sec=float(args.llm_backoff_sec),
+                cases_per_audit_call=int(args.cases_per_audit_call),
+                inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
             )
             if rejected:
                 regen_pools = [
@@ -1029,6 +1092,8 @@ def main() -> int:
                         regen_pools,
                         llm_max_retries=int(args.llm_max_retries),
                         llm_backoff_sec=float(args.llm_backoff_sec),
+                        pools_per_generation_call=int(args.pools_per_generation_call),
+                        inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
                     )
                     regen_by_pool = {row["pool_id"]: row for row in regenerated}
                     for idx, row in enumerate(generated_cases):
@@ -1041,6 +1106,8 @@ def main() -> int:
                     generated_cases,
                     llm_max_retries=int(args.llm_max_retries),
                     llm_backoff_sec=float(args.llm_backoff_sec),
+                    cases_per_audit_call=int(args.cases_per_audit_call),
+                    inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
                 )
                 if rejected:
                     raise ValueError(f"{task['task_id']}: audit rejected cases={rejected}")
@@ -1071,6 +1138,10 @@ def main() -> int:
             "temperature": float(args.temperature),
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
+            "pools_per_generation_call": int(args.pools_per_generation_call),
+            "cases_per_audit_call": int(args.cases_per_audit_call),
+            "inter_llm_call_sleep_sec": float(args.inter_llm_call_sleep_sec),
+            "inter_task_sleep_sec": float(args.inter_task_sleep_sec),
             "completed_task_ids": sorted(completed_task_ids),
             "tasks": manifest_tasks,
             "cases": all_cases,
@@ -1080,6 +1151,13 @@ def main() -> int:
             "[TaskDatasetV1] task=%s pools=%s candidates=%s generated=%s"
             % (task["task_id"], len(pools), len(candidates), len(generated_cases))
         )
+        if float(args.inter_task_sleep_sec) > 0 and task_idx < total_tasks:
+            sleep_sec = float(args.inter_task_sleep_sec)
+            print(
+                "[TaskDatasetV1][Throttle] after task=%s sleep=%.2fs"
+                % (task["task_id"], sleep_sec)
+            )
+            time.sleep(sleep_sec)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:
@@ -1095,6 +1173,12 @@ def main() -> int:
         "model": str(args.model),
         "temperature": float(args.temperature),
         "audit_enabled": not bool(args.disable_audit),
+        "llm_max_retries": int(args.llm_max_retries),
+        "llm_backoff_sec": float(args.llm_backoff_sec),
+        "pools_per_generation_call": int(args.pools_per_generation_call),
+        "cases_per_audit_call": int(args.cases_per_audit_call),
+        "inter_llm_call_sleep_sec": float(args.inter_llm_call_sleep_sec),
+        "inter_task_sleep_sec": float(args.inter_task_sleep_sec),
         "tasks": manifest_tasks,
     }
     manifest_path = args.manifest_output.resolve()
@@ -1113,6 +1197,10 @@ def main() -> int:
             "temperature": float(args.temperature),
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
+            "pools_per_generation_call": int(args.pools_per_generation_call),
+            "cases_per_audit_call": int(args.cases_per_audit_call),
+            "inter_llm_call_sleep_sec": float(args.inter_llm_call_sleep_sec),
+            "inter_task_sleep_sec": float(args.inter_task_sleep_sec),
             "completed_task_ids": sorted(completed_task_ids),
             "tasks": manifest_tasks,
             "cases": all_cases,
