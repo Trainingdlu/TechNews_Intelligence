@@ -32,11 +32,66 @@
     const defaultChatPlaceholder = chatInput.placeholder || '输入你的问题...';
     const exhaustedChatPlaceholder = '额度已耗尽，请求邮件已发送，通过后将通过邮件告知';
 
+    function _splitTrailingUrlSuffix(rawUrl) {
+        let url = String(rawUrl || '').trim();
+        if (!url) return { url: '', suffix: '' };
+
+        let suffix = '';
+        const trailingPunct = /[.,，。;；:：!！?？、]/;
+
+        const hasMoreRightBrackets = (value, rightRe, leftRe) => {
+            const rightCount = (value.match(rightRe) || []).length;
+            const leftCount = (value.match(leftRe) || []).length;
+            return rightCount > leftCount;
+        };
+
+        while (url) {
+            const ch = url[url.length - 1];
+
+            if (trailingPunct.test(ch)) {
+                suffix = ch + suffix;
+                url = url.slice(0, -1);
+                continue;
+            }
+
+            if (ch === ')' && hasMoreRightBrackets(url, /\)/g, /\(/g)) {
+                suffix = ch + suffix;
+                url = url.slice(0, -1);
+                continue;
+            }
+
+            if (ch === '）' && hasMoreRightBrackets(url, /）/g, /（/g)) {
+                suffix = ch + suffix;
+                url = url.slice(0, -1);
+                continue;
+            }
+
+            if (ch === ']' && hasMoreRightBrackets(url, /\]/g, /\[/g)) {
+                suffix = ch + suffix;
+                url = url.slice(0, -1);
+                continue;
+            }
+
+            break;
+        }
+
+        return { url, suffix };
+    }
+
+    function _sanitizeDetectedUrl(rawUrl) {
+        return _splitTrailingUrlSuffix(rawUrl).url;
+    }
+
     // == Marked.js: 链接在新标签页打开 ==
     const renderer = new marked.Renderer();
     renderer.link = function ({ href, title, text }) {
+        const parsed = _splitTrailingUrlSuffix(href);
+        const safeHref = parsed.url || String(href || '').trim();
+        const suffix = parsed.suffix || '';
         const titleAttr = title ? ` title="${title}"` : '';
-        return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;
+        const rawText = String(text || '');
+        const safeText = !rawText || rawText === href ? safeHref : rawText;
+        return `<a href="${safeHref}"${titleAttr} target="_blank" rel="noopener noreferrer">${safeText}</a>${suffix}`;
     };
     marked.setOptions({ renderer });
 
@@ -480,7 +535,7 @@
             }
 
             if (url) {
-                map[idx] = url.replace(/[),.;!?]+$/, '');
+                map[idx] = _sanitizeDetectedUrl(url);
             }
         }
         return map;
@@ -491,7 +546,7 @@
         const citationMap = _extractCitationUrlMap(source);
         if (Array.isArray(citationUrls) && citationUrls.length) {
             citationUrls.forEach((url, i) => {
-                const normalized = String(url || '').trim();
+                const normalized = _sanitizeDetectedUrl(String(url || '').trim());
                 if (normalized) {
                     citationMap[String(i + 1)] = normalized;
                 }
