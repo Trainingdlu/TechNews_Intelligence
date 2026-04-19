@@ -40,6 +40,11 @@ BUILD_LLM_MAX_RETRIES="${BUILD_LLM_MAX_RETRIES:-2}"
 BUILD_LLM_BACKOFF_SEC="${BUILD_LLM_BACKOFF_SEC:-2}"
 BUILD_INTER_TASK_SLEEP_SEC="${BUILD_INTER_TASK_SLEEP_SEC:-0}"
 BUILD_RESUME_FROM_CHECKPOINT="${BUILD_RESUME_FROM_CHECKPOINT:-1}"
+BUILD_POOLS_PER_GENERATION_CALL="${BUILD_POOLS_PER_GENERATION_CALL:-1}"
+BUILD_CASES_PER_AUDIT_CALL="${BUILD_CASES_PER_AUDIT_CALL:-4}"
+BUILD_INTER_LLM_CALL_SLEEP_SEC="${BUILD_INTER_LLM_CALL_SLEEP_SEC:-60}"
+BUILD_STEP_MAX_ATTEMPTS="${BUILD_STEP_MAX_ATTEMPTS:-20}"
+BUILD_STEP_RETRY_SLEEP_SEC="${BUILD_STEP_RETRY_SLEEP_SEC:-300}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing ${ENV_FILE}. Copy from deployment/.env.example first." >&2
@@ -90,6 +95,9 @@ echo "[SkillMatrix] matrix_file=${MATRIX_FILE}"
 echo "[SkillMatrix] build_llm_max_retries=${BUILD_LLM_MAX_RETRIES} build_llm_backoff_sec=${BUILD_LLM_BACKOFF_SEC}"
 echo "[SkillMatrix] build_inter_task_sleep_sec=${BUILD_INTER_TASK_SLEEP_SEC}"
 echo "[SkillMatrix] build_resume_from_checkpoint=${BUILD_RESUME_FROM_CHECKPOINT}"
+echo "[SkillMatrix] build_pools_per_generation_call=${BUILD_POOLS_PER_GENERATION_CALL} build_cases_per_audit_call=${BUILD_CASES_PER_AUDIT_CALL}"
+echo "[SkillMatrix] build_inter_llm_call_sleep_sec=${BUILD_INTER_LLM_CALL_SLEEP_SEC}"
+echo "[SkillMatrix] build_step_max_attempts=${BUILD_STEP_MAX_ATTEMPTS} build_step_retry_sleep_sec=${BUILD_STEP_RETRY_SLEEP_SEC}"
 
 mkdir -p "${REPO_ROOT}/eval/reports/${RUN_ID}"
 mkdir -p "${REPO_ROOT}/eval/datasets/versions"
@@ -109,16 +117,38 @@ BUILD_DATASET_ARGS=(
   --llm-max-retries "${BUILD_LLM_MAX_RETRIES}"
   --llm-backoff-sec "${BUILD_LLM_BACKOFF_SEC}"
   --inter-task-sleep-sec "${BUILD_INTER_TASK_SLEEP_SEC}"
+  --pools-per-generation-call "${BUILD_POOLS_PER_GENERATION_CALL}"
+  --cases-per-audit-call "${BUILD_CASES_PER_AUDIT_CALL}"
+  --inter-llm-call-sleep-sec "${BUILD_INTER_LLM_CALL_SLEEP_SEC}"
 )
 if [[ "${BUILD_RESUME_FROM_CHECKPOINT}" == "0" ]]; then
   BUILD_DATASET_ARGS+=(--no-resume-from-checkpoint)
 fi
 
-step "build_task_dataset_v1" compose run --rm --no-deps \
-  -e PYTHONUNBUFFERED=1 \
-  -v "${REPO_ROOT}/eval/datasets:/app/eval/datasets" \
-  bot python -u -m eval.build_task_dataset_v1 \
-    "${BUILD_DATASET_ARGS[@]}"
+BUILD_ATTEMPT=1
+BUILD_OK=0
+while [[ "${BUILD_ATTEMPT}" -le "${BUILD_STEP_MAX_ATTEMPTS}" ]]; do
+  echo "[SkillMatrix][BuildRetry] attempt=${BUILD_ATTEMPT}/${BUILD_STEP_MAX_ATTEMPTS}"
+  if step "build_task_dataset_v1" compose run --rm --no-deps \
+    -e PYTHONUNBUFFERED=1 \
+    -v "${REPO_ROOT}/eval/datasets:/app/eval/datasets" \
+    bot python -u -m eval.build_task_dataset_v1 \
+      "${BUILD_DATASET_ARGS[@]}"; then
+    BUILD_OK=1
+    break
+  fi
+  if [[ "${BUILD_ATTEMPT}" -ge "${BUILD_STEP_MAX_ATTEMPTS}" ]]; then
+    break
+  fi
+  echo "[SkillMatrix][BuildRetry] attempt=${BUILD_ATTEMPT} failed; sleep ${BUILD_STEP_RETRY_SLEEP_SEC}s then retry."
+  sleep "${BUILD_STEP_RETRY_SLEEP_SEC}"
+  BUILD_ATTEMPT=$((BUILD_ATTEMPT + 1))
+done
+
+if [[ "${BUILD_OK}" -ne 1 ]]; then
+  echo "[SkillMatrix][Error] build_task_dataset_v1 failed after ${BUILD_STEP_MAX_ATTEMPTS} attempts." >&2
+  exit 6
+fi
 if [[ ! -s "${REPO_ROOT}/eval/datasets/task_eval_v1_cases.jsonl" ]]; then
   echo "[SkillMatrix][Error] missing eval/datasets/task_eval_v1_cases.jsonl after Step 1." >&2
   exit 3
@@ -157,6 +187,10 @@ fi
 
 step "run_matrix_eval" compose run --rm --no-deps \
   -e PYTHONUNBUFFERED=1 \
+  -e AGENT_MODEL_PROVIDER="${PROVIDER}" \
+  -e GEMINI_MODEL="${MODEL}" \
+  -e VERTEX_GENERATION_MODEL="${MODEL}" \
+  -e VERTEX_MODEL="${MODEL}" \
   -v "${REPO_ROOT}/eval/datasets:/app/eval/datasets" \
   -v "${REPO_ROOT}/eval/reports:/app/eval/reports" \
   bot python -u -m eval.run_matrix_eval \
