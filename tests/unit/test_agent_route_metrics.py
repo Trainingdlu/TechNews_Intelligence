@@ -65,6 +65,13 @@ class TestEvidence:
         assert "https://example.com" in urls
         assert "https://other.org/path" in urls
 
+    def test_contains_valid_url_in_body_allows_trailing_slash_variant(self):
+        from agent.core.evidence import contains_valid_url_in_body
+
+        text = "See source https://techcrunch.com/2026/04/16/openai-update/ for details."
+        valid_urls = {"https://techcrunch.com/2026/04/16/openai-update"}
+        assert contains_valid_url_in_body(text, valid_urls)
+
     def test_contains_cjk(self):
         from agent.core.evidence import contains_cjk
 
@@ -398,11 +405,11 @@ class TestAgentSafety:
         snapshot = get_route_metrics_snapshot()
         assert snapshot.get("react_inline_citation_blocked", 0) == 1
 
-    def test_generate_response_allows_when_body_has_inline_citations(self):
+    def test_generate_response_allows_when_body_has_valid_source_url(self):
         from agent.agent import generate_response
 
         expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
-        with patch("agent.agent._run_generation_core", return_value=("Main analysis [1].", {"https://a.example.com"})):
+        with patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"})):
             with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
                 with patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}):
                     out = generate_response([], "最近AI动态")
@@ -413,7 +420,7 @@ class TestAgentSafety:
         from agent.agent import generate_response_payload
 
         expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
-        with patch("agent.agent._run_generation_core", return_value=("Main analysis [1].", {"https://a.example.com"})):
+        with patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"})):
             with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
                 with patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}):
                     payload = generate_response_payload([], "recent ai updates")
@@ -450,6 +457,22 @@ class TestAgentSafety:
                 out = generate_response([], "recent ai updates")
 
         assert "[1]" in out
+
+    def test_generate_response_allows_trailing_slash_variant_url_match(self):
+        from agent.agent import generate_response
+
+        expected = "Main analysis [1].\n\n## Sources\n- [1] https://techcrunch.com/2026/04/16/openai-update"
+        with patch(
+            "agent.agent._run_generation_core",
+            return_value=(
+                "Main analysis references https://techcrunch.com/2026/04/16/openai-update/.",
+                {"https://techcrunch.com/2026/04/16/openai-update"},
+            ),
+        ):
+            with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
+                out = generate_response([], "recent ai updates")
+
+        assert out == expected
 
 
     def test_generate_response_core_allows_smalltalk_without_evidence_when_no_tools(self):

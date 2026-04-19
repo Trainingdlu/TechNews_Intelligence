@@ -30,6 +30,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -44,6 +46,37 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
+      - name: Soft encoding guard (non-blocking)
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p .tmp
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            git diff --name-only "origin/${{ github.base_ref }}...HEAD" > .tmp/encoding_guard_paths.txt
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
+              git diff --name-only "${BEFORE}" "${{ github.sha }}" > .tmp/encoding_guard_paths.txt
+            else
+              git diff --name-only HEAD~1 HEAD > .tmp/encoding_guard_paths.txt || true
+            fi
+          fi
+          sed -i '/^\s*$/d' .tmp/encoding_guard_paths.txt
+          python eval/encoding_guard.py \
+            --root . \
+            --report eval/reports/encoding_guard/ci.json \
+            --paths-file .tmp/encoding_guard_paths.txt \
+            --github-annotations
+
       - name: Run unit tests
         run: |
           pytest tests -v
+
+      - name: Upload encoding guard report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: encoding-guard-report
+          path: eval/reports/encoding_guard/ci.json
+          if-no-files-found: warn

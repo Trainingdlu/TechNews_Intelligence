@@ -9,12 +9,16 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    from common import parse_csv_set, read_json_object, run_subprocess, safe_filename
+except ImportError:  # package-style import fallback
+    from .common import parse_csv_set, read_json_object, run_subprocess, safe_filename
 
 
 @dataclass(frozen=True)
@@ -26,20 +30,28 @@ class MatrixGroup:
     env: dict[str, str]
 
 
+@dataclass(frozen=True)
+class MatrixConfig:
+    """Top-level matrix config plus resolved groups."""
+
+    groups: list[MatrixGroup]
+    baseline_group: str
+    frozen_dataset_version: str
+    default_run_eval_args: list[str]
+
+
 def _parse_csv(value: str) -> set[str]:
-    return {part.strip() for part in str(value or "").split(",") if part.strip()}
+    return parse_csv_set(value)
 
 
 def _safe_filename(token: str) -> str:
-    cleaned = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in token)
-    return cleaned or "group"
+    return safe_filename(token)
 
 
-def load_matrix_groups(matrix_path: Path) -> list[MatrixGroup]:
-    payload = json.loads(matrix_path.read_text(encoding="utf-8"))
+def _parse_matrix_groups(payload: dict[str, Any]) -> list[MatrixGroup]:
     groups_raw = payload.get("groups")
     if not isinstance(groups_raw, list) or not groups_raw:
-        raise ValueError(f"Matrix file must include non-empty 'groups' list: {matrix_path}")
+        raise ValueError("Matrix file must include non-empty 'groups' list.")
 
     groups: list[MatrixGroup] = []
     seen_ids: set[str] = set()
@@ -76,6 +88,37 @@ def load_matrix_groups(matrix_path: Path) -> list[MatrixGroup]:
     return groups
 
 
+def load_matrix_config(matrix_path: Path) -> MatrixConfig:
+    payload = read_json_object(matrix_path, encoding="utf-8")
+    groups = _parse_matrix_groups(payload)
+
+    baseline_group = str(payload.get("baseline_group", "")).strip() or groups[0].id
+    if baseline_group not in {group.id for group in groups}:
+        raise ValueError(
+            f"Matrix baseline_group must match one group id: baseline_group={baseline_group}"
+        )
+
+    frozen_dataset_version = str(payload.get("frozen_dataset_version", "")).strip()
+
+    default_args_raw = payload.get("default_run_eval_args", [])
+    if default_args_raw is None:
+        default_args_raw = []
+    if not isinstance(default_args_raw, list):
+        raise ValueError("Matrix default_run_eval_args must be a string list.")
+    default_run_eval_args = [str(item).strip() for item in default_args_raw if str(item).strip()]
+
+    return MatrixConfig(
+        groups=groups,
+        baseline_group=baseline_group,
+        frozen_dataset_version=frozen_dataset_version,
+        default_run_eval_args=default_run_eval_args,
+    )
+
+
+def load_matrix_groups(matrix_path: Path) -> list[MatrixGroup]:
+    return load_matrix_config(matrix_path).groups
+
+
 def select_groups(groups: list[MatrixGroup], selected_ids: set[str]) -> list[MatrixGroup]:
     if not selected_ids:
         return groups
@@ -86,12 +129,33 @@ def select_groups(groups: list[MatrixGroup], selected_ids: set[str]) -> list[Mat
     return selected
 
 
-def resolve_forwarded_run_eval_args(raw_args: list[str]) -> list[str]:
+def _group_ids(groups: list[MatrixGroup]) -> set[str]:
+    return {group.id for group in groups}
+
+
+def _order_groups_with_baseline_first(groups: list[MatrixGroup], baseline_group: str) -> list[MatrixGroup]:
+    if not groups:
+        return []
+    baseline = next((group for group in groups if group.id == baseline_group), None)
+    if baseline is None:
+        return groups
+    others = [group for group in groups if group.id != baseline_group]
+    return [baseline, *others]
+
+
+def resolve_forwarded_run_eval_args(
+    raw_args: list[str],
+    *,
+    default_run_eval_args: list[str] | None = None,
+) -> list[str]:
     args = list(raw_args)
     if args and args[0] == "--":
         args = args[1:]
+    defaults = list(default_run_eval_args or [])
     if not args:
-        args = ["--suite", "default", "--runs-per-question", "3"]
+        args = defaults or ["--suite", "default", "--runs-per-question", "3"]
+    elif defaults:
+        args = [*defaults, *args]
 
     forbidden = {"--output", "--experiment-group"}
     conflict = [item for item in args if item in forbidden]
@@ -101,6 +165,77 @@ def resolve_forwarded_run_eval_args(raw_args: list[str]) -> list[str]:
             "they are controlled by run_matrix_eval.py."
         )
     return args
+
+
+def _has_arg(args: list[str], key: str) -> bool:
+    return any(str(item).strip() == key for item in args)
+
+
+def _read_report_if_exists(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = read_json_object(path, encoding="utf-8")
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _extract_stage_d_delta(report: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(report, dict):
+        return None
+    payload = report.get("stage_d_delta")
+    if not isinstance(payload, dict):
+        return None
+    comparison = payload.get("comparison")
+    if not isinstance(comparison, dict):
+        return None
+    items = comparison.get("items")
+    if not isinstance(items, list):
+        items = []
+    return {
+        "baseline_path": str(payload.get("baseline_path", "")).strip(),
+        "improved_count": int(comparison.get("improved_count", 0) or 0),
+        "regressed_count": int(comparison.get("regressed_count", 0) or 0),
+        "unchanged_count": int(comparison.get("unchanged_count", 0) or 0),
+        "missing_count": int(comparison.get("missing_count", 0) or 0),
+        "items": [item for item in items if isinstance(item, dict)],
+    }
+
+
+def _build_manifest_delta_summary(
+    group_records: list[dict[str, Any]],
+    *,
+    baseline_group: str,
+) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    for record in group_records:
+        group_id = str(record.get("id", "")).strip()
+        if not group_id or group_id == baseline_group:
+            continue
+        if str(record.get("status", "")).strip() != "ok":
+            continue
+        delta = record.get("stage_d_delta")
+        if not isinstance(delta, dict):
+            continue
+        candidates.append(
+            {
+                "group_id": group_id,
+                "baseline_path": str(delta.get("baseline_path", "")).strip(),
+                "improved_count": int(delta.get("improved_count", 0) or 0),
+                "regressed_count": int(delta.get("regressed_count", 0) or 0),
+                "unchanged_count": int(delta.get("unchanged_count", 0) or 0),
+                "missing_count": int(delta.get("missing_count", 0) or 0),
+                "items": [item for item in delta.get("items", []) if isinstance(item, dict)],
+            }
+        )
+    return {
+        "baseline_group": baseline_group,
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+    }
 
 
 def build_run_eval_command(
@@ -168,9 +303,23 @@ def main() -> int:
     if not matrix_path.exists():
         raise FileNotFoundError(f"Matrix file not found: {matrix_path}")
 
-    groups = load_matrix_groups(matrix_path)
-    selected = select_groups(groups, _parse_csv(args.groups))
-    forwarded_args = resolve_forwarded_run_eval_args(args.run_eval_args)
+    matrix_config = load_matrix_config(matrix_path)
+    selected = select_groups(matrix_config.groups, _parse_csv(args.groups))
+    selected = _order_groups_with_baseline_first(selected, matrix_config.baseline_group)
+    forwarded_args = resolve_forwarded_run_eval_args(
+        args.run_eval_args,
+        default_run_eval_args=matrix_config.default_run_eval_args,
+    )
+    selected_ids = _group_ids(selected)
+    if (
+        len(selected) > 1
+        and matrix_config.baseline_group not in selected_ids
+        and not args.dry_run
+    ):
+        raise ValueError(
+            "Selected groups must include baseline group for baseline->candidate->delta output: "
+            f"baseline={matrix_config.baseline_group} selected={sorted(selected_ids)}"
+        )
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -181,21 +330,33 @@ def main() -> int:
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "matrix_path": str(matrix_path),
         "dry_run": bool(args.dry_run),
+        "baseline_group": matrix_config.baseline_group,
+        "frozen_dataset_version": matrix_config.frozen_dataset_version,
         "forwarded_run_eval_args": list(forwarded_args),
         "groups": [],
     }
 
     project_root = eval_dir.parent
     fail_count = 0
+    baseline_output_path: Path | None = None
     for group in selected:
         output_name = f"{timestamp}_{_safe_filename(group.id)}.json"
         output_path = output_dir / output_name
+        group_args = list(forwarded_args)
+        if (
+            group.id != matrix_config.baseline_group
+            and baseline_output_path is not None
+            and not _has_arg(group_args, "--baseline")
+        ):
+            group_args.extend(["--baseline", str(baseline_output_path)])
         cmd = build_run_eval_command(
             run_eval_path,
-            forwarded_args,
+            group_args,
             output_path=output_path,
             group_id=group.id,
         )
+        if group.id == matrix_config.baseline_group:
+            baseline_output_path = output_path
         env_overrides = {key: value for key, value in group.env.items() if value != ""}
         print(f"[Matrix] group={group.id} output={output_path}")
         print(f"[Matrix] env_overrides={env_overrides}")
@@ -216,22 +377,36 @@ def main() -> int:
 
         run_env = os.environ.copy()
         run_env.update(env_overrides)
-        completed = subprocess.run(
+        completed = run_subprocess(
             cmd,
-            cwd=str(project_root),
+            cwd=project_root,
             env=run_env,
-            text=True,
-            capture_output=True,
-            check=False,
+            log_prefix="[Matrix]",
         )
-        if completed.stdout:
-            print(completed.stdout, end="")
-        if completed.stderr:
-            print(completed.stderr, end="", file=sys.stderr)
 
         record["exit_code"] = int(completed.returncode)
         if completed.returncode == 0:
             record["status"] = "ok"
+            report = _read_report_if_exists(output_path)
+            if report is not None:
+                record["dataset"] = str(report.get("dataset", "")).strip()
+                summary = report.get("summary", {})
+                if isinstance(summary, dict):
+                    record["summary_metrics"] = {
+                        "avg_recall_at_10": summary.get("avg_recall_at_10"),
+                        "avg_mrr_at_10": summary.get("avg_mrr_at_10"),
+                        "avg_ndcg_at_10": summary.get("avg_ndcg_at_10"),
+                        "avg_error_rate": summary.get("avg_error_rate"),
+                    }
+                system = report.get("system", {})
+                if isinstance(system, dict):
+                    record["system_metrics"] = {
+                        "error_rate": system.get("error_rate"),
+                        "citation_guard_block_rate": system.get("citation_guard_block_rate"),
+                    }
+                stage_d_delta = _extract_stage_d_delta(report)
+                if stage_d_delta is not None:
+                    record["stage_d_delta"] = stage_d_delta
         else:
             record["status"] = "failed"
             fail_count += 1
@@ -241,6 +416,10 @@ def main() -> int:
             break
 
     manifest["failed_groups"] = fail_count
+    manifest["baseline_candidate_delta"] = _build_manifest_delta_summary(
+        manifest.get("groups", []),
+        baseline_group=matrix_config.baseline_group,
+    )
     manifest_path = output_dir / f"{timestamp}_manifest.json"
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[Matrix] manifest={manifest_path}")
@@ -249,4 +428,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

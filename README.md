@@ -167,7 +167,7 @@ finalize_request_trace()       ── Trace 持久化至 DB
 
 **混合检索机制**：纯向量检索在公司名、产品名等专有名词上容易召回偏移，关键词匹配作为兜底保证精确查询的稳定性。检索评分融合了语义相似度、关键词命中、热度归一化和时间衰减因子 `0.1 × EXP(-age_seconds / 86400 / 21)`。
 
-**Rerank 二次排序**：召回结果可通过 Jina Reranker 进行二次精排（Cross-Encoder 或 LLM Rerank 模式），由环境变量 `NEWS_RERANK_MODE` 控制（`none` / `cross_encoder` / `llm_rerank`），失败时自动 fallback 至原始召回顺序。
+**Rerank 二次排序**：召回结果可通过 Jina Reranker 进行二次精排（LLM Rerank，`jina-reranker-v3`），由环境变量 `NEWS_RERANK_MODE` 控制（`none` / `llm_rerank`），失败时自动 fallback 至原始召回顺序。
 
 ### 基础设施层
 
@@ -179,7 +179,7 @@ finalize_request_trace()       ── Trace 持久化至 DB
 | Evidence Pipeline | `core/evidence.py` | URL 提取 → 内联引用编号 → 来源列表渲染 → 无效引用清洗 |
 | Agent Trace | `core/trace.py` | 请求级追踪：工具调用事件记录、Token 用量采集、异常链捕获、摘要持久化 |
 | Trace Store | `services/agent_trace_store.py` | Trace 持久化适配器：将 `AgentRequestTrace` 摘要写入 `agent_runs` + `agent_tool_events` 表 |
-| Rerank | `skills/rerank.py` | 二次精排：Jina Cross-Encoder / LLM Rerank，支持环境变量配置与 fallback |
+| Rerank | `skills/rerank.py` | 二次精排：Jina LLM Rerank（`jina-reranker-v3`），支持环境变量配置与 fallback |
 | Clarification HITL | `clarification.py` | 证据不足 / 范围模糊 / 来源冲突检测 → 结构化澄清问题生成 → 用户追问自动合并 |
 | Thread Persistence | `services/conversations.py` | 对话线程持久化：创建线程、追加消息、加载历史、按 channel 列举 |
 | Metrics | `core/metrics.py` | 运行时指标：请求量、成功率、错误率、递归超限率、Trace 指标，自动日志输出 |

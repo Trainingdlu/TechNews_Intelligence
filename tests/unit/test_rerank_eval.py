@@ -35,7 +35,7 @@ def test_rerank_eval_supports_custom_rerank_order(monkeypatch) -> None:
         del mode, env_keys
         ordered = [dict(candidates[1]), dict(candidates[2]), dict(candidates[0])]
         return ordered[: int(top_k or len(ordered))], {
-            "rerank_mode": "cross_encoder",
+            "rerank_mode": "llm_rerank",
             "candidate_count": len(candidates),
             "top_k": int(top_k or len(candidates)),
             "fallback": False,
@@ -43,7 +43,8 @@ def test_rerank_eval_supports_custom_rerank_order(monkeypatch) -> None:
         }
 
     monkeypatch.setattr(rerank_eval_mod, "rerank_candidates", _fake_rerank_candidates)
-    report = rerank_eval_mod.evaluate_dataset(cases, mode="cross_encoder", top_k=3)
+    report = rerank_eval_mod.evaluate_dataset(cases, mode="llm_rerank", top_k=3)
     summary = report["summary"]
     assert summary["delta_avg_ndcg"] > 0
     assert summary["delta_avg_mrr"] > 0
+

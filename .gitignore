@@ -18,6 +18,7 @@ news_data_readable.sql
 
 # Docker
 docker-data/
+deployment/data/
 
 # Eval reports (generated artifacts)
 eval/reports/*
@@ -27,10 +28,17 @@ tests/reports/*
 tests/_test_output.txt
 tests/unit/.tmp_mcp_stdio/
 tests/pytest-cache-files-*/
+tests/unit/.tmp_pytest/
+tests/unit/.tmp_encoding_guard/
+eval/reports/tmp_pytest/
+tmp*/
 
 # Local development artifacts
 .venv/
 .tmp/
+.tmp/pytest-technews/
+.pytest_tmp/
+.pytest_tmp_technews/
 tests/pytest-tmp/
 .pytest_cache/
 tests/.pytest_cache/
@@ -45,9 +53,15 @@ agents/__pycache__/
 
 # Agent / skills install artifacts
 .agents/
+.compat-main-check/
 
 # Skills lock is environment-specific (generated during install)
 skills-lock.json
 
 # Local AI assistant metadata
 .claude/
+
+# Auto-generated eval dataset artifacts
+eval/datasets/generated_rag_testset*.csv
+eval/datasets/_mock_generated_rag_testset.csv
+eval/datasets/versions/v*/

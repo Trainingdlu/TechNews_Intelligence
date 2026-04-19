@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import requests
 
 from services.db import get_conn, put_conn
 
 from .helpers import _clamp_int
-from .rerank import RERANK_MODE_NONE, rerank_lookup_rows, resolve_rerank_mode
+from .rerank import RERANK_MODE_NONE, rerank_candidates, resolve_rerank_mode
 
 
 JINA_EMBED_URL = "https://api.jina.ai/v1/embeddings"
@@ -45,14 +46,34 @@ def _get_query_embedding(query: str) -> list[float] | None:
         return None
 
 
-def _finalize_lookup_rows(
+def _rows_to_rerank_candidates(rows: list[tuple]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for row in rows:
+        title, url, summary, sentiment, source_type, created_at, points, score = row
+        candidates.append(
+            {
+                "title": title or "",
+                "url": url or "",
+                "summary": summary or "",
+                "sentiment": sentiment or "",
+                "source_type": source_type or "",
+                "created_at": created_at,
+                "points": points,
+                "score": score,
+                "payload": row,
+            }
+        )
+    return candidates
+
+
+def _finalize_candidate_rows(
     rows: list[tuple],
     *,
     query: str,
     limit: int,
     rerank_mode: str,
-) -> tuple[list[tuple], dict]:
-    default_meta = {
+) -> tuple[list[tuple], dict[str, Any]]:
+    default_meta: dict[str, Any] = {
         "rerank_mode": rerank_mode,
         "candidate_count": len(rows),
         "top_k": min(int(limit), len(rows)),
@@ -62,37 +83,55 @@ def _finalize_lookup_rows(
         return [], default_meta
     if rerank_mode == RERANK_MODE_NONE:
         return list(rows)[:limit], default_meta
-    ranked_rows, rerank_meta = rerank_lookup_rows(
-        query=query,
-        rows=rows,
+
+    reranked, rerank_meta = rerank_candidates(
+        query,
+        _rows_to_rerank_candidates(rows),
         mode=rerank_mode,
         top_k=limit,
-        env_keys=("FULLTEXT_BATCH_RERANK_MODE", "NEWS_RERANK_MODE"),
+        env_keys=("SEARCH_NEWS_RERANK_MODE", "FULLTEXT_BATCH_RERANK_MODE", "NEWS_RERANK_MODE"),
     )
-    return ranked_rows, rerank_meta
+    return [item["payload"] for item in reranked], rerank_meta
 
 
-def _lookup_urls_by_query(
+def _row_to_candidate(row: tuple) -> dict[str, Any]:
+    title, url, summary, sentiment, source_type, created_at, points, score = row
+    return {
+        "title": str(title or ""),
+        "url": str(url or ""),
+        "summary": str(summary or ""),
+        "sentiment": str(sentiment or ""),
+        "source_type": str(source_type or ""),
+        "created_at": created_at,
+        "points": int(points or 0),
+        "score": float(score or 0.0),
+    }
+
+
+def lookup_candidates_by_query(
     query: str,
+    *,
     days: int = 14,
     limit: int = 5,
     rerank_mode: str | None = None,
-    include_rerank_meta: bool = False,
-) -> list[tuple] | tuple[list[tuple], dict]:
-    """Return candidate URLs by fused semantic+keyword retrieval."""
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Return unified retrieval candidates for query-driven skills."""
     query_clean = (query or "").strip()
-    if not query_clean:
-        empty_meta = {"rerank_mode": resolve_rerank_mode(rerank_mode), "candidate_count": 0, "top_k": 0, "fallback": False}
-        if include_rerank_meta:
-            return [], empty_meta
-        return []
-
-    days = _clamp_int(days, 1, 180)
-    limit = _clamp_int(limit, 1, 12)
-    resolved_rerank_mode = resolve_rerank_mode(
-        rerank_mode, env_keys=("FULLTEXT_BATCH_RERANK_MODE", "NEWS_RERANK_MODE")
+    resolved_mode = resolve_rerank_mode(
+        rerank_mode,
+        env_keys=("SEARCH_NEWS_RERANK_MODE", "FULLTEXT_BATCH_RERANK_MODE", "NEWS_RERANK_MODE"),
     )
-    candidate_pool_limit = limit if resolved_rerank_mode == RERANK_MODE_NONE else min(limit * 6, 72)
+    if not query_clean:
+        return [], {
+            "rerank_mode": resolved_mode,
+            "candidate_count": 0,
+            "top_k": 0,
+            "fallback": False,
+        }
+
+    days = _clamp_int(days, 1, 365)
+    limit = _clamp_int(limit, 1, 12)
+    candidate_pool_limit = limit if resolved_mode == RERANK_MODE_NONE else min(limit * 6, 72)
     keyword_fetch_limit = max(limit * 4, candidate_pool_limit)
     semantic_fetch_limit = max(limit * 6, candidate_pool_limit)
     q = f"%{query_clean}%"
@@ -101,6 +140,8 @@ def _lookup_urls_by_query(
     conn = get_conn()
     try:
         cur = conn.cursor()
+        rows: list[tuple] = []
+
         if query_vec:
             vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
             try:
@@ -108,8 +149,10 @@ def _lookup_urls_by_query(
                     """
                     WITH keyword AS (
                         SELECT
-                            COALESCE(v.title_cn, v.title) AS headline,
+                            COALESCE(v.title_cn, v.title) AS title,
                             v.url,
+                            COALESCE(v.summary, '') AS summary,
+                            COALESCE(v.sentiment, '') AS sentiment,
                             v.source_type,
                             v.created_at,
                             COALESCE(v.points, 0) AS points,
@@ -136,8 +179,10 @@ def _lookup_urls_by_query(
                     ),
                     semantic AS (
                         SELECT
-                            COALESCE(v.title_cn, v.title) AS headline,
+                            COALESCE(v.title_cn, v.title) AS title,
                             v.url,
+                            COALESCE(v.summary, '') AS summary,
+                            COALESCE(v.sentiment, '') AS sentiment,
                             v.source_type,
                             v.created_at,
                             COALESCE(v.points, 0) AS points,
@@ -159,8 +204,10 @@ def _lookup_urls_by_query(
                     ),
                     dedup AS (
                         SELECT
-                            headline,
+                            title,
                             url,
+                            summary,
+                            sentiment,
                             source_type,
                             created_at,
                             points,
@@ -171,7 +218,7 @@ def _lookup_urls_by_query(
                             ) AS rn
                         FROM combined
                     )
-                    SELECT headline, url, source_type, created_at, points, score
+                    SELECT title, url, summary, sentiment, source_type, created_at, points, score
                     FROM dedup
                     WHERE rn = 1
                     ORDER BY score DESC, points DESC NULLS LAST, created_at DESC
@@ -194,57 +241,57 @@ def _lookup_urls_by_query(
                     ),
                 )
                 rows = cur.fetchall()
-                cur.close()
-                ranked_rows, rerank_meta = _finalize_lookup_rows(
-                    rows,
-                    query=query_clean,
-                    limit=limit,
-                    rerank_mode=resolved_rerank_mode,
-                )
-                if include_rerank_meta:
-                    return ranked_rows, rerank_meta
-                return ranked_rows
             except Exception as exc:
                 print(f"[Warn] semantic candidate lookup failed; fallback to keyword-only: {exc}")
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
 
-        cur.execute(
-            """
-            SELECT
-                COALESCE(v.title_cn, v.title) AS headline,
-                v.url,
-                v.source_type,
-                v.created_at,
-                COALESCE(v.points, 0) AS points,
-                (
-                    CASE
-                        WHEN (v.title ILIKE %s OR COALESCE(v.title_cn, '') ILIKE %s) THEN 1.3
-                        ELSE 0.0
-                    END
-                    + CASE
-                        WHEN COALESCE(v.summary, '') ILIKE %s THEN 0.6
-                        ELSE 0.0
-                    END
-                    + LEAST(0.8, GREATEST(0.0, COALESCE(v.points, 0)::float / 220.0))
-                    + 0.2 * EXP(-EXTRACT(EPOCH FROM (NOW() - v.created_at)) / 86400.0 / 21.0)
-                )::float AS score
-            FROM view_dashboard_news v
-            WHERE v.created_at >= NOW() - %s::interval
-              AND (v.title ILIKE %s OR COALESCE(v.title_cn,'') ILIKE %s OR COALESCE(v.summary,'') ILIKE %s)
-            ORDER BY score DESC, points DESC NULLS LAST, created_at DESC
-            LIMIT %s
-            """,
-            (q, q, q, f"{days} days", q, q, q, candidate_pool_limit),
-        )
-        rows = cur.fetchall()
+        if not rows:
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(v.title_cn, v.title) AS title,
+                    v.url,
+                    COALESCE(v.summary, '') AS summary,
+                    COALESCE(v.sentiment, '') AS sentiment,
+                    v.source_type,
+                    v.created_at,
+                    COALESCE(v.points, 0) AS points,
+                    (
+                        CASE
+                            WHEN (v.title ILIKE %s OR COALESCE(v.title_cn, '') ILIKE %s) THEN 1.3
+                            ELSE 0.0
+                        END
+                        + CASE
+                            WHEN COALESCE(v.summary, '') ILIKE %s THEN 0.6
+                            ELSE 0.0
+                        END
+                        + LEAST(0.8, GREATEST(0.0, COALESCE(v.points, 0)::float / 220.0))
+                        + 0.2 * EXP(-EXTRACT(EPOCH FROM (NOW() - v.created_at)) / 86400.0 / 21.0)
+                    )::float AS score
+                FROM view_dashboard_news v
+                WHERE v.created_at >= NOW() - %s::interval
+                  AND (
+                      v.title ILIKE %s
+                      OR COALESCE(v.title_cn, '') ILIKE %s
+                      OR COALESCE(v.summary, '') ILIKE %s
+                  )
+                ORDER BY score DESC, points DESC NULLS LAST, created_at DESC
+                LIMIT %s
+                """,
+                (q, q, q, f"{days} days", q, q, q, candidate_pool_limit),
+            )
+            rows = cur.fetchall()
+
         cur.close()
-        ranked_rows, rerank_meta = _finalize_lookup_rows(
+        ranked_rows, meta = _finalize_candidate_rows(
             rows,
             query=query_clean,
             limit=limit,
-            rerank_mode=resolved_rerank_mode,
+            rerank_mode=resolved_mode,
         )
-        if include_rerank_meta:
-            return ranked_rows, rerank_meta
-        return ranked_rows
+        return [_row_to_candidate(row) for row in ranked_rows], meta
     finally:
         put_conn(conn)

@@ -1,4 +1,4 @@
-"""Agent runtime — ReAct-native architecture with Skill infrastructure.
+﻿"""Agent runtime 鈥?ReAct-native architecture with Skill infrastructure.
 
 Single runtime: LangGraph ReAct agent with full tool autonomy.
 Tool wrappers execute through SkillRegistry + ToolHookRunner for
@@ -27,9 +27,11 @@ from .clarification import (
     infer_clarification_reason,
 )
 from .core.evidence import (
+    contains_cjk as _contains_cjk_core,
+    contains_valid_url_in_body as _contains_valid_url_in_body_core,
     decorate_response_with_sources as _decorate_response_with_sources_core,
     extract_urls as _extract_urls_core,
-    has_inline_citation_in_body as _has_inline_citation_in_body_core,
+    normalize_url_for_match as _normalize_url_for_match_core,
 )
 from .core.intent import classify_user_intent
 from .core.metrics import (
@@ -145,7 +147,7 @@ def _envelope_to_tool_text(envelope: SkillEnvelope) -> str:
 
 
 def _execute_skill(skill_name: str, payload: dict[str, Any]) -> str:
-    """Unified skill dispatch: Registry → Hooks → Execute → Evidence collect.
+    """Unified skill dispatch: Registry 鈫?Hooks 鈫?Execute 鈫?Evidence collect.
 
     Returns the text representation for the ReAct LLM to consume.
     """
@@ -252,7 +254,7 @@ def query_news_tool(
     sort: str = "time_desc",
     limit: int = 8,
 ) -> str:
-    """Query news with structured filters — the primary retrieval tool.
+    """Query news with structured filters 鈥?the primary retrieval tool.
 
     Supports filtering by source ('all'/'HackerNews'/'TechCrunch'), time window,
     sentiment, and sorting by time or heat (points). If no results, try broader
@@ -429,10 +431,16 @@ def _build_chat_model() -> Any:
             "You can also use GOOGLE_CLOUD_PROJECT."
         )
 
-    location = os.getenv("VERTEX_LOCATION", os.getenv("GOOGLE_CLOUD_LOCATION", "global")).strip()
+    location = os.getenv(
+        "VERTEX_GENERATION_LOCATION",
+        os.getenv("VERTEX_LLM_LOCATION", os.getenv("VERTEX_LOCATION", os.getenv("GOOGLE_CLOUD_LOCATION", "global"))),
+    ).strip()
     model_name = os.getenv(
-        "VERTEX_MODEL",
+        "VERTEX_GENERATION_MODEL",
+        os.getenv(
+            "VERTEX_MODEL",
         os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
+        ),
     ).strip()
 
     credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
@@ -544,16 +552,11 @@ def _extract_final_text(result: Any) -> str:
 # ---------------------------------------------------------------------------
 _GENERIC_ANALYSIS_LEADIN_PATTERNS = (
     re.compile(
-        r"^(?:好(?:的)?|当然|没问题|可以)[，,\s]*"
-        r"(?:作为一名[^。:\n]*分析师[^。:\n]*"
-        r"|(?:这是|以下是|下面是).*?(?:分析|解读|梳理|总结|动态)"
-        r"|(?:我们|我|让我)来看[^。:\n]*(?:分析|解读|梳理|格局|动态)"
-        r"|(?:我|我们)来[^。:\n]*(?:分析|解读|梳理|总结|动态))"
-        r"[\s。!！:：]*$",
+        r"^(?:好的|当然|可以|没问题|这是|以下是|下面是).{0,80}$",
         re.IGNORECASE,
     ),
     re.compile(
-        r"^(?:这是|以下是|下面是|为您梳理).*?(?:分析|解读|梳理|总结|动态)[\s。!！:：]*$",
+        r"^(?:让我们|我来|先来).{0,80}(?:分析|解读|总结).{0,40}$",
         re.IGNORECASE,
     ),
     re.compile(
@@ -630,7 +633,7 @@ def _extract_citation_urls_from_text(text: str) -> list[str]:
     return [citation_map[idx] for idx in sorted(citation_map.keys())]
 
 def _contains_cjk(text: str) -> bool:
-    return bool(re.search(r"[一-鿿]", text or ""))
+    return _contains_cjk_core(text)
 
 
 def _should_block_empty_evidence(
@@ -649,35 +652,41 @@ def _should_block_empty_evidence(
     return True
 
 
-def _strict_inline_citations_enabled() -> bool:
-    return os.getenv("AGENT_STRICT_INLINE_CITATIONS", "true").strip().lower() not in {"0", "false", "no", "off"}
+def _strict_body_url_citations_enabled() -> bool:
+    raw = os.getenv(
+        "AGENT_STRICT_BODY_URL_CITATIONS",
+        os.getenv("AGENT_STRICT_INLINE_CITATIONS", "true"),
+    )
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
 
 
-def _enforce_inline_citation_guard(
-    final_text: str, user_message: str, valid_urls: list[str] | set[str] | None
+def _enforce_body_valid_url_guard(
+    core_text: str,
+    user_message: str,
+    valid_urls: list[str] | set[str] | None,
 ) -> None:
-    """Block response when evidence exists but body-level [n] citations are missing."""
-    if not _strict_inline_citations_enabled():
+    """Block response when evidence exists but body has no valid source URL citation."""
+    if not _strict_body_url_citations_enabled():
         return
     if not valid_urls:
         return
-    if _has_inline_citation_in_body_core(final_text):
+    if _contains_valid_url_in_body_core(core_text, valid_urls):
         return
 
     _metrics_inc("react_inline_citation_blocked")
     if _contains_cjk(user_message):
         raise AgentGenerationError(
-            "抱歉，本次回答缺少准确引用。为避免无证据结论，已阻断该输出，请重试。",
+            "抱歉，本次回答正文缺少有效来源 URL。为避免无证据结论，已阻断该输出，请重试。",
             code="react_inline_citation_missing",
         )
     raise AgentGenerationError(
-        "The response was blocked because inline citations ([1], [2], ...) were missing in the answer body.",
+        "The response was blocked because the answer body did not include any URL from valid evidence.",
         code="react_inline_citation_missing",
     )
 
 
 def _normalize_url_for_guard(url: str) -> str:
-    return str(url or "").strip().rstrip(".,;:!?)")
+    return _normalize_url_for_match_core(url)
 
 
 def _enforce_output_urls_in_valid_set(
@@ -713,7 +722,7 @@ def _enforce_output_urls_in_valid_set(
     preview = ", ".join(unknown[:3])
     if _contains_cjk(user_message):
         raise AgentGenerationError(
-            f"抱歉，本次输出包含未在证据集合中的 URL，已拦截。异常 URL：{preview}",
+            f"抱歉，本次输出包含不在证据集合中的 URL，已拦截。异常 URL：{preview}",
             code="react_url_outside_valid_set",
         )
     raise AgentGenerationError(
@@ -730,8 +739,8 @@ def _build_hitl_soft_followup(
 ) -> str:
     """Generate a dynamic HITL follow-up question via the current model."""
     fallback = (
-        f"为提高本次结论置信度，我建议你补充一个约束条件后我再继续："
-        f"时间范围、来源范围或分析维度。你希望先收敛哪一项？"
+        "为提高本次结论可信度，请补充一个约束后我再继续："
+        "时间范围、信息来源范围、或分析维度。你希望先收敛哪一项？"
     )
     context_preview = {
         "reason": str(risk_reason or "").strip(),
@@ -743,15 +752,15 @@ def _build_hitl_soft_followup(
         "ambiguous_scope_reasons": risk_context.get("ambiguous_scope_reasons", []),
     }
     prompt = (
-        "你是新闻分析系统里的 HITL 澄清助手。"
-        "请基于用户原问题，写一段自然中文追问，用于让用户补充约束条件。\n"
-        "要求：\n"
-        "1) 只输出最终追问文本，不要解释推理过程；\n"
-        "2) 1-3 句，语气专业简洁；\n"
-        "3) 不要输出模板编号，不要输出 URL，不要输出 [1] 这类引用；\n"
-        "4) 追问应贴合当前问题，不要泛化。\n\n"
-        f"用户问题：{user_message}\n"
-        f"风险信号：{context_preview}\n"
+        "You are a HITL clarification assistant for a news analysis system.\n"
+        "Based on the user question, write a concise follow-up question in Chinese to collect one missing constraint.\n"
+        "Requirements:\n"
+        "1) Output only the final follow-up text, no reasoning.\n"
+        "2) Keep it within 1-3 sentences and professional tone.\n"
+        "3) Do not output template ids, URLs, or inline citation markers like [1].\n"
+        "4) Follow-up must stay specific to the current question.\n\n"
+        f"User question: {user_message}\n"
+        f"Risk context: {context_preview}\n"
     )
     try:
         model = _build_chat_model()
@@ -907,8 +916,7 @@ def _generate_response_core(
             _metrics_inc("react_recursion_limit_hit")
             print(f"[Agent][Warn] recursion limit hit: {type(exc).__name__}: {exc}")
             raise AgentGenerationError(
-                "抱歉，由于问题跨度较大，本次分析在多次检索后超时。"
-                "请尝试缩小时间范围或换一个更具体的关键词。",
+                "抱歉，由于问题跨度较大，本次分析在多轮检索后超时。请缩小时间范围或换一个更具体的关键词再试。",
                 code="react_recursion_limit_hit",
             )
 
@@ -926,14 +934,13 @@ def _generate_response_core(
         if any(marker in exc_str for marker in transient_markers):
             print(f"[Agent][Warn] upstream/transient error: {type(exc).__name__}: {exc}")
             raise AgentGenerationError(
-                "抱歉，当前服务暂时不可用。"
-                "请稍后重试。",
+                "抱歉，当前上游服务暂时不可用，请稍后重试。",
                 code="react_upstream_unavailable",
             )
 
         print(f"[Agent][Error] unexpected runtime failure: {type(exc).__name__}: {exc}")
         raise AgentGenerationError(
-            "抱歉，本次分析未能完成。请尝试更换关键词或缩小时间范围。",
+            "抱歉，本次分析未能完成，请稍后重试。",
             code="react_unexpected_runtime_error",
         )
 
@@ -1035,8 +1042,8 @@ def generate_response(
             )
             core_text = _strip_generic_analysis_leadin(core_text)
             _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
+            _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
             final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
-            _enforce_inline_citation_guard(final_text, user_message, valid_urls)
             _finalize_request_trace(
                 final_status="success",
                 evidence_count=len(valid_urls),
@@ -1096,8 +1103,8 @@ def generate_response_payload(
             )
             core_text = _strip_generic_analysis_leadin(core_text)
             _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
+            _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
             final_text, title_map = _decorate_response_with_sources(core_text, user_message, valid_urls)
-            _enforce_inline_citation_guard(final_text, user_message, valid_urls)
             _finalize_request_trace(
                 final_status="success",
                 evidence_count=len(valid_urls),
@@ -1194,8 +1201,8 @@ def generate_response_eval_payload(
                 )
                 core_text = _strip_generic_analysis_leadin(core_text)
                 _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
+                _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
                 final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
-                _enforce_inline_citation_guard(final_text, user_message, valid_urls)
                 tool_calls = sorted(_get_accumulated_tool_calls())
                 trace_summary = _finalize_request_trace(
                     final_status="success",

@@ -16,7 +16,7 @@ from .helpers import (
 )
 from .news_ops import read_news_content
 from .rerank import resolve_rerank_mode
-from .retrieval import _lookup_urls_by_query
+from .retrieval import lookup_candidates_by_query
 from .schemas import FulltextBatchSkillInput
 
 
@@ -64,23 +64,12 @@ def fulltext_batch(
             return "fulltext_batch requires URLs or a keyword query."
 
         days = _extract_time_window_days(query, default=14, maximum=120)
-        lookup_result = _lookup_urls_by_query(
+        candidates, rerank_meta = lookup_candidates_by_query(
             query=query,
             days=days,
             limit=6,
             rerank_mode=resolved_rerank_mode,
-            include_rerank_meta=True,
         )
-        if isinstance(lookup_result, tuple):
-            candidates, rerank_meta = lookup_result
-        else:
-            candidates = lookup_result
-            rerank_meta = {
-                "rerank_mode": resolved_rerank_mode,
-                "candidate_count": len(candidates),
-                "top_k": min(6, len(candidates)),
-                "fallback": False,
-            }
         if not candidates:
             if as_json:
                 return _json_text(
@@ -106,10 +95,16 @@ def fulltext_batch(
             f"No URLs provided. Auto-selected Top {len(candidates)} articles for query '{query}' (window={days}d):"
         )
         for rank, row in enumerate(candidates, 1):
-            headline, url, source_type, created_at, points, score = row
+            headline = str(row.get("title") or "")
+            url = str(row.get("url") or "")
+            source_type = str(row.get("source_type") or "")
+            created_at = row.get("created_at")
+            points = int(row.get("points") or 0)
+            score = float(row.get("score") or 0.0)
+            created_at_text = created_at.strftime("%Y-%m-%d %H:%M") if hasattr(created_at, "strftime") else ""
             prefix_lines.append(
                 f"{rank}. [{source_type}] {headline} | points={points} | "
-                f"score={float(score):.3f} | {created_at.strftime('%Y-%m-%d %H:%M')} | {url}"
+                f"score={float(score):.3f} | {created_at_text} | {url}"
             )
             meta = {
                 "selection_mode": "query",
@@ -119,8 +114,8 @@ def fulltext_batch(
                 "rank": rank,
                 "headline": headline,
                 "source_type": source_type,
-                "points": int(points or 0),
-                "score": float(score or 0.0),
+                "points": points,
+                "score": score,
                 "created_at": created_at.isoformat() if created_at else "",
                 "url": url,
             }

@@ -6,6 +6,8 @@ import sys
 import types
 import warnings
 from collections.abc import Iterator
+from pathlib import Path
+from shutil import rmtree
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -18,6 +20,68 @@ if project_root not in sys.path:
 
 # Ignore known upstream deprecation warning noise from LangGraph/LangChain.
 warnings.filterwarnings("ignore", message=".*AgentStatePydantic has been moved.*")
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except Exception:
+        return False
+
+
+def _remove_tree(path: Path, *, root: Path) -> None:
+    """Best-effort cleanup for transient pytest artifacts."""
+    if not path.exists():
+        return
+    if not _is_within(path, root):
+        return
+    if not path.is_dir():
+        return
+    try:
+        rmtree(path, ignore_errors=True)
+    except Exception:
+        # Keep test exit robust: cleanup errors should not fail test runs.
+        return
+
+
+def _cleanup_transient_pytest_artifacts() -> None:
+    known_dirs = [
+        PROJECT_ROOT / ".pytest_tmp_technews",
+        PROJECT_ROOT / ".pytest_tmp" / "technews",
+        PROJECT_ROOT / ".tmp" / "pytest-technews",
+        PROJECT_ROOT / "tests" / "pytest-tmp",
+        PROJECT_ROOT / "tests" / ".pytest_cache",
+        PROJECT_ROOT / "tests" / "unit" / ".tmp_pytest",
+        PROJECT_ROOT / "eval" / "reports" / "tmp_pytest",
+    ]
+    for target in known_dirs:
+        _remove_tree(target, root=PROJECT_ROOT)
+
+    tests_dir = PROJECT_ROOT / "tests"
+    if tests_dir.exists():
+        for target in tests_dir.glob("pytest-cache-files-*"):
+            _remove_tree(target, root=PROJECT_ROOT)
+
+    # Cleanup root-level temp folders like tmpabcd123 that some tooling may leave.
+    for target in PROJECT_ROOT.glob("tmp*"):
+        if not target.is_dir():
+            continue
+        name = target.name
+        if name == "tmp":
+            continue
+        suffix = name[3:]
+        if not suffix:
+            continue
+        if not all(ch.isalnum() or ch in "_-" for ch in suffix):
+            continue
+        _remove_tree(target, root=PROJECT_ROOT)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # noqa: ARG001
+    _cleanup_transient_pytest_artifacts()
 
 
 @pytest.fixture()

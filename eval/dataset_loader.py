@@ -105,6 +105,32 @@ def _safe_int(value: Any, default: int) -> int:
         return default
 
 
+def _normalize_difficulty(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"easy", "medium", "hard"}:
+        return text
+    return ""
+
+
+def _normalize_priority(value: Any) -> int | str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+
+    text = str(value).strip()
+    if not text:
+        return ""
+    try:
+        return int(text)
+    except Exception:
+        return text
+
+
 def load_eval_cases(
     dataset_path: Path,
     *,
@@ -180,8 +206,11 @@ def load_eval_cases(
                 "expected_source_domains": _normalize_str_list(
                     item.get("expected_source_domains", [])
                 ),
+                "retrieval_gold_urls": _normalize_str_list(item.get("retrieval_gold_urls", [])),
+                "difficulty": _normalize_difficulty(item.get("difficulty")),
+                "priority": _normalize_priority(item.get("priority")),
+                "failure_tag": _normalize_str_list(item.get("failure_tag", [])),
                 "ground_truth": str(item.get("ground_truth", "")).strip(),
-                "ragas_contexts": _normalize_str_list(item.get("ragas_contexts", [])),
                 "tags": _normalize_str_list(item.get("tags", [])),
                 "enabled": enabled,
             }

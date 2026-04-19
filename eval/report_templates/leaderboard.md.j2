@@ -1,0 +1,58 @@
+# Matrix Leaderboard Report
+
+- Generated at (UTC): `{{ report.generated_at_utc }}`
+- Manifest: `{{ report.manifest_path }}`
+- Dataset version: `{{ report.dataset.version }}`
+- Dataset suite: `{{ report.dataset.suite }}`
+- Baseline group: `{{ report.baseline_group }}`
+
+{% if report.warnings %}
+## Warnings
+{% for item in report.warnings %}
+- {{ item }}
+{% endfor %}
+{% endif %}
+
+## Group Metrics (vs Baseline)
+{% for group in report.groups %}
+### {{ group.group_id }}{% if group.description %} - {{ group.description }}{% endif %}
+
+- Sources: run_eval=`{{ group.sources.run_eval }}`, judge=`{{ group.sources.judge }}`
+
+| Layer | Metric | Current | Baseline | Delta | Delta % | n(cur/base) | CI95(delta) |
+|---|---|---:|---:|---:|---:|---:|---|
+{% for metric_name in metric_order %}
+{% set row = group.metrics[metric_name] %}
+| {{ row.layer }} | {{ metric_name }} | {{ row.current }} | {{ row.baseline }} | {{ row.delta_abs }} | {{ row.delta_pct }} | {{ row.sample_n.current }}/{{ row.sample_n.baseline }} | {{ row.ci_95.lower }} ~ {{ row.ci_95.upper }} ({{ row.ci_95.method }}) |
+{% endfor %}
+
+{% endfor %}
+
+## Top Gains
+
+| Group | Metric | Layer | Delta | Delta % | n | CI95(delta) |
+|---|---|---|---:|---:|---:|---|
+{% if report.top_gains %}
+{% for item in report.top_gains %}
+| {{ item.group_id }} | {{ item.metric }} | {{ item.layer }} | {{ item.delta_abs }} | {{ item.delta_pct }} | {{ item.n }} | {{ item.ci_95.lower }} ~ {{ item.ci_95.upper }} ({{ item.ci_95.method }}) |
+{% endfor %}
+{% else %}
+| - | - | - | - | - | - | - |
+{% endif %}
+
+## Top Regressions
+
+| Group | Metric | Layer | Delta | Delta % | n | CI95(delta) |
+|---|---|---|---:|---:|---:|---|
+{% if report.top_regressions %}
+{% for item in report.top_regressions %}
+| {{ item.group_id }} | {{ item.metric }} | {{ item.layer }} | {{ item.delta_abs }} | {{ item.delta_pct }} | {{ item.n }} | {{ item.ci_95.lower }} ~ {{ item.ci_95.upper }} ({{ item.ci_95.method }}) |
+{% endfor %}
+{% else %}
+| - | - | - | - | - | - | - |
+{% endif %}
+
+## Recommended Next Steps
+{% for item in report.recommendations %}
+- {{ item }}
+{% endfor %}

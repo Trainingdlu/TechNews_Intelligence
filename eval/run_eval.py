@@ -27,6 +27,9 @@ try:
         evaluate_case_outputs,
         evaluate_quality_gates,
         extract_urls,
+        mrr_at_k,
+        ndcg_at_k,
+        recall_at_k,
         summarize_case_results,
     )
 except ImportError:  # package-style import fallback
@@ -42,6 +45,9 @@ except ImportError:  # package-style import fallback
         evaluate_case_outputs,
         evaluate_quality_gates,
         extract_urls,
+        mrr_at_k,
+        ndcg_at_k,
+        recall_at_k,
         summarize_case_results,
     )
 
@@ -55,6 +61,13 @@ EXPERIMENT_ENV_KEYS = (
     "FULLTEXT_BATCH_RERANK_MODE",
     "AGENT_PROMPT_VARIANT",
 )
+STAGE_D_DELTA_METRIC_SPECS: list[tuple[str, str]] = [
+    ("summary.avg_recall_at_10", "higher_better"),
+    ("summary.avg_mrr_at_10", "higher_better"),
+    ("summary.avg_ndcg_at_10", "higher_better"),
+    ("summary.avg_error_rate", "lower_better"),
+    ("route_metrics.citation_guard_block_rate", "lower_better"),
+]
 
 
 def _resolve_langsmith_endpoint() -> str:
@@ -137,6 +150,9 @@ def _run_case(
             tools = payload.get("tool_calls", [])
             if not isinstance(tools, list):
                 tools = []
+            valid_urls = payload.get("valid_urls", [])
+            if not isinstance(valid_urls, list):
+                valid_urls = []
             trace_summary = payload.get("trace_summary")
             if not isinstance(trace_summary, dict):
                 trace_summary = None
@@ -146,15 +162,22 @@ def _run_case(
                 tools = get_last_tool_calls_snapshot()
             except Exception:
                 tools = []
+            valid_urls = []
             trace_summary = None
 
         outputs.append(text)
         tool_calls_by_run.append([str(t).strip() for t in tools if str(t).strip()])
+        retrieved_urls = _collect_retrieved_urls(
+            valid_urls=valid_urls,
+            trace_summary=trace_summary,
+            output_text=text,
+        )
         run_meta = {
             "run_index": idx,
             "request_id": str(payload.get("request_id", request_id)),
             "url_count": len(extract_urls(text)),
             "tool_calls": tool_calls_by_run[-1],
+            "retrieved_urls": retrieved_urls,
         }
         if include_trace_summary and trace_summary is not None:
             run_meta["trace_summary"] = trace_summary
@@ -175,6 +198,52 @@ def _run_case(
         expected_source_domains=case.get("expected_source_domains", []),
         run_tool_calls=tool_calls_by_run,
     )
+    retrieval_gold_urls = [
+        str(item).strip()
+        for item in (case.get("retrieval_gold_urls", []) or [])
+        if str(item).strip()
+    ]
+    retrieval_has_gold = bool(retrieval_gold_urls)
+    if retrieval_has_gold:
+        recall5_vals: list[float] = []
+        recall10_vals: list[float] = []
+        mrr10_vals: list[float] = []
+        ndcg10_vals: list[float] = []
+        for run in output_meta:
+            retrieved = run.get("retrieved_urls", [])
+            if not isinstance(retrieved, list):
+                retrieved = []
+            score_recall5 = recall_at_k(retrieved, retrieval_gold_urls, 5)
+            score_recall10 = recall_at_k(retrieved, retrieval_gold_urls, 10)
+            score_mrr10 = mrr_at_k(retrieved, retrieval_gold_urls, 10)
+            score_ndcg10 = ndcg_at_k(retrieved, retrieval_gold_urls, 10)
+            if score_recall5 is not None:
+                recall5_vals.append(score_recall5)
+            if score_recall10 is not None:
+                recall10_vals.append(score_recall10)
+            if score_mrr10 is not None:
+                mrr10_vals.append(score_mrr10)
+            if score_ndcg10 is not None:
+                ndcg10_vals.append(score_ndcg10)
+
+        metrics["recall_at_5"] = (
+            sum(recall5_vals) / len(recall5_vals) if recall5_vals else 0.0
+        )
+        metrics["recall_at_10"] = (
+            sum(recall10_vals) / len(recall10_vals) if recall10_vals else 0.0
+        )
+        metrics["mrr_at_10"] = (
+            sum(mrr10_vals) / len(mrr10_vals) if mrr10_vals else 0.0
+        )
+        metrics["ndcg_at_10"] = (
+            sum(ndcg10_vals) / len(ndcg10_vals) if ndcg10_vals else 0.0
+        )
+    else:
+        metrics["recall_at_5"] = None
+        metrics["recall_at_10"] = None
+        metrics["mrr_at_10"] = None
+        metrics["ndcg_at_10"] = None
+    metrics["retrieval_has_gold"] = retrieval_has_gold
 
     item: dict[str, Any] = {
         "id": case["id"],
@@ -190,8 +259,11 @@ def _run_case(
             "acceptable_tool_paths": case.get("acceptable_tool_paths", []),
             "must_not_contain": case.get("must_not_contain", []),
             "expected_source_domains": case.get("expected_source_domains", []),
+            "retrieval_gold_urls": retrieval_gold_urls,
+            "difficulty": case.get("difficulty", ""),
+            "priority": case.get("priority", ""),
+            "failure_tag": case.get("failure_tag", []),
             "ground_truth": case.get("ground_truth", ""),
-            "ragas_contexts": case.get("ragas_contexts", []),
         },
         "tags": case.get("tags", []),
         "metrics": metrics,
@@ -278,19 +350,13 @@ def _build_arg_parser(eval_dir: Path) -> argparse.ArgumentParser:
     parser.add_argument(
         "--include-trace-summary",
         action="store_true",
-        help="Include request trace summary in run metadata (for LangSmith/Ragas analysis).",
+        help="Include request trace summary in run metadata (for LangSmith analysis).",
     )
     parser.add_argument(
         "--experiment-group",
         type=str,
         default="",
         help="Optional experiment group id for A/B matrix tracking (e.g. G0_baseline).",
-    )
-    parser.add_argument(
-        "--export-ragas-jsonl",
-        type=Path,
-        default=None,
-        help="Optional path to export Ragas-ready JSONL rows after eval run.",
     )
     parser.add_argument(
         "--baseline",
@@ -488,6 +554,29 @@ def _build_experiment_context(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except Exception:
+        return 0
+
+
+def _enrich_route_metrics(route_metrics: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(route_metrics or {})
+    attempts = _safe_int(enriched.get("react_attempts"))
+    citation_blocked = _safe_int(enriched.get("react_inline_citation_blocked"))
+    citation_guard_block_rate = (citation_blocked / attempts) if attempts > 0 else 0.0
+    enriched["citation_guard_block_rate"] = citation_guard_block_rate
+    return enriched
+
+
+def _build_system_summary(summary: dict[str, Any], route_metrics: dict[str, Any]) -> dict[str, float]:
+    return {
+        "error_rate": float(summary.get("avg_error_rate", 0.0) or 0.0),
+        "citation_guard_block_rate": float(route_metrics.get("citation_guard_block_rate", 0.0) or 0.0),
+    }
+
+
 def _invoke_eval_payload(
     generate_response_eval_payload: Any,
     question: str,
@@ -521,11 +610,22 @@ def _invoke_eval_payload(
     return payload
 
 
-def _extract_contexts_from_trace_summary(summary: dict[str, Any] | None) -> list[str]:
+def _dedupe_preserve_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        text = str(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
+def _extract_retrieved_urls_from_trace_summary(summary: dict[str, Any] | None) -> list[str]:
     if not isinstance(summary, dict):
         return []
-    contexts: list[str] = []
-    seen: set[str] = set()
+    urls: list[str] = []
     for event in summary.get("tool_events", []) or []:
         if not isinstance(event, dict):
             continue
@@ -538,72 +638,22 @@ def _extract_contexts_from_trace_summary(summary: dict[str, Any] | None) -> list
         for doc in docs:
             if not isinstance(doc, dict):
                 continue
-            snippet = str(doc.get("summary") or doc.get("title") or doc.get("url") or "").strip()
-            if not snippet or snippet in seen:
-                continue
-            seen.add(snippet)
-            contexts.append(snippet)
-    return contexts
+            url = str(doc.get("url", "")).strip()
+            if url:
+                urls.append(url)
+    return _dedupe_preserve_order(urls)
 
 
-def _build_ragas_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    experiment_group = str((report.get("experiment") or {}).get("group", "")).strip()
-    for case in report.get("cases", []) or []:
-        if not isinstance(case, dict):
-            continue
-        outputs = case.get("outputs")
-        if not isinstance(outputs, list) or not outputs:
-            continue
-
-        answer = str(outputs[0]).strip()
-        if not answer or answer.startswith("[EVAL_ERROR]"):
-            continue
-
-        constraints = case.get("constraints", {})
-        if not isinstance(constraints, dict):
-            constraints = {}
-        reference = str(constraints.get("ground_truth", "")).strip()
-        if not reference:
-            expected_facts = constraints.get("expected_facts", [])
-            if isinstance(expected_facts, list):
-                tokens = [str(item).strip() for item in expected_facts if str(item).strip()]
-                reference = "；".join(tokens)
-
-        runs = case.get("runs", [])
-        first_trace_summary: dict[str, Any] | None = None
-        if isinstance(runs, list) and runs:
-            first_run = runs[0]
-            if isinstance(first_run, dict):
-                candidate = first_run.get("trace_summary")
-                if isinstance(candidate, dict):
-                    first_trace_summary = candidate
-
-        contexts = _extract_contexts_from_trace_summary(first_trace_summary)
-        if not contexts:
-            ragas_contexts = constraints.get("ragas_contexts", [])
-            if isinstance(ragas_contexts, list):
-                contexts = [str(item).strip() for item in ragas_contexts if str(item).strip()]
-
-        rows.append(
-            {
-                "case_id": str(case.get("id", "")).strip(),
-                "question": str(case.get("question", "")).strip(),
-                "answer": answer,
-                "reference": reference,
-                "contexts": contexts,
-                "experiment_group": experiment_group,
-            }
-        )
-    return rows
-
-
-def _export_ragas_jsonl(report: dict[str, Any], output_path: Path) -> None:
-    rows = _build_ragas_rows(report)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+def _collect_retrieved_urls(
+    *,
+    valid_urls: list[str] | None,
+    trace_summary: dict[str, Any] | None,
+    output_text: str,
+) -> list[str]:
+    from_payload = [str(item).strip() for item in (valid_urls or []) if str(item).strip()]
+    from_trace = _extract_retrieved_urls_from_trace_summary(trace_summary)
+    from_output = extract_urls(output_text)
+    return _dedupe_preserve_order(from_payload + from_trace + from_output)
 
 
 def main() -> int:
@@ -617,7 +667,7 @@ def main() -> int:
     project_root = eval_dir.parent
     env_path = project_root / "agent" / ".env"
     if env_path.exists():
-        load_dotenv(dotenv_path=env_path, override=False)
+        load_dotenv(dotenv_path=env_path, override=True)
     _print_langsmith_runtime_snapshot()
 
     dataset_path = _resolve_dataset_path(eval_dir, args)
@@ -688,7 +738,8 @@ def main() -> int:
 
     elapsed = time.time() - started
     summary = summarize_case_results(results)
-    route_metrics = get_route_metrics_snapshot()
+    route_metrics = _enrich_route_metrics(get_route_metrics_snapshot())
+    system_summary = _build_system_summary(summary, route_metrics)
 
     report: dict[str, Any] = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -700,6 +751,7 @@ def main() -> int:
         "selection": selection,
         "capability_catalog": CAPABILITY_CATALOG,
         "summary": summary,
+        "system": system_summary,
         "route_metrics": route_metrics,
         "cases": results,
     }
@@ -716,6 +768,14 @@ def main() -> int:
                 baseline_report=baseline_report,
             ),
         }
+        report["stage_d_delta"] = {
+            "baseline_path": str(baseline_path),
+            "comparison": build_baseline_comparison(
+                current_report=report,
+                baseline_report=baseline_report,
+                metric_specs=STAGE_D_DELTA_METRIC_SPECS,
+            ),
+        }
 
     gate_specs = _build_gate_specs(args)
     gate_result = evaluate_quality_gates(report, gate_specs)
@@ -730,11 +790,6 @@ def main() -> int:
         json.dumps(report, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-
-    if args.export_ragas_jsonl:
-        ragas_path = args.export_ragas_jsonl.resolve()
-        _export_ragas_jsonl(report, ragas_path)
-        print(f"[Eval] ragas_jsonl={ragas_path}")
 
     print(
         "[Eval] selection: "
@@ -753,6 +808,11 @@ def main() -> int:
         f"avg_tool_path_hit={summary['avg_tool_path_hit_rate']:.3f} "
         f"avg_tool_path_accept_hit={summary['avg_tool_path_accept_hit_rate']:.3f} "
         f"avg_source_domain_hit={summary['avg_source_domain_hit_rate']:.3f} "
+        f"retrieval_cases={int(summary.get('retrieval_case_count', 0))} "
+        f"avg_recall@5={summary.get('avg_recall_at_5', 0.0):.3f} "
+        f"avg_recall@10={summary.get('avg_recall_at_10', 0.0):.3f} "
+        f"avg_mrr@10={summary.get('avg_mrr_at_10', 0.0):.3f} "
+        f"avg_ndcg@10={summary.get('avg_ndcg_at_10', 0.0):.3f} "
         f"avg_forbidden_claim={summary['avg_forbidden_claim_rate']:.3f} "
         f"avg_error={summary['avg_error_rate']:.3f}"
     )
@@ -761,12 +821,18 @@ def main() -> int:
         f"react_attempts={int(route_metrics.get('react_attempts', 0))} "
         f"react_success={int(route_metrics.get('react_success', 0))} "
         f"react_error={int(route_metrics.get('react_error', 0))} "
+        f"react_inline_citation_blocked={int(route_metrics.get('react_inline_citation_blocked', 0))} "
         f"react_recursion_limit_hit={int(route_metrics.get('react_recursion_limit_hit', 0))} "
         f"react_success_rate={route_metrics.get('react_success_rate', 0.0):.2%} "
         f"react_error_rate={route_metrics.get('react_error_rate', 0.0):.2%} "
-        f"react_recursion_limit_rate={route_metrics.get('react_recursion_limit_rate', 0.0):.2%}"
+        f"react_recursion_limit_rate={route_metrics.get('react_recursion_limit_rate', 0.0):.2%} "
+        f"citation_guard_block_rate={route_metrics.get('citation_guard_block_rate', 0.0):.2%}"
     )
-
+    print(
+        "[Eval] system: "
+        f"error_rate={system_summary.get('error_rate', 0.0):.3f} "
+        f"citation_guard_block_rate={system_summary.get('citation_guard_block_rate', 0.0):.2%}"
+    )
     if "baseline" in report:
         bc = report["baseline"]["comparison"]
         baseline_schema = int(report["baseline"].get("route_metrics_schema_version", 1))

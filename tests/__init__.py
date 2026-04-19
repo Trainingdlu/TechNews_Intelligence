@@ -1,2 +1,2 @@
-﻿"""Test package for agent runtime and bot robustness."""
+"""Test package for agent runtime and bot robustness."""
 

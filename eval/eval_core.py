@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 import re
 from difflib import SequenceMatcher
 from typing import Any, Iterable
@@ -34,6 +35,117 @@ def extract_urls(text: str) -> list[str]:
         seen.add(item)
         out.append(item)
     return out
+
+
+def normalize_url_for_retrieval(url: str, *, domain_only: bool = False) -> str:
+    """Normalize URL for deterministic retrieval-metric matching."""
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    parsed = urlparse(raw)
+
+    host = (parsed.netloc or parsed.path).strip().lower()
+    path = parsed.path if parsed.netloc else ""
+    host = host.split("@")[-1].split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    if not host:
+        return ""
+    if domain_only:
+        return host
+
+    norm_path = path.strip().lower().rstrip("/")
+    query = parsed.query.strip().lower()
+
+    normalized = f"{host}{norm_path}"
+    if query:
+        normalized = f"{normalized}?{query}"
+    return normalized
+
+
+def _normalize_retrieval_url_list(
+    urls: Iterable[str] | None,
+    *,
+    domain_only: bool = False,
+) -> list[str]:
+    if not urls:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in urls:
+        normalized = normalize_url_for_retrieval(str(item), domain_only=domain_only)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        out.append(normalized)
+    return out
+
+
+def recall_at_k(
+    pred_urls: list[str] | None,
+    gold_urls: list[str] | None,
+    k: int,
+    *,
+    domain_only: bool = False,
+) -> float | None:
+    """Recall@k for URL retrieval, or None when no gold labels exist."""
+    gold = set(_normalize_retrieval_url_list(gold_urls, domain_only=domain_only))
+    if not gold:
+        return None
+    if k <= 0:
+        return 0.0
+    preds = _normalize_retrieval_url_list(pred_urls, domain_only=domain_only)[:k]
+    return len(set(preds).intersection(gold)) / len(gold)
+
+
+def mrr_at_k(
+    pred_urls: list[str] | None,
+    gold_urls: list[str] | None,
+    k: int,
+    *,
+    domain_only: bool = False,
+) -> float | None:
+    """MRR@k for URL retrieval, or None when no gold labels exist."""
+    gold = set(_normalize_retrieval_url_list(gold_urls, domain_only=domain_only))
+    if not gold:
+        return None
+    if k <= 0:
+        return 0.0
+    preds = _normalize_retrieval_url_list(pred_urls, domain_only=domain_only)[:k]
+    for rank, url in enumerate(preds, 1):
+        if url in gold:
+            return 1.0 / rank
+    return 0.0
+
+
+def ndcg_at_k(
+    pred_urls: list[str] | None,
+    gold_urls: list[str] | None,
+    k: int,
+    *,
+    domain_only: bool = False,
+) -> float | None:
+    """nDCG@k with binary relevance, or None when no gold labels exist."""
+    gold = set(_normalize_retrieval_url_list(gold_urls, domain_only=domain_only))
+    if not gold:
+        return None
+    if k <= 0:
+        return 0.0
+
+    preds = _normalize_retrieval_url_list(pred_urls, domain_only=domain_only)[:k]
+    if not preds:
+        return 0.0
+
+    gains = [1.0 if url in gold else 0.0 for url in preds]
+    dcg = sum(gain / math.log2(idx + 2) for idx, gain in enumerate(gains))
+    ideal_hits = min(len(gold), k)
+    idcg = sum(1.0 / math.log2(idx + 2) for idx in range(ideal_hits))
+    if idcg <= 0:
+        return 0.0
+    return dcg / idcg
 
 
 def normalize_domain(value: str) -> str:
@@ -285,6 +397,11 @@ def summarize_case_results(case_results: list[dict[str, Any]]) -> dict[str, floa
             "avg_tool_path_hit_rate": 0.0,
             "avg_tool_path_accept_hit_rate": 0.0,
             "avg_source_domain_hit_rate": 0.0,
+            "retrieval_case_count": 0,
+            "avg_recall_at_5": 0.0,
+            "avg_recall_at_10": 0.0,
+            "avg_mrr_at_10": 0.0,
+            "avg_ndcg_at_10": 0.0,
             "avg_forbidden_claim_rate": 0.0,
             "avg_error_rate": 0.0,
         }
@@ -295,6 +412,22 @@ def summarize_case_results(case_results: list[dict[str, Any]]) -> dict[str, floa
 
     def _avg(key: str) -> float:
         vals = [float(m.get(key, 0.0)) for m in metrics]
+        return (sum(vals) / len(vals)) if vals else 0.0
+
+    retrieval_metrics = [
+        m
+        for m in metrics
+        if (
+            m.get("retrieval_has_gold") is True
+            or m.get("recall_at_5") is not None
+            or m.get("recall_at_10") is not None
+            or m.get("mrr_at_10") is not None
+            or m.get("ndcg_at_10") is not None
+        )
+    ]
+
+    def _avg_retrieval(key: str) -> float:
+        vals = [float(m[key]) for m in retrieval_metrics if m.get(key) is not None]
         return (sum(vals) / len(vals)) if vals else 0.0
 
     return {
@@ -309,6 +442,11 @@ def summarize_case_results(case_results: list[dict[str, Any]]) -> dict[str, floa
         "avg_tool_path_hit_rate": _avg("tool_path_hit_rate"),
         "avg_tool_path_accept_hit_rate": _avg("tool_path_accept_hit_rate"),
         "avg_source_domain_hit_rate": _avg("source_domain_hit_rate"),
+        "retrieval_case_count": len(retrieval_metrics),
+        "avg_recall_at_5": _avg_retrieval("recall_at_5"),
+        "avg_recall_at_10": _avg_retrieval("recall_at_10"),
+        "avg_mrr_at_10": _avg_retrieval("mrr_at_10"),
+        "avg_ndcg_at_10": _avg_retrieval("ndcg_at_10"),
         "avg_forbidden_claim_rate": _avg("forbidden_claim_rate"),
         "avg_error_rate": _avg("error_rate"),
     }
@@ -324,6 +462,10 @@ DEFAULT_BASELINE_METRIC_SPECS: list[tuple[str, str]] = [
     ("summary.avg_tool_path_hit_rate", "higher_better"),
     ("summary.avg_tool_path_accept_hit_rate", "higher_better"),
     ("summary.avg_source_domain_hit_rate", "higher_better"),
+    ("summary.avg_recall_at_5", "higher_better"),
+    ("summary.avg_recall_at_10", "higher_better"),
+    ("summary.avg_mrr_at_10", "higher_better"),
+    ("summary.avg_ndcg_at_10", "higher_better"),
     ("summary.avg_forbidden_claim_rate", "lower_better"),
     ("summary.avg_error_rate", "lower_better"),
     ("route_metrics.react_success_rate", "higher_better"),

@@ -79,7 +79,7 @@ def test_generate_response_finalizes_success_trace() -> None:
 
     expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
     with (
-        patch("agent.agent._run_generation_core", return_value=("Main analysis [1].", {"https://a.example.com"})),
+        patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"})),
         patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})),
     ):
         out = generate_response([], "summarize recent ai updates")

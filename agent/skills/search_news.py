@@ -5,50 +5,57 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from services.db import get_conn, put_conn
-
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _json_text
-from .rerank import RERANK_MODE_NONE, rerank_search_rows, resolve_rerank_mode
-from .retrieval import _get_query_embedding
+from .retrieval import lookup_candidates_by_query
 from .schemas import SearchNewsSkillInput
 
 
-def _format_search_news_text(rows: list[tuple]) -> str:
-    if not rows:
+def _format_search_news_text(records: list[dict[str, Any]]) -> str:
+    if not records:
         return ""
 
-    max_score = max(row[5] for row in rows)
+    max_score = max(float(item.get("score", 0.0) or 0.0) for item in records)
     note = ""
     if max_score < 0.5:
         note = "[Note] Relevance is weak; these are nearest matches.\n\n"
 
     out: list[str] = []
-    for title, url, summary, sentiment, pub_time, score in rows:
+    for item in records:
+        title = str(item.get("title") or "")
+        url = str(item.get("url") or "")
+        summary = str(item.get("summary") or "")
+        sentiment = str(item.get("sentiment") or "")
+        pub_time = item.get("created_at")
+        if hasattr(pub_time, "strftime"):
+            pub_time_str = pub_time.strftime("%Y-%m-%d %H:%M")
+        else:
+            pub_time_str = str(pub_time or "").replace("T", " ")[:16]
+        score = float(item.get("score") or 0.0)
         out.append(
             f"Title: {title}\n"
             f"URL: {url}\n"
             f"Summary: {summary}\n"
             f"Sentiment: {sentiment}\n"
-            f"Time: {pub_time.strftime('%Y-%m-%d %H:%M')}\n"
+            f"Time: {pub_time_str}\n"
             f"Score: {float(score):.3f}"
         )
     return note + "\n---\n".join(out)
 
 
-def _records_from_rows(rows: list[tuple]) -> list[dict[str, Any]]:
+def _records_from_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
-    for idx, row in enumerate(rows, 1):
-        title, url, summary, sentiment, pub_time, score = row
+    for idx, item in enumerate(candidates, 1):
+        pub_time = item.get("created_at")
         records.append(
             {
                 "rank": idx,
-                "title": title,
-                "url": url,
-                "summary": summary or "",
-                "sentiment": sentiment or "",
+                "title": str(item.get("title") or ""),
+                "url": str(item.get("url") or ""),
+                "summary": str(item.get("summary") or ""),
+                "sentiment": str(item.get("sentiment") or ""),
                 "created_at": pub_time.isoformat() if pub_time else "",
-                "score": float(score or 0.0),
+                "score": float(item.get("score") or 0.0),
             }
         )
     return records
@@ -64,103 +71,14 @@ def search_news(
     print(f"\n[Tool] search_news: query={query}, days={days}")
     as_json = response_format.strip().lower() == "json"
     days = _clamp_int(days, 1, 365)
-    limit = 5
-    time_filter = f"{days} days"
-    resolved_rerank_mode = resolve_rerank_mode(
-        rerank_mode, env_keys=("SEARCH_NEWS_RERANK_MODE", "NEWS_RERANK_MODE")
-    )
-    candidate_pool_limit = limit if resolved_rerank_mode == RERANK_MODE_NONE else min(limit * 6, 30)
-    rerank_meta = {
-        "rerank_mode": resolved_rerank_mode,
-        "candidate_count": 0,
-        "top_k": 0,
-        "fallback": False,
-    }
-
-    conn = get_conn()
     try:
-        cur = conn.cursor()
-        query_vec = _get_query_embedding(query)
-        used_semantic_recall = bool(query_vec)
-
-        if query_vec:
-            vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
-            cur.execute(
-                """
-                WITH semantic AS (
-                    SELECT
-                        t.title, t.url, t.summary, t.sentiment, t.created_at,
-                        1 - (e.embedding <=> %s::vector)
-                            + 0.1 * EXP(-EXTRACT(EPOCH FROM (NOW() - t.created_at)) / 86400.0 / 21)
-                            AS score
-                    FROM tech_news t
-                    JOIN news_embeddings e ON e.url = t.url
-                    WHERE t.created_at > NOW() - %s::interval
-                    ORDER BY e.embedding <=> %s::vector
-                    LIMIT %s
-                ),
-                keyword AS (
-                    SELECT title, url, summary, sentiment, created_at, 1.0 AS score
-                    FROM tech_news
-                    WHERE (title ILIKE %s OR summary ILIKE %s)
-                      AND created_at > NOW() - %s::interval
-                    LIMIT %s
-                ),
-                combined AS (
-                    SELECT * FROM semantic
-                    UNION ALL
-                    SELECT * FROM keyword
-                )
-                SELECT DISTINCT ON (url)
-                    title, url, summary, sentiment, created_at, score
-                FROM combined
-                ORDER BY url, score DESC
-                """,
-                (
-                    vec_str,
-                    time_filter,
-                    vec_str,
-                    candidate_pool_limit,
-                    f"%{query}%",
-                    f"%{query}%",
-                    time_filter,
-                    candidate_pool_limit,
-                ),
-            )
-            rows = cur.fetchall()
-        else:
-            cur.execute(
-                """
-                SELECT title, url, summary, sentiment, created_at, 1.0 AS score
-                FROM tech_news
-                WHERE (title ILIKE %s OR summary ILIKE %s)
-                  AND created_at > NOW() - %s::interval
-                ORDER BY created_at DESC
-                LIMIT %s
-                """,
-                (f"%{query}%", f"%{query}%", time_filter, candidate_pool_limit),
-            )
-            rows = cur.fetchall()
-
-        if resolved_rerank_mode == RERANK_MODE_NONE:
-            rerank_meta["candidate_count"] = len(rows)
-            rerank_meta["top_k"] = min(limit, len(rows))
-            if used_semantic_recall:
-                rows.sort(key=lambda row: row[5], reverse=True)
-                rows = rows[:limit]
-            else:
-                rows = list(rows)[:limit]
-        else:
-            rows, rerank_meta = rerank_search_rows(
-                query=query,
-                rows=rows,
-                mode=resolved_rerank_mode,
-                top_k=limit,
-                env_keys=("SEARCH_NEWS_RERANK_MODE", "NEWS_RERANK_MODE"),
-            )
-
-        cur.close()
-        if not rows:
+        candidates, rerank_meta = lookup_candidates_by_query(
+            query=query,
+            days=days,
+            limit=5,
+            rerank_mode=rerank_mode,
+        )
+        if not candidates:
             empty_text = f"No related news for '{query}' in last {days} days."
             if as_json:
                 return _json_text(
@@ -176,7 +94,8 @@ def search_news(
                 )
             return empty_text
 
-        raw_text = _format_search_news_text(rows)
+        records = _records_from_candidates(candidates)
+        raw_text = _format_search_news_text(records)
         if as_json:
             return _json_text(
                 {
@@ -184,8 +103,8 @@ def search_news(
                     "status": "ok",
                     "request": {"query": query, "days": days},
                     "rerank": rerank_meta,
-                    "count": len(rows),
-                    "records": _records_from_rows(rows),
+                    "count": len(records),
+                    "records": records,
                     "raw_output": raw_text,
                 }
             )
@@ -198,14 +117,12 @@ def search_news(
                     "tool": "search_news",
                     "status": "error",
                     "request": {"query": query, "days": days},
-                    "rerank": rerank_meta,
+                    "rerank": {},
                     "error": f"search_news failed: {exc}",
                     "records": [],
                 }
             )
         return f"search_news failed: {exc}"
-    finally:
-        put_conn(conn)
 
 
 def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:

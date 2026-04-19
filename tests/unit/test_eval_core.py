@@ -1,4 +1,4 @@
-﻿"""Unit tests for eval core metrics helpers."""
+"""Unit tests for eval core metrics helpers."""
 
 from __future__ import annotations
 
@@ -99,6 +99,11 @@ class EvalCoreTests(unittest.TestCase):
         self.assertIn("avg_tool_path_hit_rate", summary)
         self.assertIn("avg_tool_path_accept_hit_rate", summary)
         self.assertIn("avg_source_domain_hit_rate", summary)
+        self.assertIn("retrieval_case_count", summary)
+        self.assertIn("avg_recall_at_5", summary)
+        self.assertIn("avg_recall_at_10", summary)
+        self.assertIn("avg_mrr_at_10", summary)
+        self.assertIn("avg_ndcg_at_10", summary)
         self.assertIn("avg_forbidden_claim_rate", summary)
 
     def test_build_baseline_comparison(self) -> None:

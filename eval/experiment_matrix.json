@@ -1,6 +1,15 @@
 {
   "name": "rag_agent_eval_matrix_v2",
   "description": "Six-group matrix to isolate retrieval-recall, rerank, and agent-body contributions.",
+  "baseline_group": "G0_baseline",
+  "frozen_dataset_version": "v20260417_1642",
+  "default_run_eval_args": [
+    "--dataset",
+    "eval/datasets/versions/v20260417_1642/regression.jsonl",
+    "--runs-per-question",
+    "3",
+    "--include-trace-summary"
+  ],
   "groups": [
     {
       "id": "G0_baseline",
@@ -26,7 +35,7 @@
       "env": {
         "EVAL_RETRIEVAL_VARIANT": "rerank_optimized",
         "EVAL_AGENT_VARIANT": "baseline",
-        "NEWS_RERANK_MODE": "cross_encoder"
+        "NEWS_RERANK_MODE": "llm_rerank"
       }
     },
     {
@@ -35,7 +44,7 @@
       "env": {
         "EVAL_RETRIEVAL_VARIANT": "retrieval_full_optimized",
         "EVAL_AGENT_VARIANT": "baseline",
-        "NEWS_RERANK_MODE": "cross_encoder"
+        "NEWS_RERANK_MODE": "llm_rerank"
       }
     },
     {
@@ -53,9 +62,8 @@
       "env": {
         "EVAL_RETRIEVAL_VARIANT": "retrieval_full_optimized",
         "EVAL_AGENT_VARIANT": "agent_optimized",
-        "NEWS_RERANK_MODE": "cross_encoder"
+        "NEWS_RERANK_MODE": "llm_rerank"
       }
     }
   ]
 }
-

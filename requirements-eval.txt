@@ -3,7 +3,6 @@
 # Observability / tracing
 langsmith>=0.7.30,<0.8
 
-# LLM-as-judge RAG evaluation
-ragas>=0.3.2,<0.4
+# LLM-as-judge evaluation
 datasets>=2.18,<4
 rapidfuzz

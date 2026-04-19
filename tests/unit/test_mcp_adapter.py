@@ -1,4 +1,4 @@
-﻿"""Unit tests for in-process MCP client/server adapter."""
+"""Unit tests for in-process MCP client/server adapter."""
 
 from __future__ import annotations
 

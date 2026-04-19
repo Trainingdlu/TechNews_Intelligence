@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+from urllib.parse import urlsplit, urlunsplit
 from typing import Callable
 
 
@@ -25,6 +26,7 @@ _PAREN_MULTI_CITATION_RE = re.compile(
 _SOURCE_HASH_CITATION_RE = re.compile(r"\[[^\]\n]{1,80}\]\s*[#＃]\s*(\d{1,3})")
 _NESTED_CITATION_RE = re.compile(r"(?:\[\[|\(\[|\[\^|\[#)\s*(\d{1,3})\s*(?:\]\]|\]\)|\]\^|\])")
 _BRACKET_MULTI_CITATION_RE = re.compile(r"\[((?:\d{1,3}\s*(?:[,/，、;]\s*\d{1,3}\s*)+))\]")
+_TRAILING_URL_PUNCT_RE = re.compile(r"[)\]\}）】》》\.,。，，;；:：!！?？、]+$")
 
 
 def contains_cjk(text: str) -> bool:
@@ -38,13 +40,49 @@ def extract_urls(text: str) -> list[str]:
     dedup: list[str] = []
     seen: set[str] = set()
     for raw in urls:
-        url = re.sub(r"[)\]\}）】》》。,，;；:：!！?？、]+$", "", str(raw or "").strip())
+        url = _TRAILING_URL_PUNCT_RE.sub("", str(raw or "").strip())
         if not url:
             continue
         if url not in seen:
             dedup.append(url)
             seen.add(url)
     return dedup
+
+
+def normalize_url_for_match(url: str) -> str:
+    """Normalize URL for evidence-guard matching.
+
+    This keeps query parameters but normalizes scheme/host casing,
+    trims trailing slash in path, and drops fragment/default trailing slash.
+    """
+    cleaned = str(url or "").strip()
+    if not cleaned:
+        return ""
+    cleaned = _TRAILING_URL_PUNCT_RE.sub("", cleaned)
+
+    try:
+        parsed = urlsplit(cleaned)
+    except Exception:
+        return cleaned
+
+    scheme = str(parsed.scheme or "").strip().lower()
+    netloc = str(parsed.netloc or "").strip().lower()
+    if not scheme or not netloc:
+        return cleaned
+
+    if scheme == "http" and netloc.endswith(":80"):
+        netloc = netloc[:-3]
+    elif scheme == "https" and netloc.endswith(":443"):
+        netloc = netloc[:-4]
+
+    path = str(parsed.path or "")
+    if path in {"", "/"}:
+        path = ""
+    else:
+        path = path.rstrip("/")
+
+    query = str(parsed.query or "")
+    return urlunsplit((scheme, netloc, path, query, ""))
 
 
 def strip_existing_source_section(text: str) -> str:
@@ -97,6 +135,32 @@ def has_inline_citation_in_body(text: str) -> bool:
     normalized = normalize_inline_citation_styles(text or "")
     body = strip_existing_source_section(normalized)
     return bool(_INLINE_CITATION_RE.search(body))
+
+
+def contains_valid_url_in_body(
+    text: str,
+    valid_urls: list[str] | set[str] | None,
+) -> bool:
+    """Return True when body text contains at least one URL from valid_urls."""
+    if not valid_urls:
+        return False
+    body = strip_existing_source_section(text or "")
+    if not body:
+        return False
+
+    allowed: set[str] = set()
+    for item in valid_urls:
+        candidate = normalize_url_for_match(str(item))
+        if candidate:
+            allowed.add(candidate)
+    if not allowed:
+        return False
+
+    for url in extract_urls(body):
+        normalized = normalize_url_for_match(url)
+        if normalized in allowed:
+            return True
+    return False
 
 
 def max_inline_citation_index(text: str) -> int:

@@ -9,14 +9,12 @@ import requests
 
 
 RERANK_MODE_NONE = "none"
-RERANK_MODE_CROSS_ENCODER = "cross_encoder"
 RERANK_MODE_LLM = "llm_rerank"
-SUPPORTED_RERANK_MODES = {RERANK_MODE_NONE, RERANK_MODE_CROSS_ENCODER, RERANK_MODE_LLM}
+SUPPORTED_RERANK_MODES = {RERANK_MODE_NONE, RERANK_MODE_LLM}
 
 DEFAULT_RERANK_MODE_ENV = "NEWS_RERANK_MODE"
 JINA_RERANK_URL = "https://api.jina.ai/v1/rerank"
-JINA_CROSS_ENCODER_MODEL = "jina-reranker-v2-base-multilingual"
-JINA_LLM_RERANK_MODEL = "jina-reranker-v3"
+JINA_RERANK_MODEL = "jina-reranker-v3"
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -62,9 +60,6 @@ def resolve_rerank_mode(mode: str | None = None, *, env_keys: Sequence[str] | No
         "disabled": RERANK_MODE_NONE,
         "disable": RERANK_MODE_NONE,
         RERANK_MODE_NONE: RERANK_MODE_NONE,
-        "cross": RERANK_MODE_CROSS_ENCODER,
-        "cross-encoder": RERANK_MODE_CROSS_ENCODER,
-        RERANK_MODE_CROSS_ENCODER: RERANK_MODE_CROSS_ENCODER,
         "llm": RERANK_MODE_LLM,
         "llm-rerank": RERANK_MODE_LLM,
         RERANK_MODE_LLM: RERANK_MODE_LLM,
@@ -183,11 +178,7 @@ def rerank_candidates(
             fallback=False,
         )
 
-    model = (
-        os.getenv("JINA_LLM_RERANK_MODEL", JINA_LLM_RERANK_MODEL).strip()
-        if resolved_mode == RERANK_MODE_LLM
-        else os.getenv("JINA_CROSS_ENCODER_MODEL", JINA_CROSS_ENCODER_MODEL).strip()
-    )
+    model = os.getenv("JINA_RERANK_MODEL", "").strip() or JINA_RERANK_MODEL
     try:
         reranked = _call_jina_rerank(query=query, candidates=ranked, top_k=top_k, model=model)
         return reranked, _rerank_meta(
@@ -265,4 +256,3 @@ def rerank_search_rows(
 
     reranked, meta = rerank_candidates(query, candidates, mode=mode, top_k=top_k, env_keys=env_keys)
     return [item["payload"] for item in reranked], meta
-

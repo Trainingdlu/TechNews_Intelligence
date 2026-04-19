@@ -81,8 +81,11 @@ def test_optional_accuracy_fields_are_normalized() -> None:
             (
                 '{"id":"c1","category":"query","question":"Q",'
                 '"expected_facts":"openai,anthropic",'
+                '"retrieval_gold_urls":"https://A.com/path/,https://b.com",'
+                '"difficulty":"Hard",'
+                '"priority":"3",'
+                '"failure_tag":"cold_start,missing_source",'
                 '"ground_truth":"OpenAI and Anthropic are compared.",'
-                '"ragas_contexts":"ctx-a,ctx-b",'
                 '"expected_fact_groups":[["openai","oai"],"anthropic|claude"],'
                 '"required_tools":"query_news",'
                 '"acceptable_tool_paths":[["query_news"],["search_news","read_news_content"]],'
@@ -99,8 +102,23 @@ def test_optional_accuracy_fields_are_normalized() -> None:
     assert cases[0]["acceptable_tool_paths"] == [["query_news"], ["search_news", "read_news_content"]]
     assert cases[0]["must_not_contain"] == ["hallucination"]
     assert cases[0]["expected_source_domains"] == ["techcrunch.com", "news.ycombinator.com"]
+    assert cases[0]["retrieval_gold_urls"] == ["https://A.com/path/", "https://b.com"]
+    assert cases[0]["difficulty"] == "hard"
+    assert cases[0]["priority"] == 3
+    assert cases[0]["failure_tag"] == ["cold_start", "missing_source"]
     assert cases[0]["ground_truth"] == "OpenAI and Anthropic are compared."
-    assert cases[0]["ragas_contexts"] == ["ctx-a", "ctx-b"]
+
+
+def test_new_schema_fields_are_backward_compatible() -> None:
+    with _jsonl_case(
+        ['{"id":"c1","category":"query","question":"Q"}'],
+    ) as path:
+        cases = load_eval_cases(path)
+    case = cases[0]
+    assert case["retrieval_gold_urls"] == []
+    assert case["difficulty"] == ""
+    assert case["priority"] == ""
+    assert case["failure_tag"] == []
 
 
 def test_filter_and_matrix() -> None:

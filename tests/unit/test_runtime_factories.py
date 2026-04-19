@@ -1,4 +1,4 @@
-﻿"""Tests for shared runtime factory builders.
+"""Tests for shared runtime factory builders.
 
 The old Router->Miner->Analyst->Formatter workflow graph was retired.
 This module now validates the shared SkillRegistry / ToolHookRunner builders

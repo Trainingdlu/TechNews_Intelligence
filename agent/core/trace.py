@@ -70,7 +70,7 @@ def summarize_payload(value: Any, *, depth: int = _MAX_SUMMARY_DEPTH) -> Any:
 
 
 def _extract_context_docs(data: Any) -> list[dict[str, Any]]:
-    """Extract lightweight context docs for downstream eval/ragas use."""
+    """Extract lightweight context docs for downstream eval use."""
     docs: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -439,7 +439,10 @@ def _new_request_id() -> str:
 def _build_runtime_metadata() -> dict[str, Any]:
     provider = os.getenv("AGENT_MODEL_PROVIDER", "gemini_api").strip().lower() or "gemini_api"
     if provider in {"vertex", "vertex_ai", "gcp"}:
-        model = os.getenv("VERTEX_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")).strip()
+        model = os.getenv(
+            "VERTEX_GENERATION_MODEL",
+            os.getenv("VERTEX_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")),
+        ).strip()
     else:
         model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro").strip()
     return {

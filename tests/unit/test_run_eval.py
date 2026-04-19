@@ -92,47 +92,68 @@ def test_invoke_eval_payload_backward_compatibility() -> None:
     assert payload["tool_calls"] == ["query_news"]
 
 
-def test_build_ragas_rows_extracts_trace_contexts() -> None:
-    report = {
-        "experiment": {"group": "G3_retrieval_full"},
-        "cases": [
-            {
-                "id": "case_1",
-                "question": "Q1",
-                "outputs": ["A1"],
-                "constraints": {
-                    "ground_truth": "GT1",
-                    "expected_facts": [],
-                    "ragas_contexts": ["fallback context"],
-                },
-                "runs": [
+def test_arg_parser_does_not_expose_legacy_export_flags() -> None:
+    args = _parse_default_args()
+    keys = set(vars(args).keys())
+    assert not any(key.startswith("export_") and key.endswith("_jsonl") for key in keys)
+
+
+def test_run_case_includes_retrieval_metrics_from_payload_and_trace() -> None:
+    case = {
+        "id": "case_1",
+        "category": "brief",
+        "capability": "general_qa",
+        "question": "Q1",
+        "min_urls": 0,
+        "retrieval_gold_urls": ["https://a.com/x", "https://b.com"],
+        "difficulty": "medium",
+        "priority": 2,
+        "failure_tag": ["rerank"],
+    }
+
+    def _fake_generate_response_eval_payload(_history, _question, **_kwargs):
+        return {
+            "text": "Answer with extra link https://c.com",
+            "request_id": "req-1",
+            "tool_calls": ["query_news"],
+            "valid_urls": ["https://A.com/x/"],
+            "trace_summary": {
+                "tool_events": [
                     {
-                        "trace_summary": {
-                            "tool_events": [
-                                {
-                                    "output_summary": {
-                                        "context_docs": [
-                                            {
-                                                "url": "https://a.com",
-                                                "title": "Doc A",
-                                                "summary": "Doc summary A",
-                                            }
-                                        ]
-                                    }
-                                }
+                        "output_summary": {
+                            "context_docs": [
+                                {"url": "https://b.com", "title": "Doc B"},
                             ]
                         }
                     }
-                ],
-            }
-        ],
-    }
-    rows = run_eval._build_ragas_rows(report)
-    assert len(rows) == 1
-    assert rows[0]["case_id"] == "case_1"
-    assert rows[0]["reference"] == "GT1"
-    assert rows[0]["experiment_group"] == "G3_retrieval_full"
-    assert rows[0]["contexts"] == ["Doc summary A"]
+                ]
+            },
+        }
+
+    out = run_eval._run_case(
+        case=case,
+        runs_per_question=1,
+        sleep_seconds=0.0,
+        generate_response_eval_payload=_fake_generate_response_eval_payload,
+        get_last_tool_calls_snapshot=lambda: [],
+        include_outputs=True,
+        include_trace_summary=True,
+        experiment_group="G0",
+    )
+
+    metrics = out["metrics"]
+    assert metrics["retrieval_has_gold"] is True
+    assert metrics["recall_at_5"] == 1.0
+    assert metrics["recall_at_10"] == 1.0
+    assert metrics["mrr_at_10"] == 1.0
+    assert metrics["ndcg_at_10"] == 1.0
+
+    run_meta = out["runs"][0]
+    assert run_meta["retrieved_urls"] == ["https://A.com/x/", "https://b.com", "https://c.com"]
+    assert out["constraints"]["retrieval_gold_urls"] == ["https://a.com/x", "https://b.com"]
+    assert out["constraints"]["difficulty"] == "medium"
+    assert out["constraints"]["priority"] == 2
+    assert out["constraints"]["failure_tag"] == ["rerank"]
 
 
 def test_main_returns_nonzero_when_quality_gate_fails(monkeypatch) -> None:  # noqa: ANN001
@@ -191,3 +212,11 @@ def test_main_returns_nonzero_when_quality_gate_fails(monkeypatch) -> None:  # n
 
         report = json.loads(output.read_text(encoding="utf-8"))
         assert report["quality_gate"]["result"]["failed_count"] >= 1
+        assert report["summary"]["retrieval_case_count"] == 0
+        assert "system" in report
+        assert "citation_guard_block_rate" in report["system"]
+        assert "citation_guard_block_rate" in report["route_metrics"]
+        assert "avg_recall_at_5" in report["summary"]
+        assert "avg_recall_at_10" in report["summary"]
+        assert "avg_mrr_at_10" in report["summary"]
+        assert "avg_ndcg_at_10" in report["summary"]

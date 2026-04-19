@@ -1,0 +1,369 @@
+{
+  "status": "in_progress",
+  "generated_at_utc": "2026-04-19T10:15:06.334705+00:00",
+  "task_type_file": "C:\\Users\\chenxl007\\Desktop\\TechNews_Intelligence\\eval\\config\\task_types_v1.json",
+  "dataset_path": "C:\\Users\\chenxl007\\Desktop\\TechNews_Intelligence\\eval\\datasets\\task_eval_v1_cases_smoke.jsonl",
+  "provider": "vertex",
+  "model": "gemini-2.5-pro",
+  "temperature": 0.0,
+  "llm_max_retries": 4,
+  "llm_backoff_sec": 3.0,
+  "completed_task_ids": [
+    "analyze_landscape.coverage.conflict"
+  ],
+  "tasks": [
+    {
+      "task_id": "analyze_landscape.coverage.conflict",
+      "skill": "analyze_landscape",
+      "retrieval_mode": "non_retrieval",
+      "scenario": "conflict",
+      "candidate_docs": 300,
+      "pool_count": 2,
+      "generated_cases": 2
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "analyze_landscape.coverage.conflict.001",
+      "pool_id": "analyze_landscape.coverage.conflict.pool.001",
+      "input_news_pool_hash": "e3cf231d4a63b0e729cd6b6e0969201163a69a00",
+      "task_type": "analyze_landscape.coverage.conflict",
+      "skill": "analyze_landscape",
+      "intent_label": "analyze_landscape",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_849b60d128ff",
+          "url": "https://blog.google/products-and-platforms/products/search/google-finance-expansion/",
+          "title": "[AI] 谷歌推出AI版Google Finance并扩展至全球百余国家",
+          "summary": "谷歌宣布将全新AI版Google Finance扩展至全球百余个国家，包含澳大利亚、巴西、加拿大等地，并提供完整本地语言支持。该工具已在美国和印度上线，核心新增四项功能：支持复杂市场数据问答的AI研究模块、集成技术指标的高级可视化图表、覆盖大宗商品与加密货币的实时资讯流，以及提供AI同步摘要的财报直播功能。",
+          "published_at": "2026-04-08T15:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_63d3550f4aba",
+          "url": "https://darkbloom.dev",
+          "title": "[AI] Darkbloom：基于闲置Mac的去中心化隐私AI推理网络",
+          "summary": "Eigen Labs推出Darkbloom去中心化推理网络，利用逾1亿台闲置Apple Silicon设备构建AI算力池。平台通过端到端密文路由、Apple安全隔区密钥绑定及OS级运行时锁定，实现硬件级数据防窥。接口完全兼容OpenAI标准，支持文本、图像与语音模态，推理报价较中心化平台下降50%，硬件贡献方获得100%收益。",
+          "published_at": "2026-04-16T05:00:05.053000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 460,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_68b94ff597b4",
+          "url": "https://techcrunch.com/2026/04/15/accel-raises-5b-to-back-late-stage-bets/",
+          "title": "[商业] Accel完成50亿美元融资，押注AI后期项目",
+          "summary": "风投机构Accel宣布完成50亿美元新一轮融资。其中40亿美元将投入后期领导力基金，计划进行至少20笔投资，单笔平均规模达2亿美元；另有6.5亿美元用于侧车基金。该基金重点布局AI软件、硬件、机器人、国防科技及数据中心基础设施。目前Accel已投资超800家企业，涵盖Anthropic等知名公司，旨在把握AI行业机遇并维持市场竞争力。",
+          "published_at": "2026-04-15T17:37:56",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_10d1e8273076",
+          "url": "https://blog.google/innovation-and-ai/products/gemini-app/notebooks-gemini-notebooklm/",
+          "title": "[AI] Gemini应用新增笔记本功能以整合项目与资料管理",
+          "summary": "Google为Gemini应用推出笔记本功能，作为跨端个人知识库同步整合聊天、文件与自定义指令。该功能支持与NotebookLM无缝对接，用户可按订阅方案扩展资料来源并结合网页搜索获取回复。本周起率先面向Web端Ultra、Pro及Plus订阅者开放，后续将逐步扩展至移动端、欧洲地区及免费用户，目前暂不向未成年人及企业教育账户开放。",
+          "published_at": "2026-04-08T13:45:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_71fa7286d20c",
+          "url": "https://chatgpt.com/apps/spreadsheets/",
+          "title": "[AI] ChatGPT推出Excel插件，支持自然语言构建与分析电子表格",
+          "summary": "OpenAI发布ChatGPT for Excel（Beta版）插件。该工具直接集成于Excel内，支持通过自然语言构建电子表格、跨标签分析数据、诊断公式错误及实时更新工作簿。面向ChatGPT Business、Enterprise、教育及Pro/Plus用户开放（欧盟地区除外）。目前功能处于测试阶段，暂不支持VBA、Power Query等高级功能，且默认不共享企业用户数据以优化模型。",
+          "published_at": "2026-04-15T23:00:04.745000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 316,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_9d291dc672ba",
+          "url": "https://techcrunch.com/2026/04/15/anthropic-shrugs-off-vc-funding-offers-valuing-it-at-800b-for-now/",
+          "title": "[商业] Anthropic暂拒估值超8000亿美元的新一轮风投报价",
+          "summary": "Anthropic暂拒外部风投超8000亿美元估值的新一轮注资。公司资本开支规模庞大，已承诺投入500亿美元自建数据中心及300亿美元用于微软云，每年另在AWS支出数十亿美元。财务数据显示其营收呈快速增长态势，截至3月底达300亿美元，较2025年底的90亿美元显著提升。尽管二级市场股份需求强劲，且新一轮融资有望超越竞争对手估值，Anthropic目前暂未接受相关条款，官方未予置评。",
+          "published_at": "2026-04-15T16:21:21",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_b089bb1b5e90",
+          "url": "https://blog.google/products-and-platforms/products/education/catholic-school-ai-literacy/",
+          "title": "[AI] 谷歌联合NCEA向全美天主教学校推广AI素养培训",
+          "summary": "谷歌与全美天主教教育协会（NCEA）合作推出专项教育者小组，面向全美天主教学校教师开放AI素养工具与培训。该计划隶属Google AI教育者系列，预计覆盖14万名教育工作者及160万名学生。首批6名教师将赴谷歌总部学习AI基础与行政效率优化策略，并负责区域级落地推广。谷歌同步在明尼阿波利斯NCEA大会提供现场实操培训。",
+          "published_at": "2026-04-07T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_bef1b1cbbc4e",
+          "url": "https://www.dbreunig.com/2026/04/14/cybersecurity-is-proof-of-work-now.html",
+          "title": "[AI] 网络安全正演变为工作量证明模式",
+          "summary": "经AISI测试，Anthropic安全大模型Mythos在模拟企业网络攻击中成功率显著，且随1亿Token预算增加未见收益递减。文章据此提出新安全经济学观点：防御方需投入超越攻击方的Token以发现漏洞，使安全防护演变为依赖算力消耗的工作量证明机制。该趋势凸显了开源依赖库的高风险性，并预示软件开发流程将新增自动化安全加固阶段。",
+          "published_at": "2026-04-15T22:00:04.990000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 529,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_5dde142b0718",
+          "url": "https://techcrunch.com/2026/04/14/anthropics-rise-is-giving-some-openai-investors-second-thoughts/",
+          "title": "[商业] Anthropic崛起引发部分OpenAI投资者疑虑",
+          "summary": "OpenAI 8520亿美元估值面临部分投资者质疑，公司正转向企业市场以应对Anthropic竞争。受编程工具需求推动，Anthropic年化营收由2025年底的90亿美元跃升至今年3月的300亿美元。投资者指出，支撑OpenAI此轮融资需假设其IPO估值达1.2万亿美元，相比之下Anthropic 380亿美元估值更具性价比。二级市场显示Anthropic股份需求旺盛，而OpenAI股份呈折价交易。Iconiq Capital合伙人强调头部企业将获取超额收益，OpenAI首席财务官则以1220亿美元创纪录融资额回应市场信心。",
+          "published_at": "2026-04-15T02:31:04",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_cf13960dbc88",
+          "url": "https://blog.google/innovation-and-ai/technology/health/mental-health-updates/",
+          "title": "[AI] 谷歌更新Gemini心理健康功能并出资3000万美元支持全球危机热线",
+          "summary": "谷歌宣布更新Gemini模型，新增针对心理健康危机的“一键求助”界面，直接对接危机热线。Google.org承诺未来三年提供3000万美元资金用于扩容全球危机援助网络。同时扩展与ReflexAI的合作，投入400万美元将其训练平台接入Gemini，提升社会组织人员干预能力。此次更新还强化了针对未成年人的情感依赖防护及急性心理危机识别机制。",
+          "published_at": "2026-04-07T10:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_28baf5ce988d",
+          "url": "https://github.com/saffron-health/libretto",
+          "title": "[开发] Libretto：面向AI编码代理的确定性浏览器自动化开发工具包",
+          "summary": "Saffron Health开源浏览器自动化开发工具包Libretto，专为AI编码代理设计。该工具提供轻量级CLI与实时浏览器环境，支持网页DOM解析、网络流量抓包及用户行为录制回放，可自动将操作转化为Playwright脚本。通过调用外部大语言模型进行页面快照分析，有效降低上下文开销。内置会话管理与状态保存功能，支持OpenAI、Anthropic及Gemini等主流模型，旨在提升Web集成开发与维护的确定性。",
+          "published_at": "2026-04-15T19:00:04.717000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 108,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_5bfbfe17c177",
+          "url": "https://techcrunch.com/2026/04/14/ai-datacenter-startup-fluidstack-in-talks-for-1b-round-at-18b-valuation-months-after-hitting-7-5b-says-report/",
+          "title": "[商业] AI数据中心初创公司Fluidstack正洽谈10亿美元融资，估值达180亿美元",
+          "summary": "AI数据中心初创公司Fluidstack正洽谈10亿美元融资，估值达180亿美元，较数月前75亿美元估值实现翻倍，本轮或由Jane Street领投。此前该公司已获Anthropic价值500亿美元的定制数据中心订单，业务涵盖得克萨斯州与纽约州项目。为聚焦美国市场，Fluidstack已将总部迁至纽约，并退出法国百亿欧元AI项目。目前其客户还包括Meta、Poolside及Mistral等。",
+          "published_at": "2026-04-14T21:33:38",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "请分析过去30天「AI foundation model」相关赛道的竞争格局。",
+      "expected_answer": "您的指令似乎存在矛盾：您希望我重点关注“谷歌”和“Anthropic”，但同时又要求将分析范围限定为“OpenAI”。请问您希望我分析哪些公司？",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "analyze_landscape",
+            "args": {
+              "topic": "AI foundation model",
+              "days": 30,
+              "entities": "default and fixed mutually conflicting",
+              "limit_per_entity": 3
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "analyze_landscape"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [],
+      "should_clarify": true,
+      "retrieval_evaluable": false,
+      "difficulty": "medium",
+      "tags": [
+        "conflict",
+        "coverage"
+      ]
+    },
+    {
+      "case_id": "analyze_landscape.coverage.conflict.002",
+      "pool_id": "analyze_landscape.coverage.conflict.pool.002",
+      "input_news_pool_hash": "997ee282c0629cbad9db1ed77dd678e25960ac56",
+      "task_type": "analyze_landscape.coverage.conflict",
+      "skill": "analyze_landscape",
+      "intent_label": "analyze_landscape",
+      "input_news_pool": [
+        {
+          "doc_id": "doc_6dba2e25226e",
+          "url": "https://blog.google/company-news/inside-google/around-the-globe/google-europe/reaffirming-commitment-to-child-safety/",
+          "title": "[生态] 面对欧盟立法滞后，谷歌重申保护儿童安全承诺",
+          "summary": "2026年4月3日欧盟《电子隐私指令》相关豁免条款到期，导致哈希匹配等儿童性侵内容检测技术面临法律不确定性。在此背景下，谷歌联合Meta、微软及Snap发布联合声明，明确将在相关通信服务中继续采取自愿性内容检测与拦截行动。声明指出欧盟未能就维持现有保护机制达成协议，并敦促其尽快完成监管框架谈判。",
+          "published_at": "2026-04-03T20:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_c7de359edb0d",
+          "url": "https://www.eff.org/deeplinks/2026/04/google-broke-its-promise-me-now-ice-has-my-data",
+          "title": "[生态] 谷歌违反隐私通知承诺向美移民及海关执法局移交用户数据",
+          "summary": "康奈尔大学博士生参加抗议活动离境后，其谷歌账号数据遭美国移民及海关执法局行政传票调取。谷歌未遵守用户事先通知承诺，在未提供申诉机会的情况下直接移交IP日志、物理地址及会话时间等元数据。电子前沿基金会已向加州及纽约州总检察长提交投诉，指控谷歌涉嫌欺骗性商业行为并协助政府监控。",
+          "published_at": "2026-04-15T19:00:04.706000",
+          "source": "HackerNews",
+          "sentiment": "Negative",
+          "points": 1592,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_cf2ed9bdb790",
+          "url": "https://techcrunch.com/2026/04/14/anthropic-co-founder-confirms-the-company-briefed-the-trump-administration-on-mythos/",
+          "title": "[商业] Anthropic联合创始人确认已向特朗普政府简报Mythos模型",
+          "summary": "Anthropic联合创始人Jack Clark确认已向特朗普政府简报未公开的新型AI模型Mythos。该模型因网络安全能力较强暂未发布。此前Anthropic曾起诉国防部将其列为供应链风险，双方就AI用于大规模监控与自主武器存在分歧，该军方合同最终由OpenAI获得。Clark将争议定性为合同问题，强调政企需就国家安全事项保持合作。特朗普政府已鼓励多家华尔街银行测试该模型。在就业影响方面，Clark指出目前仅见部分应届生就业疲软，建议高校教育应侧重跨学科综合分析与逻辑推理能力培养。",
+          "published_at": "2026-04-14T18:09:12",
+          "source": "TechCrunch",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_67b63260d402",
+          "url": "https://blog.google/innovation-and-ai/technology/developers-tools/gemma-4/",
+          "title": "[AI] Google发布Gemma 4开源模型家族",
+          "summary": "Google DeepMind发布Gemma 4开源模型家族，提供E2B、E4B、26B MoE与31B Dense四种规格，采用Apache 2.0协议。该系列基于Gemini 3技术构建，31B版本在Arena AI文本榜单位列开源第三，性能超越20倍体量模型。模型原生支持多模态输入、智能体工作流及代码生成，上下文窗口扩展至128K至256K，并针对移动设备与本地GPU进行端侧优化，实现高参数效率下的前沿推理能力。",
+          "published_at": "2026-04-02T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_4df32f939427",
+          "url": "https://deepmind.google/blog/gemini-robotics-er-1-6/",
+          "title": "[AI] Google DeepMind发布Gemini Robotics-ER 1.6，强化具身推理与机器人任务能力",
+          "summary": "Google DeepMind正式发布Gemini Robotics-ER 1.6模型，专注提升机器人具身推理能力。该版本强化了空间推理、多视角理解与任务成功检测，并新增仪表读取功能，可精准解析压力表与液位计，相关能力经与Boston Dynamics合作验证。模型采用代理视觉与代码执行结合架构，通过放大图像与比例估算实现高精度读数。相比前代及Gemini 3.0 Flash，其在指针定位、计数及安全合规（文本风险识别提升6%，视频提升10%）方面表现更优，目前已通过Gemini API与Google AI Studio向开发者开放。",
+          "published_at": "2026-04-15T16:00:05.063000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 198,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_6498fc0399f6",
+          "url": "https://techcrunch.com/2026/04/14/google-adds-ai-skills-to-chrome-to-help-you-save-favorite-workflows/",
+          "title": "[AI] Google 为 Chrome 推出 AI Skills 功能，支持保存与复用常用提示词工作流",
+          "summary": "Google 宣布在 Chrome 浏览器集成 Gemini AI 并上线 Skills 功能，支持用户将常用提示词保存为跨网页复用的技能模块。用户可直接从对话历史保存提示词，并在浏览任意页面时通过斜杠或加号键一键调用，支持多标签页协同处理。官方同步提供涵盖生产力、购物等场景的预设 Skills 库。该功能即日起面向桌面端推送，初期仅限英语（美国）版本。",
+          "published_at": "2026-04-14T17:00:00",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_f2b31c55fc99",
+          "url": "https://blog.google/innovation-and-ai/technology/developers-tools/introducing-flex-and-priority-inference/",
+          "title": "[AI] Gemini API推出Flex与Priority推理层级以平衡成本与可靠性",
+          "summary": "Google为Gemini API新增Flex与Priority两种服务层级。Flex层级定价降低百分之五十，采用同步接口，适用于后台延迟容忍型任务。Priority层级提供最高可靠性保障，流量超限时自动降级至标准层以确保业务连续性。两项功能均支持GenerateContent与Interactions API，旨在消除异步批处理复杂度，帮助开发者通过单一接口优化成本与可靠性。",
+          "published_at": "2026-04-02T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_f349c7f413cf",
+          "url": "https://www.gizmoweek.com/gemma-4-runs-iphone/",
+          "title": "[AI] 谷歌Gemma 4原生运行于iPhone实现完全离线推理",
+          "summary": "谷歌开源模型Gemma 4已实现iPhone端原生部署，支持完全离线推理。其中31B版本性能与Qwen 3.5的27B模型相近，而专为移动端优化的E2B与E4B变体更注重运行效率。用户可通过Google AI Edge Gallery应用调用iPhone GPU执行本地计算，响应延迟显著降低。该方案无需云端依赖，适用于对数据隐私有严格要求的医疗及现场作业等企业级场景。",
+          "published_at": "2026-04-15T12:00:42.926000",
+          "source": "HackerNews",
+          "sentiment": "Positive",
+          "points": 238,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_7a432c3c6e13",
+          "url": "https://techcrunch.com/2026/04/14/google-brings-its-gemini-personal-intelligence-feature-to-india/",
+          "title": "[AI] Google将Gemini个人智能功能引入印度市场",
+          "summary": "谷歌宣布在印度推出Gemini个人智能功能，支持绑定Gmail、Google Photos及YouTube账户以生成定制化问答。该功能初期仅限AI Pro与AI Ultra付费订阅者，拟于数周内开放至免费用户。此为继美、日市场后的区域扩展。配合近期在印度上线的Chrome端Gemini及接入Zomato等平台的餐饮预订智能体，谷歌正加速本土化AI服务部署。官方同时指出，模型在复杂上下文与情感关联解析上仍存局限。",
+          "published_at": "2026-04-14T14:48:34",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_ab324ca76ade",
+          "url": "https://blog.google/products-and-platforms/products/workspace/google-vids-updates-lyria-veo/",
+          "title": "[AI] Google Vids集成Veo 3.1与Lyria 3模型，开放免费视频生成与AI配乐功能",
+          "summary": "Google Vids发布版本更新，集成Veo 3.1与Lyria 3模型以提供AI视频生成与定制配乐功能。普通账号每月可免费生成10条视频，Google AI Pro与Ultra订阅者支持生成最长3分钟音频及使用可自定义外观的AI虚拟化身。Ultra账号月生成配额提升至1000条。平台同步上线Chrome浏览器屏幕录制扩展及YouTube一键发布通道。",
+          "published_at": "2026-04-02T16:00:00",
+          "source": "Google Blog",
+          "sentiment": "Neutral",
+          "points": 0,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_174425f454f7",
+          "url": "https://support.claude.com/en/articles/14328960-identity-verification-on-claude",
+          "title": "[AI] Claude平台推出身份验证功能以强化合规与安全管控",
+          "summary": "Anthropic宣布在Claude平台逐步推行身份验证机制，旨在防范系统滥用并满足法律合规要求。该流程由Persona Identities提供技术支持，要求用户提交政府签发的实体证件与实时自拍，验证耗时通常在五分钟内。官方明确承诺，验证数据仅用于身份核验，绝不用于AI模型训练，且采用行业标准加密措施存储，不与第三方共享。若验证失败或遭遇封号，用户可多次重试或提交官方申诉。",
+          "published_at": "2026-04-15T11:00:42.736000",
+          "source": "HackerNews",
+          "sentiment": "Neutral",
+          "points": 31,
+          "language": "zh"
+        },
+        {
+          "doc_id": "doc_88558602673a",
+          "url": "https://techcrunch.com/2026/04/13/openai-has-bought-ai-personal-finance-startup-hiro/",
+          "title": "[商业] OpenAI收购AI个人理财初创公司Hiro",
+          "summary": "OpenAI已确认收购AI个人理财初创公司Hiro。交易条款未披露，实质为人才收购，约10名核心员工将随创始人加入OpenAI。Hiro成立于2023年，主打AI财务规划与高精度数学运算，曾获Ribbit与General Catalyst等机构投资。该公司定于4月20日停止运营，并于5月13日彻底清除服务器数据。此次交易旨在强化OpenAI在商业金融垂直领域的团队规模与技术应用储备。",
+          "published_at": "2026-04-14T00:23:33",
+          "source": "TechCrunch",
+          "sentiment": "Positive",
+          "points": 0,
+          "language": "zh"
+        }
+      ],
+      "expected_question": "请分析过去30天「AI foundation model」相关赛道的竞争格局。",
+      "expected_answer": "您的要求似乎有些矛盾。您指示我在分析时排除“谷歌”，但又希望我详细分析“谷歌发布的Gemma 4模型”。请问我是否应该在本次分析中包含关于谷歌的内容？",
+      "expected_tool_paths": [
+        [
+          {
+            "tool": "analyze_landscape",
+            "args": {
+              "topic": "AI foundation model",
+              "days": 30,
+              "entities": "default and fixed mutually conflicting",
+              "limit_per_entity": 3
+            }
+          }
+        ]
+      ],
+      "required_tools": [
+        "analyze_landscape"
+      ],
+      "forbidden_tools": [],
+      "retrieval_gold_doc_ids": [],
+      "retrieval_gold_urls": [],
+      "verifiable_claims": [],
+      "should_clarify": true,
+      "retrieval_evaluable": false,
+      "difficulty": "medium",
+      "tags": [
+        "conflict",
+        "coverage"
+      ]
+    }
+  ]
+}

@@ -38,4 +38,5 @@ SYSTEM_INSTRUCTION = (
     "3. Do not fabricate sources or citations.\n"
     "4. Do NOT output numeric citations like [1], [2], or source-hash formats such as [Google] #3.\n"
     "5. Do not manually add a sources section; backend handles source rendering and numbering.\n"
+    "6. If tool evidence exists, include at least one of those exact evidence URLs in the answer body.\n"
 )

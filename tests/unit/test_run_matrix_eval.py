@@ -35,6 +35,15 @@ def test_load_matrix_groups_reads_default_matrix() -> None:
     assert ids[-1] == "G5_full_optimized"
 
 
+def test_load_matrix_config_reads_baseline_and_default_args() -> None:
+    matrix_path = Path("eval/experiment_matrix.json")
+    config = run_matrix_eval.load_matrix_config(matrix_path)
+
+    assert config.baseline_group == "G0_baseline"
+    assert config.frozen_dataset_version
+    assert "--dataset" in config.default_run_eval_args
+
+
 def test_load_matrix_groups_rejects_duplicate_ids() -> None:
     with _case_dir() as case_dir:
         matrix_path = case_dir / "dup_matrix.json"
@@ -58,6 +67,13 @@ def test_load_matrix_groups_rejects_duplicate_ids() -> None:
 def test_resolve_forwarded_run_eval_args_defaults_and_conflict() -> None:
     defaults = run_matrix_eval.resolve_forwarded_run_eval_args([])
     assert defaults == ["--suite", "default", "--runs-per-question", "3"]
+
+    merged = run_matrix_eval.resolve_forwarded_run_eval_args(
+        ["--runs-per-question", "1"],
+        default_run_eval_args=["--dataset", "eval/datasets/versions/v20260417_1642/regression.jsonl"],
+    )
+    assert merged[:2] == ["--dataset", "eval/datasets/versions/v20260417_1642/regression.jsonl"]
+    assert merged[-2:] == ["--runs-per-question", "1"]
 
     with pytest.raises(ValueError, match="--output/--experiment-group"):
         run_matrix_eval.resolve_forwarded_run_eval_args(["--suite", "smoke", "--output", "x.json"])

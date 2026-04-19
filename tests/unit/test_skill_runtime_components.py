@@ -1,4 +1,4 @@
-﻿"""Unit tests for v2 skill runtime building blocks."""
+"""Unit tests for v2 skill runtime building blocks."""
 
 from __future__ import annotations
 

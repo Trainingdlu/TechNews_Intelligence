@@ -141,8 +141,8 @@ def _build_parser(eval_dir: Path) -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode",
         type=str,
-        default="cross_encoder",
-        help="Rerank mode: none | cross_encoder | llm_rerank.",
+        default="llm_rerank",
+        help="Rerank mode: none | llm_rerank.",
     )
     parser.add_argument("--top-k", type=int, default=3, help="Cutoff K for ranking metrics.")
     parser.add_argument(

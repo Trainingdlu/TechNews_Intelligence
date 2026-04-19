@@ -94,7 +94,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(payload["records"][0]["url"], "https://a.com")
 
     def test_fulltext_batch_json_mode_empty_candidates(self) -> None:
-        with patch.object(fulltext_mod, "_lookup_urls_by_query", lambda **_kwargs: []):
+        with patch.object(fulltext_mod, "lookup_candidates_by_query", lambda **_kwargs: ([], {})):
             out = fulltext_mod.fulltext_batch("OpenAI Voice Engine", response_format="json")
         payload = json.loads(out)
         self.assertEqual(payload["tool"], "fulltext_batch")
@@ -103,11 +103,36 @@ class ToolStructuredOutputTests(unittest.TestCase):
 
     def test_fulltext_batch_json_mode_contains_selected_and_articles(self) -> None:
         candidates = [
-            ("A title", "https://a.com", "TechCrunch", datetime(2026, 3, 28, 10, 0, 0), 10, 2.345),
-            ("B title", "https://b.com", "HackerNews", datetime(2026, 3, 28, 9, 0, 0), 8, 1.876),
+            {
+                "title": "A title",
+                "url": "https://a.com",
+                "summary": "A summary",
+                "sentiment": "Neutral",
+                "source_type": "TechCrunch",
+                "created_at": datetime(2026, 3, 28, 10, 0, 0),
+                "points": 10,
+                "score": 2.345,
+            },
+            {
+                "title": "B title",
+                "url": "https://b.com",
+                "summary": "B summary",
+                "sentiment": "Positive",
+                "source_type": "HackerNews",
+                "created_at": datetime(2026, 3, 28, 9, 0, 0),
+                "points": 8,
+                "score": 1.876,
+            },
         ]
         with (
-            patch.object(fulltext_mod, "_lookup_urls_by_query", lambda **_kwargs: candidates),
+            patch.object(
+                fulltext_mod,
+                "lookup_candidates_by_query",
+                lambda **_kwargs: (
+                    candidates,
+                    {"rerank_mode": "none", "candidate_count": 2, "top_k": 2, "fallback": False},
+                ),
+            ),
             patch.object(fulltext_mod, "read_news_content", lambda _url: "Full content:\nHello world"),
         ):
             out = fulltext_mod.fulltext_batch("OpenAI recent 14 days", response_format="json")
