@@ -33,6 +33,7 @@ MODEL="${MODEL:-gemini-3.1-pro-preview}"
 TEMPERATURE="${TEMPERATURE:-0.0}"
 SEED="${SEED:-42}"
 RUNS_PER_CASE="${RUNS_PER_CASE:-3}"
+MATRIX_SLEEP_SECONDS="${MATRIX_SLEEP_SECONDS:-20}"
 GROUPS="${GROUPS:-}"
 BASELINE_GROUP="${BASELINE_GROUP:-G0_baseline}"
 MATRIX_FILE="${MATRIX_FILE:-eval/experiment_matrix.json}"
@@ -91,6 +92,7 @@ echo "[SkillMatrix] repo=${REPO_ROOT}"
 echo "[SkillMatrix] run_id=${RUN_ID}"
 echo "[SkillMatrix] dataset_version=${DATASET_VERSION}"
 echo "[SkillMatrix] provider=${PROVIDER} model=${MODEL} runs_per_case=${RUNS_PER_CASE}"
+echo "[SkillMatrix] matrix_sleep_seconds=${MATRIX_SLEEP_SECONDS}"
 echo "[SkillMatrix] matrix_file=${MATRIX_FILE}"
 echo "[SkillMatrix] build_llm_max_retries=${BUILD_LLM_MAX_RETRIES} build_llm_backoff_sec=${BUILD_LLM_BACKOFF_SEC}"
 echo "[SkillMatrix] build_inter_task_sleep_sec=${BUILD_INTER_TASK_SLEEP_SEC}"
@@ -198,6 +200,7 @@ step "run_matrix_eval" compose run --rm --no-deps \
     -- \
     --dataset "eval/datasets/versions/${DATASET_VERSION}/regression.jsonl" \
     --runs-per-case "${RUNS_PER_CASE}" \
+    --sleep-seconds "${MATRIX_SLEEP_SECONDS}" \
     --include-trace-summary
 
 MANIFEST_PATH="$(ls -t "${REPO_ROOT}/eval/reports/${RUN_ID}/matrix/"*_manifest.json | head -n1 || true)"
