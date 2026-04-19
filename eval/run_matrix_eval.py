@@ -502,9 +502,13 @@ def main() -> int:
 
         record["exit_code"] = int(completed.returncode)
         if completed.returncode == 0:
-            record["status"] = "ok"
             report = _read_report_if_exists(output_path)
-            if report is not None:
+            if report is None:
+                record["status"] = "failed"
+                record["error"] = "runner_exit_0_but_report_missing_or_invalid"
+                fail_count += 1
+            else:
+                record["status"] = "ok"
                 record["dataset"] = str(report.get("dataset", "")).strip()
                 record["summary_metrics"] = _extract_summary_metrics(
                     report,

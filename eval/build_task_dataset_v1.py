@@ -915,6 +915,14 @@ def _parse_args() -> argparse.Namespace:
         help="Disable the second-pass audit model validation.",
     )
     parser.add_argument(
+        "--audit-max-regen-rounds",
+        type=int,
+        default=int(os.getenv("TASK_EVAL_AUDIT_MAX_REGEN_ROUNDS", "3")),
+        help=(
+            "Max regeneration rounds after audit rejection (0 means no regen, only one audit pass)."
+        ),
+    )
+    parser.add_argument(
         "--llm-max-retries",
         type=int,
         default=int(os.getenv("TASK_EVAL_LLM_MAX_RETRIES", "2")),
@@ -1070,36 +1078,8 @@ def main() -> int:
 
         rejected: dict[str, str] = {}
         if not args.disable_audit:
-            rejected = _audit_cases(
-                llm,
-                task,
-                generated_cases,
-                llm_max_retries=int(args.llm_max_retries),
-                llm_backoff_sec=float(args.llm_backoff_sec),
-                cases_per_audit_call=int(args.cases_per_audit_call),
-                inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
-            )
-            if rejected:
-                regen_pools = [
-                    pool
-                    for pool in pools
-                    if any(case["pool_id"] == pool.pool_id and case["case_id"] in rejected for case in generated_cases)
-                ]
-                if regen_pools:
-                    regenerated = _generate_for_task(
-                        llm,
-                        task,
-                        regen_pools,
-                        llm_max_retries=int(args.llm_max_retries),
-                        llm_backoff_sec=float(args.llm_backoff_sec),
-                        pools_per_generation_call=int(args.pools_per_generation_call),
-                        inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
-                    )
-                    regen_by_pool = {row["pool_id"]: row for row in regenerated}
-                    for idx, row in enumerate(generated_cases):
-                        pool_id = row["pool_id"]
-                        if pool_id in regen_by_pool:
-                            generated_cases[idx] = regen_by_pool[pool_id]
+            max_regen_rounds = max(0, int(args.audit_max_regen_rounds))
+            for regen_round in range(0, max_regen_rounds + 1):
                 rejected = _audit_cases(
                     llm,
                     task,
@@ -1109,8 +1089,50 @@ def main() -> int:
                     cases_per_audit_call=int(args.cases_per_audit_call),
                     inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
                 )
-                if rejected:
-                    raise ValueError(f"{task['task_id']}: audit rejected cases={rejected}")
+                if not rejected:
+                    break
+                if regen_round >= max_regen_rounds:
+                    break
+
+                rejected_case_ids = set(rejected.keys())
+                regen_pools = [
+                    pool
+                    for pool in pools
+                    if any(
+                        case["pool_id"] == pool.pool_id and case["case_id"] in rejected_case_ids
+                        for case in generated_cases
+                    )
+                ]
+                if not regen_pools:
+                    break
+
+                print(
+                    "[TaskDatasetV1][AuditRegen] task=%s round=%s/%s rejected=%s regen_pools=%s"
+                    % (
+                        task["task_id"],
+                        regen_round + 1,
+                        max_regen_rounds,
+                        len(rejected),
+                        len(regen_pools),
+                    )
+                )
+                regenerated = _generate_for_task(
+                    llm,
+                    task,
+                    regen_pools,
+                    llm_max_retries=int(args.llm_max_retries),
+                    llm_backoff_sec=float(args.llm_backoff_sec),
+                    pools_per_generation_call=int(args.pools_per_generation_call),
+                    inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
+                )
+                regen_by_pool = {row["pool_id"]: row for row in regenerated}
+                for idx, row in enumerate(generated_cases):
+                    pool_id = row["pool_id"]
+                    if pool_id in regen_by_pool:
+                        generated_cases[idx] = regen_by_pool[pool_id]
+
+            if rejected:
+                raise ValueError(f"{task['task_id']}: audit rejected cases={rejected}")
 
         for case in generated_cases:
             validate_case(case, strict_skill=bool(args.strict_skill_check))
@@ -1138,6 +1160,7 @@ def main() -> int:
             "temperature": float(args.temperature),
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
+            "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
             "pools_per_generation_call": int(args.pools_per_generation_call),
             "cases_per_audit_call": int(args.cases_per_audit_call),
             "inter_llm_call_sleep_sec": float(args.inter_llm_call_sleep_sec),
@@ -1175,6 +1198,7 @@ def main() -> int:
         "audit_enabled": not bool(args.disable_audit),
         "llm_max_retries": int(args.llm_max_retries),
         "llm_backoff_sec": float(args.llm_backoff_sec),
+        "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
         "pools_per_generation_call": int(args.pools_per_generation_call),
         "cases_per_audit_call": int(args.cases_per_audit_call),
         "inter_llm_call_sleep_sec": float(args.inter_llm_call_sleep_sec),
@@ -1197,6 +1221,7 @@ def main() -> int:
             "temperature": float(args.temperature),
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
+            "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
             "pools_per_generation_call": int(args.pools_per_generation_call),
             "cases_per_audit_call": int(args.cases_per_audit_call),
             "inter_llm_call_sleep_sec": float(args.inter_llm_call_sleep_sec),

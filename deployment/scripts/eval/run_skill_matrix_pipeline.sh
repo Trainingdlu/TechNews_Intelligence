@@ -39,6 +39,7 @@ BASELINE_GROUP="${BASELINE_GROUP:-G0_baseline}"
 MATRIX_FILE="${MATRIX_FILE:-eval/experiment_matrix.json}"
 BUILD_LLM_MAX_RETRIES="${BUILD_LLM_MAX_RETRIES:-2}"
 BUILD_LLM_BACKOFF_SEC="${BUILD_LLM_BACKOFF_SEC:-2}"
+BUILD_AUDIT_MAX_REGEN_ROUNDS="${BUILD_AUDIT_MAX_REGEN_ROUNDS:-3}"
 BUILD_INTER_TASK_SLEEP_SEC="${BUILD_INTER_TASK_SLEEP_SEC:-0}"
 BUILD_RESUME_FROM_CHECKPOINT="${BUILD_RESUME_FROM_CHECKPOINT:-1}"
 BUILD_POOLS_PER_GENERATION_CALL="${BUILD_POOLS_PER_GENERATION_CALL:-1}"
@@ -84,8 +85,14 @@ step() {
   local name="$1"
   shift
   echo "[SkillMatrix][Step] ${name} started"
-  "$@"
-  echo "[SkillMatrix][Step] ${name} done"
+  if "$@"; then
+    echo "[SkillMatrix][Step] ${name} done"
+    return 0
+  else
+    local rc=$?
+    echo "[SkillMatrix][Step] ${name} failed rc=${rc}" >&2
+    return "${rc}"
+  fi
 }
 
 echo "[SkillMatrix] repo=${REPO_ROOT}"
@@ -95,6 +102,7 @@ echo "[SkillMatrix] provider=${PROVIDER} model=${MODEL} runs_per_case=${RUNS_PER
 echo "[SkillMatrix] matrix_sleep_seconds=${MATRIX_SLEEP_SECONDS}"
 echo "[SkillMatrix] matrix_file=${MATRIX_FILE}"
 echo "[SkillMatrix] build_llm_max_retries=${BUILD_LLM_MAX_RETRIES} build_llm_backoff_sec=${BUILD_LLM_BACKOFF_SEC}"
+echo "[SkillMatrix] build_audit_max_regen_rounds=${BUILD_AUDIT_MAX_REGEN_ROUNDS}"
 echo "[SkillMatrix] build_inter_task_sleep_sec=${BUILD_INTER_TASK_SLEEP_SEC}"
 echo "[SkillMatrix] build_resume_from_checkpoint=${BUILD_RESUME_FROM_CHECKPOINT}"
 echo "[SkillMatrix] build_pools_per_generation_call=${BUILD_POOLS_PER_GENERATION_CALL} build_cases_per_audit_call=${BUILD_CASES_PER_AUDIT_CALL}"
@@ -118,6 +126,7 @@ BUILD_DATASET_ARGS=(
   --seed "${SEED}"
   --llm-max-retries "${BUILD_LLM_MAX_RETRIES}"
   --llm-backoff-sec "${BUILD_LLM_BACKOFF_SEC}"
+  --audit-max-regen-rounds "${BUILD_AUDIT_MAX_REGEN_ROUNDS}"
   --inter-task-sleep-sec "${BUILD_INTER_TASK_SLEEP_SEC}"
   --pools-per-generation-call "${BUILD_POOLS_PER_GENERATION_CALL}"
   --cases-per-audit-call "${BUILD_CASES_PER_AUDIT_CALL}"
