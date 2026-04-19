@@ -23,6 +23,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 DEPLOY_DIR="${REPO_ROOT}/deployment"
 ENV_FILE="${DEPLOY_DIR}/.env"
 COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
+LOCK_DIR="${REPO_ROOT}/.locks"
+LOCK_FILE="${LOCK_DIR}/run_skill_matrix_pipeline.lock"
 
 RUN_ID="${RUN_ID:-skill_matrix_$(date -u +%Y%m%dT%H%M%SZ)}"
 DATASET_VERSION="${DATASET_VERSION:-v_task_$(date -u +%Y%m%d_%H%M%S)}"
@@ -44,6 +46,18 @@ if [[ ! -f "${ENV_FILE}" ]]; then
   exit 1
 fi
 
+if ! command -v flock >/dev/null 2>&1; then
+  echo "[SkillMatrix][Error] 'flock' is required for single-instance locking." >&2
+  exit 1
+fi
+
+mkdir -p "${LOCK_DIR}"
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+  echo "[SkillMatrix][Error] another pipeline is already running. lock=${LOCK_FILE}" >&2
+  exit 2
+fi
+
 if docker compose version >/dev/null 2>&1; then
   COMPOSE_CMD=(docker compose)
 elif command -v docker-compose >/dev/null 2>&1; then
@@ -60,6 +74,14 @@ compose() {
   )
 }
 
+step() {
+  local name="$1"
+  shift
+  echo "[SkillMatrix][Step] ${name} started"
+  "$@"
+  echo "[SkillMatrix][Step] ${name} done"
+}
+
 echo "[SkillMatrix] repo=${REPO_ROOT}"
 echo "[SkillMatrix] run_id=${RUN_ID}"
 echo "[SkillMatrix] dataset_version=${DATASET_VERSION}"
@@ -73,7 +95,7 @@ mkdir -p "${REPO_ROOT}/eval/reports/${RUN_ID}"
 mkdir -p "${REPO_ROOT}/eval/datasets/versions"
 
 # Ensure DB is up for retrieval-backed eval.
-compose up -d postgres
+step "postgres_up" compose up -d postgres
 
 # Step 1: build task dataset.
 BUILD_DATASET_ARGS=(
@@ -92,14 +114,22 @@ if [[ "${BUILD_RESUME_FROM_CHECKPOINT}" == "0" ]]; then
   BUILD_DATASET_ARGS+=(--no-resume-from-checkpoint)
 fi
 
-compose run --rm --no-deps \
+step "build_task_dataset_v1" compose run --rm --no-deps \
   -e PYTHONUNBUFFERED=1 \
   -v "${REPO_ROOT}/eval/datasets:/app/eval/datasets" \
   bot python -u -m eval.build_task_dataset_v1 \
     "${BUILD_DATASET_ARGS[@]}"
+if [[ ! -s "${REPO_ROOT}/eval/datasets/task_eval_v1_cases.jsonl" ]]; then
+  echo "[SkillMatrix][Error] missing eval/datasets/task_eval_v1_cases.jsonl after Step 1." >&2
+  exit 3
+fi
+if [[ ! -s "${REPO_ROOT}/eval/datasets/task_eval_v1_manifest.json" ]]; then
+  echo "[SkillMatrix][Error] missing eval/datasets/task_eval_v1_manifest.json after Step 1." >&2
+  exit 3
+fi
 
 # Step 2: freeze dataset version.
-compose run --rm --no-deps \
+step "freeze_dataset_version" compose run --rm --no-deps \
   -e PYTHONUNBUFFERED=1 \
   -v "${REPO_ROOT}/eval/datasets:/app/eval/datasets" \
   bot sh -lc "
@@ -111,6 +141,10 @@ compose run --rm --no-deps \
     cp /app/eval/datasets/task_eval_v1_manifest.json /app/eval/datasets/versions/\"\${V}\"/manifest.json
     echo \"[SkillMatrix] frozen dataset -> /app/eval/datasets/versions/\${V}\"
   "
+if [[ ! -s "${REPO_ROOT}/eval/datasets/versions/${DATASET_VERSION}/regression.jsonl" ]]; then
+  echo "[SkillMatrix][Error] missing frozen regression dataset after Step 2." >&2
+  exit 4
+fi
 
 # Step 3: matrix eval.
 MATRIX_ARGS=(
@@ -121,7 +155,7 @@ if [[ -n "${GROUPS}" ]]; then
   MATRIX_ARGS+=(--groups "${GROUPS}")
 fi
 
-compose run --rm --no-deps \
+step "run_matrix_eval" compose run --rm --no-deps \
   -e PYTHONUNBUFFERED=1 \
   -v "${REPO_ROOT}/eval/datasets:/app/eval/datasets" \
   -v "${REPO_ROOT}/eval/reports:/app/eval/reports" \
@@ -140,7 +174,7 @@ fi
 MANIFEST_REL="eval/reports/${RUN_ID}/matrix/$(basename "${MANIFEST_PATH}")"
 
 # Step 4: v1 leaderboard.
-compose run --rm --no-deps \
+step "build_task_eval_v1_leaderboard" compose run --rm --no-deps \
   -e PYTHONUNBUFFERED=1 \
   -v "${REPO_ROOT}/eval/reports:/app/eval/reports" \
   bot python -u -m eval.build_task_eval_v1_leaderboard \
@@ -148,6 +182,10 @@ compose run --rm --no-deps \
     --baseline-group "${BASELINE_GROUP}" \
     --output-json "eval/reports/${RUN_ID}/leaderboard/latest.json" \
     --output-md "eval/reports/${RUN_ID}/leaderboard/latest.md"
+if [[ ! -s "${REPO_ROOT}/eval/reports/${RUN_ID}/leaderboard/latest.json" ]]; then
+  echo "[SkillMatrix][Error] missing leaderboard JSON after Step 4." >&2
+  exit 5
+fi
 
 echo "[SkillMatrix] done"
 echo "[SkillMatrix] run_id=${RUN_ID}"
