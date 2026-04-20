@@ -1145,7 +1145,8 @@ def main() -> int:
                         generated_cases[idx] = regen_by_pool[pool_id]
 
             if rejected:
-                raise ValueError(f"{task['task_id']}: audit rejected cases={rejected}")
+                print(f"[TaskDatasetV1][Warning] {task['task_id']}: reached max retries. Dropping rejected cases={rejected}")
+                generated_cases =[case for case in generated_cases if case.get("case_id") not in rejected]
 
         for case in generated_cases:
             validate_case(case, strict_skill=bool(args.strict_skill_check))
