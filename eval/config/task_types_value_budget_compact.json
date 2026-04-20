@@ -1,0 +1,627 @@
+[
+    {
+        "task_id":  "query_news.coverage.conflict",
+        "skill":  "query_news",
+        "intent_label":  "query_news",
+        "retrieval_mode":  "evaluable",
+        "scenario":  "conflict",
+        "example_question":  "Retrieve OpenAI news but request mutually conflicting filtering constraints.",
+        "parameter_template":  {
+                                   "query":  "OpenAI Anthropic",
+                                   "source":  "TechCrunch",
+                                   "days":  7,
+                                   "sentiment":  "Positive",
+                                   "sort":  "heat_desc",
+                                   "limit":  8
+                               },
+        "acceptable_tool_paths":  [
+                                      [
+                                          {
+                                              "tool":  "query_news",
+                                              "args":  {
+                                                           "query":  "OpenAI Anthropic",
+                                                           "source":  "TechCrunch",
+                                                           "days":  7,
+                                                           "sentiment":  "Positive",
+                                                           "sort":  "heat_desc",
+                                                           "limit":  8
+                                                       }
+                                          }
+                                      ],
+                                      [
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "OpenAI Anthropic",
+                                                           "days":  7
+                                                       }
+                                          },
+                                          {
+                                              "tool":  "query_news",
+                                              "args":  {
+                                                           "query":  "OpenAI Anthropic",
+                                                           "source":  "TechCrunch",
+                                                           "days":  7,
+                                                           "sentiment":  "Positive",
+                                                           "sort":  "heat_desc",
+                                                           "limit":  8
+                                                       }
+                                          }
+                                      ]
+                                  ],
+        "required_tools":  [
+                               "query_news"
+                           ],
+        "forbidden_tools":  [
+
+                            ],
+        "should_clarify":  true,
+        "difficulty":  "medium",
+        "sampling":  {
+                         "days":  21,
+                         "n_min":  8,
+                         "pool_size":  10,
+                         "candidate_limit":  220,
+                         "keywords":  [
+                                          "OpenAI"
+                                      ],
+                         "sources":  [
+                                         "TechCrunch"
+                                     ],
+                         "languages":  [
+
+                                       ]
+                     },
+        "tags":  [
+                     "conflict",
+                     "coverage"
+                 ]
+    },
+    {
+        "task_id":  "query_news.filter.precise.normal",
+        "skill":  "query_news",
+        "intent_label":  "query_news",
+        "retrieval_mode":  "evaluable",
+        "scenario":  "normal",
+        "example_question":  "Give me 8 positive OpenAI posts from TechCrunch in last 7 days sorted by heat.",
+        "parameter_template":  {
+                                   "query":  "OpenAI",
+                                   "source":  "TechCrunch",
+                                   "days":  7,
+                                   "sentiment":  "Positive",
+                                   "sort":  "heat_desc",
+                                   "limit":  8
+                               },
+        "acceptable_tool_paths":  [
+                                      [
+                                          {
+                                              "tool":  "query_news",
+                                              "args":  {
+                                                           "query":  "OpenAI",
+                                                           "source":  "TechCrunch",
+                                                           "days":  7,
+                                                           "sentiment":  "Positive",
+                                                           "sort":  "heat_desc",
+                                                           "limit":  8
+                                                       }
+                                          }
+                                      ],
+                                      [
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "OpenAI",
+                                                           "days":  7
+                                                       }
+                                          },
+                                          {
+                                              "tool":  "query_news",
+                                              "args":  {
+                                                           "query":  "OpenAI",
+                                                           "source":  "TechCrunch",
+                                                           "days":  7,
+                                                           "sentiment":  "Positive",
+                                                           "sort":  "heat_desc",
+                                                           "limit":  8
+                                                       }
+                                          }
+                                      ]
+                                  ],
+        "required_tools":  [
+                               "query_news"
+                           ],
+        "forbidden_tools":  [
+
+                            ],
+        "should_clarify":  false,
+        "difficulty":  "easy",
+        "sampling":  {
+                         "days":  21,
+                         "n_min":  8,
+                         "pool_size":  10,
+                         "candidate_limit":  200,
+                         "keywords":  [
+                                          "OpenAI"
+                                      ],
+                         "sources":  [
+                                         "TechCrunch"
+                                     ],
+                         "languages":  [
+
+                                       ]
+                     },
+        "tags":  [
+                     "normal"
+                 ]
+    },
+    {
+        "task_id":  "search_news.coverage.conflict",
+        "skill":  "search_news",
+        "intent_label":  "search_news",
+        "retrieval_mode":  "evaluable",
+        "scenario":  "conflict",
+        "example_question":  "Search mixed intent query that requires clarifying target entity before retrieval.",
+        "parameter_template":  {
+                                   "query":  "OpenAI vs Anthropic but only one target after clarification",
+                                   "days":  21
+                               },
+        "acceptable_tool_paths":  [
+                                      [
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "OpenAI vs Anthropic but only one target after clarification",
+                                                           "days":  21
+                                                       }
+                                          }
+                                      ],
+                                      [
+                                          {
+                                              "tool":  "query_news",
+                                              "args":  {
+                                                           "query":  "OpenAI vs Anthropic but only one target after clarification",
+                                                           "days":  21,
+                                                           "limit":  8
+                                                       }
+                                          },
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "OpenAI vs Anthropic but only one target after clarification",
+                                                           "days":  21
+                                                       }
+                                          }
+                                      ]
+                                  ],
+        "required_tools":  [
+                               "search_news"
+                           ],
+        "forbidden_tools":  [
+
+                            ],
+        "should_clarify":  true,
+        "difficulty":  "medium",
+        "sampling":  {
+                         "days":  21,
+                         "n_min":  8,
+                         "pool_size":  10,
+                         "candidate_limit":  220,
+                         "keywords":  [
+                                          "Claude",
+                                          "Anthropic"
+                                      ],
+                         "sources":  [
+
+                                     ],
+                         "languages":  [
+
+                                       ]
+                     },
+        "tags":  [
+                     "conflict",
+                     "coverage",
+                     "crosslingual"
+                 ]
+    },
+    {
+        "task_id":  "search_news.semantic.crosslingual.normal",
+        "skill":  "search_news",
+        "intent_label":  "search_news",
+        "retrieval_mode":  "evaluable",
+        "scenario":  "normal",
+        "example_question":  "Find English news related to Claude.",
+        "parameter_template":  {
+                                   "query":  "Claude related English news",
+                                   "days":  21
+                               },
+        "acceptable_tool_paths":  [
+                                      [
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "Claude related English news",
+                                                           "days":  21
+                                                       }
+                                          }
+                                      ],
+                                      [
+                                          {
+                                              "tool":  "query_news",
+                                              "args":  {
+                                                           "query":  "Claude",
+                                                           "days":  21,
+                                                           "limit":  10
+                                                       }
+                                          },
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "Claude related English news",
+                                                           "days":  21
+                                                       }
+                                          }
+                                      ]
+                                  ],
+        "required_tools":  [
+                               "search_news"
+                           ],
+        "forbidden_tools":  [
+
+                            ],
+        "should_clarify":  false,
+        "difficulty":  "medium",
+        "sampling":  {
+                         "days":  30,
+                         "n_min":  8,
+                         "pool_size":  10,
+                         "candidate_limit":  240,
+                         "keywords":  [
+                                          "Claude",
+                                          "Anthropic"
+                                      ],
+                         "sources":  [
+
+                                     ],
+                         "languages":  [
+                                           "zh",
+                                           "en"
+                                       ]
+                     },
+        "tags":  [
+                     "normal",
+                     "crosslingual"
+                 ]
+    },
+    {
+        "task_id":  "fulltext_batch.query_autoselect.boundary",
+        "skill":  "fulltext_batch",
+        "intent_label":  "fulltext_batch",
+        "retrieval_mode":  "evaluable",
+        "scenario":  "boundary",
+        "example_question":  "Without URLs, auto-select OpenAI Voice Engine docs in last 14 days and read full text.",
+        "parameter_template":  {
+                                   "urls":  "OpenAI Voice Engine recent 14 days",
+                                   "max_chars_per_article":  4000
+                               },
+        "acceptable_tool_paths":  [
+                                      [
+                                          {
+                                              "tool":  "fulltext_batch",
+                                              "args":  {
+                                                           "urls":  "OpenAI Voice Engine recent 14 days",
+                                                           "max_chars_per_article":  4000
+                                                       }
+                                          }
+                                      ],
+                                      [
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "OpenAI Voice Engine",
+                                                           "days":  14
+                                                       }
+                                          },
+                                          {
+                                              "tool":  "fulltext_batch",
+                                              "args":  {
+                                                           "urls":  "OpenAI Voice Engine recent 14 days",
+                                                           "max_chars_per_article":  4000
+                                                       }
+                                          }
+                                      ]
+                                  ],
+        "required_tools":  [
+                               "fulltext_batch"
+                           ],
+        "forbidden_tools":  [
+
+                            ],
+        "should_clarify":  false,
+        "difficulty":  "hard",
+        "sampling":  {
+                         "days":  30,
+                         "n_min":  8,
+                         "pool_size":  10,
+                         "candidate_limit":  200,
+                         "keywords":  [
+                                          "OpenAI",
+                                          "Voice"
+                                      ],
+                         "sources":  [
+
+                                     ],
+                         "languages":  [
+
+                                       ]
+                     },
+        "tags":  [
+                     "boundary"
+                 ]
+    },
+    {
+        "task_id":  "fulltext_batch.coverage.conflict",
+        "skill":  "fulltext_batch",
+        "intent_label":  "fulltext_batch",
+        "retrieval_mode":  "evaluable",
+        "scenario":  "conflict",
+        "example_question":  "Ask fulltext batch to both avoid auto-select and not provide URLs; clarification needed.",
+        "parameter_template":  {
+                                   "urls":  "need clarification: no urls but no auto-select allowed",
+                                   "max_chars_per_article":  4000
+                               },
+        "acceptable_tool_paths":  [
+                                      [
+                                          {
+                                              "tool":  "fulltext_batch",
+                                              "args":  {
+                                                           "urls":  "need clarification: no urls but no auto-select allowed",
+                                                           "max_chars_per_article":  4000
+                                                       }
+                                          }
+                                      ],
+                                      [
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "need clarification: no urls but no auto-select allowed",
+                                                           "days":  14
+                                                       }
+                                          },
+                                          {
+                                              "tool":  "fulltext_batch",
+                                              "args":  {
+                                                           "urls":  "need clarification: no urls but no auto-select allowed",
+                                                           "max_chars_per_article":  4000
+                                                       }
+                                          }
+                                      ]
+                                  ],
+        "required_tools":  [
+                               "fulltext_batch"
+                           ],
+        "forbidden_tools":  [
+
+                            ],
+        "should_clarify":  true,
+        "difficulty":  "medium",
+        "sampling":  {
+                         "days":  30,
+                         "n_min":  8,
+                         "pool_size":  10,
+                         "candidate_limit":  220,
+                         "keywords":  [
+                                          "OpenAI",
+                                          "Voice"
+                                      ],
+                         "sources":  [
+
+                                     ],
+                         "languages":  [
+
+                                       ]
+                     },
+        "tags":  [
+                     "conflict",
+                     "coverage"
+                 ]
+    },
+    {
+        "task_id":  "fulltext_batch.coverage.normal",
+        "skill":  "fulltext_batch",
+        "intent_label":  "fulltext_batch",
+        "retrieval_mode":  "evaluable",
+        "scenario":  "normal",
+        "example_question":  "Batch read full text for OpenAI Voice Engine topic without explicit URLs.",
+        "parameter_template":  {
+                                   "urls":  "OpenAI Voice Engine recent 14 days",
+                                   "max_chars_per_article":  4000
+                               },
+        "acceptable_tool_paths":  [
+                                      [
+                                          {
+                                              "tool":  "fulltext_batch",
+                                              "args":  {
+                                                           "urls":  "OpenAI Voice Engine recent 14 days",
+                                                           "max_chars_per_article":  4000
+                                                       }
+                                          }
+                                      ],
+                                      [
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "OpenAI Voice Engine recent 14 days",
+                                                           "days":  14
+                                                       }
+                                          },
+                                          {
+                                              "tool":  "fulltext_batch",
+                                              "args":  {
+                                                           "urls":  "OpenAI Voice Engine recent 14 days",
+                                                           "max_chars_per_article":  4000
+                                                       }
+                                          }
+                                      ]
+                                  ],
+        "required_tools":  [
+                               "fulltext_batch"
+                           ],
+        "forbidden_tools":  [
+
+                            ],
+        "should_clarify":  false,
+        "difficulty":  "hard",
+        "sampling":  {
+                         "days":  30,
+                         "n_min":  8,
+                         "pool_size":  10,
+                         "candidate_limit":  220,
+                         "keywords":  [
+                                          "OpenAI",
+                                          "Voice"
+                                      ],
+                         "sources":  [
+
+                                     ],
+                         "languages":  [
+
+                                       ]
+                     },
+        "tags":  [
+                     "normal",
+                     "coverage"
+                 ]
+    },
+    {
+        "task_id":  "trend_analysis.no_baseline.boundary",
+        "skill":  "trend_analysis",
+        "intent_label":  "trend_analysis",
+        "retrieval_mode":  "non_retrieval",
+        "scenario":  "boundary",
+        "example_question":  "Analyze a new keyword trend for last 7 days compared with previous 7 days.",
+        "parameter_template":  {
+                                   "topic":  "newly emerged keyword",
+                                   "window":  7
+                               },
+        "acceptable_tool_paths":  [
+                                      [
+                                          {
+                                              "tool":  "trend_analysis",
+                                              "args":  {
+                                                           "topic":  "newly emerged keyword",
+                                                           "window":  7
+                                                       }
+                                          }
+                                      ],
+                                      [
+                                          {
+                                              "tool":  "query_news",
+                                              "args":  {
+                                                           "query":  "newly emerged keyword",
+                                                           "days":  14,
+                                                           "limit":  8
+                                                       }
+                                          },
+                                          {
+                                              "tool":  "trend_analysis",
+                                              "args":  {
+                                                           "topic":  "newly emerged keyword",
+                                                           "window":  7
+                                                       }
+                                          }
+                                      ]
+                                  ],
+        "required_tools":  [
+                               "trend_analysis"
+                           ],
+        "forbidden_tools":  [
+
+                            ],
+        "should_clarify":  false,
+        "difficulty":  "hard",
+        "sampling":  {
+                         "days":  45,
+                         "n_min":  8,
+                         "pool_size":  8,
+                         "candidate_limit":  180,
+                         "keywords":  [
+                                          "OpenAI",
+                                          "Google",
+                                          "Anthropic"
+                                      ],
+                         "sources":  [
+
+                                     ],
+                         "languages":  [
+
+                                       ]
+                     },
+        "tags":  [
+                     "boundary"
+                 ]
+    },
+    {
+        "task_id":  "read_news_content.url_missing.empty",
+        "skill":  "read_news_content",
+        "intent_label":  "read_news_content",
+        "retrieval_mode":  "non_retrieval",
+        "scenario":  "empty",
+        "example_question":  "Read full content for a URL that does not exist in DB.",
+        "parameter_template":  {
+                                   "url":  "https://example.invalid/not-in-db"
+                               },
+        "acceptable_tool_paths":  [
+                                      [
+                                          {
+                                              "tool":  "read_news_content",
+                                              "args":  {
+                                                           "url":  "https://example.invalid/not-in-db"
+                                                       }
+                                          }
+                                      ],
+                                      [
+                                          {
+                                              "tool":  "search_news",
+                                              "args":  {
+                                                           "query":  "missing url probe",
+                                                           "days":  7
+                                                       }
+                                          },
+                                          {
+                                              "tool":  "read_news_content",
+                                              "args":  {
+                                                           "url":  "https://example.invalid/not-in-db"
+                                                       }
+                                          }
+                                      ]
+                                  ],
+        "required_tools":  [
+                               "read_news_content"
+                           ],
+        "forbidden_tools":  [
+
+                            ],
+        "should_clarify":  false,
+        "difficulty":  "easy",
+        "sampling":  {
+                         "days":  14,
+                         "n_min":  8,
+                         "pool_size":  6,
+                         "candidate_limit":  80,
+                         "keywords":  [
+                                          "OpenAI",
+                                          "Anthropic",
+                                          "Google"
+                                      ],
+                         "sources":  [
+
+                                     ],
+                         "languages":  [
+
+                                       ]
+                     },
+        "tags":  [
+                     "empty"
+                 ]
+    }
+]

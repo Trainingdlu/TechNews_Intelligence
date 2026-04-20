@@ -880,6 +880,18 @@ def _parse_args() -> argparse.Namespace:
         help="Skip strict skill catalog validation.",
     )
     parser.add_argument(
+        "--enforce-coverage-policy",
+        action="store_true",
+        default=True,
+        help="Enforce scenario coverage policy for task type files.",
+    )
+    parser.add_argument(
+        "--no-enforce-coverage-policy",
+        dest="enforce_coverage_policy",
+        action="store_false",
+        help="Allow partial task subsets that do not satisfy full scenario coverage policy.",
+    )
+    parser.add_argument(
         "--pools-per-task",
         type=int,
         default=0,
@@ -1008,6 +1020,7 @@ def main() -> int:
     task_types = load_task_types(
         args.task_types.resolve(),
         strict_skill=bool(args.strict_skill_check),
+        enforce_coverage_policy=bool(args.enforce_coverage_policy),
     )
     llm = _build_chat_model(
         provider=str(args.provider),
@@ -1155,6 +1168,7 @@ def main() -> int:
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
             "task_type_file": str(args.task_types.resolve()),
             "dataset_path": str(output_path),
+            "coverage_policy_enforced": bool(args.enforce_coverage_policy),
             "provider": str(args.provider),
             "model": str(args.model),
             "temperature": float(args.temperature),
@@ -1191,6 +1205,7 @@ def main() -> int:
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "task_type_file": str(args.task_types.resolve()),
         "dataset_path": str(output_path),
+        "coverage_policy_enforced": bool(args.enforce_coverage_policy),
         "case_count": len(all_cases),
         "provider": str(args.provider),
         "model": str(args.model),
@@ -1216,6 +1231,7 @@ def main() -> int:
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
             "task_type_file": str(args.task_types.resolve()),
             "dataset_path": str(output_path),
+            "coverage_policy_enforced": bool(args.enforce_coverage_policy),
             "provider": str(args.provider),
             "model": str(args.model),
             "temperature": float(args.temperature),
