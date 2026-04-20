@@ -145,8 +145,8 @@ src = project_dir / os.environ["SRC_CHECKPOINT_REL_PY"]
 dst = project_dir / os.environ["CHECKPOINT_REL_PY"]
 
 d = json.loads(src.read_text(encoding="utf-8"))
-d["task_type_file"] = str((project_dir / os.environ["TASK_FILE_REL_PY"]).resolve())
-d["dataset_path"] = str((project_dir / os.environ["DATASET_REL_PY"]).resolve())
+d["task_type_file"] = f"/app/{os.environ['TASK_FILE_REL_PY']}"
+d["dataset_path"] = f"/app/{os.environ['DATASET_REL_PY']}"
 
 dst.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
 print("[ValueEval] checkpoint reused:")
