@@ -1,4 +1,4 @@
-﻿"""Agent runtime 鈥?ReAct-native architecture with Skill infrastructure.
+"""Agent runtime 鈥?ReAct-native architecture with Skill infrastructure.
 
 Single runtime: LangGraph ReAct agent with full tool autonomy.
 Tool wrappers execute through SkillRegistry + ToolHookRunner for
@@ -833,6 +833,16 @@ def _generate_react(
                     if url not in seen_urls:
                         valid_urls.append(url)
                         seen_urls.add(url)
+
+    # 3. URLs from previous conversation history (allows multi-turn references)
+    from .core.evidence import extract_urls
+    for msg in messages:
+        if isinstance(msg, (AIMessage, HumanMessage)):
+            content_str = _coerce_to_text(getattr(msg, "content", ""))
+            for url in extract_urls(content_str):
+                if url not in seen_urls:
+                    valid_urls.append(url)
+                    seen_urls.add(url)
 
     return text, valid_urls
 
