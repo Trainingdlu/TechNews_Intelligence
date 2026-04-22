@@ -584,7 +584,12 @@ def _pools_for_prompt(pools: list[Pool], *, summary_chars: int = 220) -> list[di
     return out
 
 
-def _generator_prompts(task: dict[str, Any], pools: list[Pool]) -> tuple[str, str]:
+def _generator_prompts(
+    task: dict[str, Any],
+    pools: list[Pool],
+    *,
+    rejection_reasons: dict[str, str] | None = None,
+) -> tuple[str, str]:
     schema_hint = {
         "task_id": task["task_id"],
         "cases": [
@@ -616,6 +621,12 @@ def _generator_prompts(task: dict[str, Any], pools: list[Pool]) -> tuple[str, st
 
     system_prompt = (
         "You generate task-driven evaluation cases.\n"
+        "Think step by step:\n"
+        "1) Read the task definition and understand what kind of test case is needed.\n"
+        "2) Study the news pool to identify key entities, events, and facts.\n"
+        "3) Craft a realistic Chinese question that a user would ask.\n"
+        "4) Write a grounded expected_answer using only evidence from the pool.\n"
+        "5) Specify tool paths and verifiable claims.\n\n"
         "Rules:\n"
         "1) Return strict JSON object only.\n"
         "2) One case per pool_id, no missing and no extra pools.\n"
@@ -629,6 +640,13 @@ def _generator_prompts(task: dict[str, Any], pools: list[Pool]) -> tuple[str, st
         "10) For non-empty scenarios, expected_question must be answerable by the pool and mention pool entities/topics.\n"
         "11) Do not output markdown fences."
     )
+
+    # Feedback loop: inject previous rejection reasons
+    if rejection_reasons:
+        feedback_lines = ["\n\nPrevious attempt was rejected. Fix these specific issues:"]
+        for case_id, reason in rejection_reasons.items():
+            feedback_lines.append(f"- {case_id}: {reason}")
+        system_prompt += "\n".join(feedback_lines)
 
     payload = {
         "task_definition": {
@@ -656,6 +674,10 @@ def _generator_prompts(task: dict[str, Any], pools: list[Pool]) -> tuple[str, st
 def _audit_prompts(task: dict[str, Any], cases: list[dict[str, Any]]) -> tuple[str, str]:
     system_prompt = (
         "You are an evaluation-case auditor.\n"
+        "Think step by step:\n"
+        "1) Read the task definition and understand the expected contract.\n"
+        "2) For each case, verify language (Chinese), tool path validity, and evidence grounding.\n"
+        "3) Provide a clear accept/reject verdict with specific reasoning.\n\n"
         "Check each case for contract consistency and evidence grounding.\n"
         "Reject any case whose expected_question or expected_answer is not Chinese.\n"
         "Reject any case whose expected_tool_paths is not an exact subset of task.acceptable_tool_paths.\n"
@@ -737,13 +759,16 @@ def _generate_for_task(
     llm_backoff_sec: float,
     pools_per_generation_call: int,
     inter_llm_call_sleep_sec: float,
+    rejection_reasons: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     pool_map = {pool.pool_id: pool.docs for pool in pools}
     out_cases: list[dict[str, Any]] = []
     pool_chunks = _chunk_list(pools, int(pools_per_generation_call))
 
     for chunk_idx, pools_chunk in enumerate(pool_chunks, 1):
-        system_prompt, user_prompt = _generator_prompts(task, pools_chunk)
+        system_prompt, user_prompt = _generator_prompts(
+            task, pools_chunk, rejection_reasons=rejection_reasons,
+        )
         payload = _invoke_json(
             llm,
             system_prompt,
@@ -918,8 +943,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--temperature",
         type=float,
-        default=float(os.getenv("TASK_EVAL_TEMPERATURE", "0")),
-        help="LLM temperature for generation.",
+        default=float(os.getenv("TASK_EVAL_TEMPERATURE", "0.7")),
+        help="LLM temperature for generation (LAAG). Default 0.7 for diversity.",
+    )
+    parser.add_argument(
+        "--audit-temperature",
+        type=float,
+        default=float(os.getenv("TASK_EVAL_AUDIT_TEMPERATURE", "0.0")),
+        help="LLM temperature for audit (LAAJ). Default 0.0 for determinism.",
     )
     parser.add_argument(
         "--disable-audit",
@@ -929,9 +960,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--audit-max-regen-rounds",
         type=int,
-        default=int(os.getenv("TASK_EVAL_AUDIT_MAX_REGEN_ROUNDS", "3")),
+        default=int(os.getenv("TASK_EVAL_AUDIT_MAX_REGEN_ROUNDS", "8")),
         help=(
-            "Max regeneration rounds after audit rejection (0 means no regen, only one audit pass)."
+            "Max regeneration rounds after audit rejection (0 means no regen, only one audit pass). Default 8."
         ),
     )
     parser.add_argument(
@@ -961,8 +992,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--inter-llm-call-sleep-sec",
         type=float,
-        default=float(os.getenv("TASK_EVAL_INTER_LLM_CALL_SLEEP_SEC", "0.0")),
-        help="Sleep seconds between chunked generation/audit calls for throttling.",
+        default=float(os.getenv("TASK_EVAL_INTER_LLM_CALL_SLEEP_SEC", "15.0")),
+        help="Sleep seconds between chunked generation/audit calls for throttling. Default 15.0.",
     )
     parser.add_argument(
         "--inter-task-sleep-sec",
@@ -1027,6 +1058,16 @@ def main() -> int:
         model_name=str(args.model),
         temperature=float(args.temperature),
     )
+    # Separate audit LLM with deterministic temperature for LAAJ
+    audit_temperature = float(getattr(args, "audit_temperature", 0.0))
+    if abs(audit_temperature - float(args.temperature)) < 1e-6:
+        audit_llm = llm  # reuse if temperatures match
+    else:
+        audit_llm = _build_chat_model(
+            provider=str(args.provider),
+            model_name=str(args.model),
+            temperature=audit_temperature,
+        )
 
     rng = random.Random(int(args.seed))
     output_path = args.output.resolve()
@@ -1092,9 +1133,10 @@ def main() -> int:
         rejected: dict[str, str] = {}
         if not args.disable_audit:
             max_regen_rounds = max(0, int(args.audit_max_regen_rounds))
+            consecutive_llm_errors = 0
             for regen_round in range(0, max_regen_rounds + 1):
                 rejected = _audit_cases(
-                    llm,
+                    audit_llm,
                     task,
                     generated_cases,
                     llm_max_retries=int(args.llm_max_retries),
@@ -1120,24 +1162,41 @@ def main() -> int:
                     break
 
                 print(
-                    "[TaskDatasetV1][AuditRegen] task=%s round=%s/%s rejected=%s regen_pools=%s"
+                    "[TaskDatasetV1][AuditRegen] task=%s round=%s/%s rejected=%s regen_pools=%s reasons=%s"
                     % (
                         task["task_id"],
                         regen_round + 1,
                         max_regen_rounds,
                         len(rejected),
                         len(regen_pools),
+                        rejected,
                     )
                 )
-                regenerated = _generate_for_task(
-                    llm,
-                    task,
-                    regen_pools,
-                    llm_max_retries=int(args.llm_max_retries),
-                    llm_backoff_sec=float(args.llm_backoff_sec),
-                    pools_per_generation_call=int(args.pools_per_generation_call),
-                    inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
-                )
+                try:
+                    regenerated = _generate_for_task(
+                        llm,
+                        task,
+                        regen_pools,
+                        llm_max_retries=int(args.llm_max_retries),
+                        llm_backoff_sec=float(args.llm_backoff_sec),
+                        pools_per_generation_call=int(args.pools_per_generation_call),
+                        inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
+                        rejection_reasons=rejected,
+                    )
+                    consecutive_llm_errors = 0
+                except Exception as regen_exc:
+                    consecutive_llm_errors += 1
+                    print(
+                        "[TaskDatasetV1][CircuitBreaker] task=%s regen LLM error #%d: %s"
+                        % (task["task_id"], consecutive_llm_errors, regen_exc)
+                    )
+                    if consecutive_llm_errors >= 3:
+                        print(
+                            "[TaskDatasetV1][CircuitBreaker] task=%s aborting regen after %d consecutive LLM errors."
+                            % (task["task_id"], consecutive_llm_errors)
+                        )
+                        break
+                    continue
                 regen_by_pool = {row["pool_id"]: row for row in regenerated}
                 for idx, row in enumerate(generated_cases):
                     pool_id = row["pool_id"]

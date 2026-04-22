@@ -10,6 +10,7 @@ from services.db import get_conn, put_conn
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _json_text
 from .query_news import query_news
+from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .schemas import TrendAnalysisSkillInput
 from .semantic_pool import fetch_semantic_url_pool
 
@@ -144,6 +145,20 @@ def trend_analysis(topic: str, window: int = 7, response_format: str = "text") -
                 lines.append(f"  {day.strftime('%Y-%m-%d')}: count={cnt}, avg_points={avg_points}")
         else:
             lines.append("  no matched records")
+
+        # --- Reranked Top Evidence (Top-5) ---
+        try:
+            reranked, _, rerank_meta = retrieve_and_rerank(
+                topic, days=window * 2, top_k=5, pool_limit=100,
+            )
+            evidence_block = format_reranked_evidence(
+                reranked, header=f"Reranked Evidence: {topic}",
+            )
+            if evidence_block:
+                lines.append(evidence_block)
+        except Exception as rerank_exc:
+            print(f"[Warn] trend_analysis rerank failed (non-fatal): {rerank_exc}")
+
         return "\n".join(lines)
     except Exception as exc:
         print(f"[Error] trend_analysis failed: {exc}")

@@ -6,6 +6,7 @@ from services.db import get_conn, put_conn
 
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_text_output
+from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .schemas import CompareTopicsSkillInput
 from .semantic_pool import fetch_semantic_url_pool
 
@@ -266,6 +267,28 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
         else:
             confidence = "Low"
         lines.append(f"Confidence: {confidence}")
+
+        # --- Reranked Top Evidence (per-group Top-3) ---
+        try:
+            reranked_a, _, meta_a = retrieve_and_rerank(
+                topic_a, days=days, top_k=3, pool_limit=100,
+            )
+            reranked_b, _, meta_b = retrieve_and_rerank(
+                topic_b, days=days, top_k=3, pool_limit=100,
+            )
+            evidence_a = format_reranked_evidence(
+                reranked_a, header=f"Reranked Evidence: {topic_a}",
+            )
+            evidence_b = format_reranked_evidence(
+                reranked_b, header=f"Reranked Evidence: {topic_b}",
+            )
+            if evidence_a:
+                lines.append(evidence_a)
+            if evidence_b:
+                lines.append(evidence_b)
+        except Exception as rerank_exc:
+            print(f"[Warn] compare_topics rerank failed (non-fatal): {rerank_exc}")
+
         return "\n".join(lines)
     except Exception as exc:
         print(f"[Error] compare_topics failed: {exc}")
@@ -309,11 +332,17 @@ def compare_topics_skill(payload: CompareTopicsSkillInput) -> SkillEnvelope:
 
     evidence = _evidence_from_text_output(raw_output, max_items=6)
     status = "ok" if evidence else "empty"
+
+    # Extract reranked summaries if present in output
+    reranked_data = {}
+    if "Reranked Evidence:" in raw_output:
+        reranked_data["has_reranked_evidence"] = True
+
     return SkillEnvelope(
         tool="compare_topics",
         status=status,
         request=request,
-        data={"raw_output": raw_output, "confidence": confidence},
+        data={"raw_output": raw_output, "confidence": confidence, **reranked_data},
         evidence=evidence,
         diagnostics={"topic_a": request["topic_a"], "topic_b": request["topic_b"], "confidence": confidence},
     )

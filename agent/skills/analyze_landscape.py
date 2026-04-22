@@ -15,6 +15,7 @@ from services.db import get_conn, put_conn
 
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_text_output, _is_recent_timestamp
+from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .retrieval import _get_query_embedding
 from .schemas import AnalyzeLandscapeSkillInput
 from .semantic_pool import fetch_semantic_url_pool
@@ -477,6 +478,21 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
         else:
             confidence = "Low"
         lines.append(f"Confidence: {confidence}")
+
+        # --- Reranked Landscape Evidence (merged pool, Top-5) ---
+        try:
+            rerank_query = f"{topic_label} competitive landscape" if topic else "technology competitive landscape"
+            reranked, _, rerank_meta = retrieve_and_rerank(
+                rerank_query, days=days, top_k=5, pool_limit=150,
+            )
+            evidence_block = format_reranked_evidence(
+                reranked, header="Reranked Landscape Evidence",
+            )
+            if evidence_block:
+                lines.append(evidence_block)
+        except Exception as rerank_exc:
+            print(f"[Warn] analyze_landscape rerank failed (non-fatal): {rerank_exc}")
+
         return "\n".join(lines)
     except Exception as exc:
         print(f"[Error] analyze_landscape failed: {exc}")

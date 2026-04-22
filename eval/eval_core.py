@@ -148,6 +148,48 @@ def ndcg_at_k(
     return dcg / idcg
 
 
+def hit_rate_at_k(
+    pred_urls: list[str] | None,
+    gold_urls: list[str] | None,
+    k: int,
+    *,
+    domain_only: bool = False,
+) -> float | None:
+    """Hit rate@k: 1.0 if at least one gold URL is in top-k predictions, else 0.0.
+
+    Returns None when no gold labels exist.
+    """
+    gold = set(_normalize_retrieval_url_list(gold_urls, domain_only=domain_only))
+    if not gold:
+        return None
+    if k <= 0:
+        return 0.0
+    preds = _normalize_retrieval_url_list(pred_urls, domain_only=domain_only)[:k]
+    return 1.0 if set(preds).intersection(gold) else 0.0
+
+
+def precision_at_k(
+    pred_urls: list[str] | None,
+    gold_urls: list[str] | None,
+    k: int,
+    *,
+    domain_only: bool = False,
+) -> float | None:
+    """Precision@k: fraction of top-k predictions that are gold URLs.
+
+    Returns None when no gold labels exist.
+    """
+    gold = set(_normalize_retrieval_url_list(gold_urls, domain_only=domain_only))
+    if not gold:
+        return None
+    if k <= 0:
+        return 0.0
+    preds = _normalize_retrieval_url_list(pred_urls, domain_only=domain_only)[:k]
+    if not preds:
+        return 0.0
+    return len(set(preds).intersection(gold)) / len(preds)
+
+
 def normalize_domain(value: str) -> str:
     """Normalize domain strings for deterministic comparison."""
     raw = (value or "").strip().lower()

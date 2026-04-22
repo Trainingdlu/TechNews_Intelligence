@@ -11,15 +11,19 @@ from typing import Any
 try:
     from eval_core import (
         extract_urls,
+        hit_rate_at_k,
         mrr_at_k,
         ndcg_at_k,
+        precision_at_k,
         recall_at_k,
     )
 except ImportError:  # package-style import fallback
     from .eval_core import (
         extract_urls,
+        hit_rate_at_k,
         mrr_at_k,
         ndcg_at_k,
+        precision_at_k,
         recall_at_k,
     )
 
@@ -347,12 +351,16 @@ def score_case(
         if retrieval_evaluable:
             recall5 = recall_at_k(retrieved_urls, retrieval_gold_urls, 5)
             recall10 = recall_at_k(retrieved_urls, retrieval_gold_urls, 10)
+            mrr5 = mrr_at_k(retrieved_urls, retrieval_gold_urls, 5)
             mrr10 = mrr_at_k(retrieved_urls, retrieval_gold_urls, 10)
+            ndcg5 = ndcg_at_k(retrieved_urls, retrieval_gold_urls, 5)
             ndcg10 = ndcg_at_k(retrieved_urls, retrieval_gold_urls, 10)
+            hit5 = hit_rate_at_k(retrieved_urls, retrieval_gold_urls, 5)
+            prec5 = precision_at_k(retrieved_urls, retrieval_gold_urls, 5)
             gold_hit = 1.0 if set(retrieved_urls).intersection(retrieval_gold_urls) else 0.0
         else:
-            recall5 = recall10 = mrr10 = ndcg10 = None
-            gold_hit = None
+            recall5 = recall10 = mrr5 = mrr10 = ndcg5 = ndcg10 = None
+            hit5 = prec5 = gold_hit = None
 
         supported_count = 0
         mentioned_count = 0
@@ -426,8 +434,12 @@ def score_case(
                 "param_accuracy": param_acc,
                 "recall_at_5": recall5,
                 "recall_at_10": recall10,
+                "mrr_at_5": mrr5,
                 "mrr_at_10": mrr10,
+                "ndcg_at_5": ndcg5,
                 "ndcg_at_10": ndcg10,
+                "hit_rate_at_5": hit5,
+                "precision_at_5": prec5,
                 "gold_hit": gold_hit,
                 "claim_support_rate": claim_support_rate,
                 "unsupported_claim_rate": unsupported_claim_rate,
@@ -437,6 +449,9 @@ def score_case(
                 "timeout_hit": timeout_hit,
                 "fallback_hit": fallback,
                 "latency_ms": latency_ms,
+                # Generation-layer judge scores (populated externally via --enable-llm-judge)
+                "faithfulness_score": run.get("faithfulness_score"),
+                "answer_relevancy_score": run.get("answer_relevancy_score"),
             }
         )
 
@@ -463,8 +478,12 @@ def score_case(
             "evaluable": retrieval_evaluable,
             "recall_at_5": _mean([row["recall_at_5"] for row in run_rows]),
             "recall_at_10": _mean([row["recall_at_10"] for row in run_rows]),
+            "mrr_at_5": _mean([row["mrr_at_5"] for row in run_rows]),
             "mrr_at_10": _mean([row["mrr_at_10"] for row in run_rows]),
+            "ndcg_at_5": _mean([row["ndcg_at_5"] for row in run_rows]),
             "ndcg_at_10": _mean([row["ndcg_at_10"] for row in run_rows]),
+            "hit_rate_at_5": _mean([row["hit_rate_at_5"] for row in run_rows]),
+            "precision_at_5": _mean([row["precision_at_5"] for row in run_rows]),
             "gold_hit_rate": _mean([row["gold_hit"] for row in run_rows]),
         },
         "analysis": {
@@ -472,6 +491,10 @@ def score_case(
             "unsupported_claim_rate": _mean([row["unsupported_claim_rate"] for row in run_rows]),
             "contradiction_rate": _mean([row["contradiction_rate"] for row in run_rows]),
             "numeric_consistency": _mean([row["numeric_consistency"] for row in run_rows]),
+        },
+        "generation": {
+            "faithfulness_score": _mean([row["faithfulness_score"] for row in run_rows]),
+            "answer_relevancy_score": _mean([row["answer_relevancy_score"] for row in run_rows]),
         },
         "system": {
             "error_rate": _mean([row["error_hit"] for row in run_rows]) or 0.0,

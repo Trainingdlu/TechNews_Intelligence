@@ -6,6 +6,7 @@ from services.db import get_conn, put_conn
 
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_text_output
+from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .schemas import BuildTimelineSkillInput
 from .semantic_pool import fetch_semantic_url_pool
 
@@ -62,6 +63,21 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
             return f"No timeline data for '{topic}' in {days} days."
 
         lines = [f"Timeline: {topic} (last {days} days, max {limit})"]
+
+        # --- Reranked Key Context (Top-5) ---
+        try:
+            reranked, _, rerank_meta = retrieve_and_rerank(
+                topic, days=days, top_k=5, pool_limit=100,
+            )
+            context_block = format_reranked_evidence(
+                reranked, header="Key Context (Reranked)",
+            )
+            if context_block:
+                lines.append(context_block)
+                lines.append("")  # separator
+        except Exception as rerank_exc:
+            print(f"[Warn] build_timeline rerank failed (non-fatal): {rerank_exc}")
+
         for idx, (created_at, src, headline, senti, points, url) in enumerate(rows, 1):
             lines.append(
                 f"{idx}. {created_at.strftime('%Y-%m-%d %H:%M')} | {src} | {senti} | points={points}\n"

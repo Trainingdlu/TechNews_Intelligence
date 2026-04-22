@@ -182,6 +182,24 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Optional dotenv file loaded after agent/.env.",
     )
+    parser.add_argument(
+        "--enable-llm-judge",
+        action="store_true",
+        default=False,
+        help="Enable LLM-as-a-Judge for generation quality (faithfulness + relevancy).",
+    )
+    parser.add_argument(
+        "--judge-provider",
+        type=str,
+        default=None,
+        help="LLM provider for judge (defaults to eval provider).",
+    )
+    parser.add_argument(
+        "--judge-model",
+        type=str,
+        default=None,
+        help="LLM model for judge (defaults to eval model).",
+    )
     return parser.parse_args()
 
 
@@ -204,6 +222,20 @@ def main() -> int:
     generate_response_eval_payload, extract_urls_fn = _bootstrap_agent()
     started = time.time()
     case_rows: list[dict[str, Any]] = []
+
+    # Optional LLM-as-a-Judge for generation quality
+    judge = None
+    if args.enable_llm_judge:
+        try:
+            from llm_judge import LLMJudge
+        except ImportError:
+            from .llm_judge import LLMJudge
+        judge = LLMJudge(
+            provider=args.judge_provider,
+            model=args.judge_model,
+            temperature=0.0,
+        )
+        print("[TaskEvalV1] LLM-as-a-Judge enabled.")
 
     for case in cases:
         question = str(case.get("expected_question", "")).strip()
@@ -269,6 +301,30 @@ def main() -> int:
             }
             if args.include_trace_summary:
                 run_record["trace_summary"] = trace_summary
+
+            # LLM-as-a-Judge: inject generation quality scores
+            if judge and final_answer and not error_text:
+                try:
+                    # Collect tool output context for faithfulness check
+                    tool_context = ""
+                    if isinstance(trace_summary, dict):
+                        for event in trace_summary.get("tool_events", []) or []:
+                            if isinstance(event, dict):
+                                out_text = str(event.get("output_summary", ""))
+                                if out_text:
+                                    tool_context += out_text + "\n"
+                    if tool_context.strip():
+                        judge_result = judge.judge_both(
+                            question=question,
+                            context=tool_context,
+                            answer=final_answer,
+                        )
+                        run_record["faithfulness_score"] = judge_result["faithfulness"]["score"]
+                        run_record["answer_relevancy_score"] = judge_result["relevancy"]["score"]
+                        run_record["judge_details"] = judge_result
+                except Exception as judge_exc:
+                    print(f"[TaskEvalV1][Warn] Judge failed for {case.get('case_id')}: {judge_exc}")
+
             run_rows.append(run_record)
 
             if float(args.sleep_seconds) > 0 and run_index < int(args.runs_per_case):
@@ -290,6 +346,7 @@ def main() -> int:
                     "tool": layers["tool"],
                     "retrieval": layers["retrieval"],
                     "analysis": layers["analysis"],
+                    "generation": layers.get("generation", {}),
                     "system": layers["system"],
                 },
                 "attribution": layers["attribution"],

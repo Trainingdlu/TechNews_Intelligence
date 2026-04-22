@@ -208,6 +208,71 @@ METRIC_SPECS: list[MetricSpec] = [
         case_layer="system",
         case_key="latency_p95_ms",
     ),
+    # --- @5 retrieval metrics ---
+    MetricSpec(
+        name="avg_recall_at_5",
+        layer="retrieval",
+        direction="higher_better",
+        summary_path="summary.retrieval.recall_at_5",
+        case_layer="retrieval",
+        case_key="recall_at_5",
+        n_scope="retrieval",
+    ),
+    MetricSpec(
+        name="avg_mrr_at_5",
+        layer="retrieval",
+        direction="higher_better",
+        summary_path="summary.retrieval.mrr_at_5",
+        case_layer="retrieval",
+        case_key="mrr_at_5",
+        n_scope="retrieval",
+    ),
+    MetricSpec(
+        name="avg_ndcg_at_5",
+        layer="retrieval",
+        direction="higher_better",
+        summary_path="summary.retrieval.ndcg_at_5",
+        case_layer="retrieval",
+        case_key="ndcg_at_5",
+        n_scope="retrieval",
+    ),
+    MetricSpec(
+        name="avg_hit_rate_at_5",
+        layer="retrieval",
+        direction="higher_better",
+        summary_path="summary.retrieval.hit_rate_at_5",
+        case_layer="retrieval",
+        case_key="hit_rate_at_5",
+        n_scope="retrieval",
+    ),
+    MetricSpec(
+        name="avg_precision_at_5",
+        layer="retrieval",
+        direction="higher_better",
+        summary_path="summary.retrieval.precision_at_5",
+        case_layer="retrieval",
+        case_key="precision_at_5",
+        n_scope="retrieval",
+    ),
+    # --- Generation layer (LLM-as-a-Judge) ---
+    MetricSpec(
+        name="generation_faithfulness",
+        layer="generation",
+        direction="higher_better",
+        bounded_01=False,
+        summary_path="summary.generation.faithfulness_score",
+        case_layer="generation",
+        case_key="faithfulness_score",
+    ),
+    MetricSpec(
+        name="generation_relevancy",
+        layer="generation",
+        direction="higher_better",
+        bounded_01=False,
+        summary_path="summary.generation.answer_relevancy_score",
+        case_layer="generation",
+        case_key="answer_relevancy_score",
+    ),
 ]
 
 
@@ -578,7 +643,9 @@ def _build_recommendations(report: dict[str, Any]) -> list[str]:
             if not isinstance(item, dict):
                 continue
             metric = str(item.get("metric", ""))
-            if metric in {"avg_recall_at_10", "avg_mrr_at_10", "avg_ndcg_at_10"}:
+            if metric in {"avg_recall_at_10", "avg_mrr_at_10", "avg_ndcg_at_10",
+                          "avg_recall_at_5", "avg_mrr_at_5", "avg_ndcg_at_5",
+                          "avg_hit_rate_at_5", "avg_precision_at_5"}:
                 recommendations.append("Retrieval regression detected: tune recall/rerank settings and re-run matrix.")
                 break
             if metric in {"tool_path_hit_rate", "tool_param_accuracy", "tool_forbidden_tool_rate"}:
@@ -586,6 +653,9 @@ def _build_recommendations(report: dict[str, Any]) -> list[str]:
                 break
             if metric in {"analysis_unsupported_claim_rate", "analysis_contradiction_rate"}:
                 recommendations.append("Analysis regression detected: tighten evidence grounding and contradiction handling.")
+                break
+            if metric in {"generation_faithfulness", "generation_relevancy"}:
+                recommendations.append("Generation quality regression detected: review CoT prompts, rerank evidence quality, and answer grounding.")
                 break
             if metric in {"avg_error_rate", "system_timeout_rate", "system_fallback_rate", "p95_latency"}:
                 recommendations.append("System regression detected: inspect timeouts/fallbacks and trace-level failures.")
