@@ -10,7 +10,7 @@ from unittest.mock import patch
 from agent.skills import fulltext_batch as fulltext_mod  # noqa: E402  pylint: disable=wrong-import-position
 from agent.skills import helpers as helpers_mod  # noqa: E402  pylint: disable=wrong-import-position
 from agent.skills import query_news as query_news_mod  # noqa: E402  pylint: disable=wrong-import-position
-from agent.skills import sql_builders as sql_mod  # noqa: E402  pylint: disable=wrong-import-position
+
 from agent.skills import trend_analysis as trend_mod  # noqa: E402  pylint: disable=wrong-import-position
 from agent.skills.schemas import QueryNewsSkillInput, TrendAnalysisSkillInput  # noqa: E402  pylint: disable=wrong-import-position
 
@@ -60,12 +60,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(helpers_mod._extract_time_window_days("最近2周相关新闻", default=14), 14)
         self.assertEqual(helpers_mod._extract_time_window_days("past 1 month coverage", default=14), 30)
 
-    def test_expand_topic_terms_for_ai_domain(self) -> None:
-        terms = sql_mod._expand_topic_terms("AI")
-        lowered = {t.lower() for t in terms}
-        self.assertIn("ai", lowered)
-        self.assertIn("gpt", lowered)
-        self.assertIn("gemini", lowered)
+
 
     def test_query_news_json_mode_returns_structured_payload(self) -> None:
         rows = [

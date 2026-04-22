@@ -11,7 +11,7 @@ from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _json_text
 from .query_news import query_news
 from .schemas import TrendAnalysisSkillInput
-from .sql_builders import _build_topic_where_clause
+from .semantic_pool import fetch_semantic_url_pool
 
 
 def trend_analysis(topic: str, window: int = 7, response_format: str = "text") -> str:
@@ -34,18 +34,35 @@ def trend_analysis(topic: str, window: int = 7, response_format: str = "text") -
 
     topic = topic.strip()
     window = _clamp_int(window, 3, 60)
-    topic_clause, topic_params = _build_topic_where_clause(topic)
+
+    # Semantic vector pool replaces the old ILIKE + hardcoded dictionary approach
+    url_pool = fetch_semantic_url_pool(topic, days=window * 2, limit=300)
+    if not url_pool:
+        empty_msg = f"No semantically matched articles for '{topic}' in the last {window * 2} days."
+        if as_json:
+            return _json_text(
+                {
+                    "tool": "trend_analysis",
+                    "status": "empty",
+                    "request": {"topic": topic, "window": window},
+                    "data": None,
+                    "error": empty_msg,
+                }
+            )
+        return empty_msg
+
+    urls = [u for u, _ in url_pool]
 
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            f"""
+            """
             WITH matched AS (
                 SELECT created_at, points
                 FROM tech_news
-                WHERE created_at >= NOW() - (%s::int * INTERVAL '2 day')
-                  AND {topic_clause}
+                WHERE url = ANY(%s)
+                  AND created_at >= NOW() - (%s::int * INTERVAL '2 day')
             ),
             recent AS (
                 SELECT COUNT(*) AS cnt, COALESCE(AVG(points), 0) AS avg_points
@@ -60,20 +77,20 @@ def trend_analysis(topic: str, window: int = 7, response_format: str = "text") -
             SELECT recent.cnt, recent.avg_points, prev.cnt, prev.avg_points
             FROM recent, prev
             """,
-            tuple([window] + topic_params + [window, window]),
+            (urls, window, window, window),
         )
         recent_cnt, recent_avg, prev_cnt, prev_avg = cur.fetchone()
 
         cur.execute(
-            f"""
+            """
             SELECT DATE(created_at) AS day, COUNT(*) AS cnt, ROUND(AVG(points)::numeric, 1) AS avg_points
             FROM tech_news
-            WHERE created_at >= NOW() - %s::interval
-              AND {topic_clause}
+            WHERE url = ANY(%s)
+              AND created_at >= NOW() - %s::interval
             GROUP BY DATE(created_at)
             ORDER BY day ASC
             """,
-            tuple([f"{window} days"] + topic_params),
+            (urls, f"{window} days"),
         )
         daily_rows = cur.fetchall()
         cur.close()

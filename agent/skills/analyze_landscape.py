@@ -1,4 +1,9 @@
-"""Analyze-landscape skill implementation and structured adapter."""
+"""Analyze-landscape skill implementation and structured adapter.
+
+Refactored to use semantic vector pools for entity matching and
+embedding-anchor classification for signal categorisation, replacing
+the legacy hardcoded dictionaries and ILIKE keyword scanning.
+"""
 
 from __future__ import annotations
 
@@ -10,8 +15,13 @@ from services.db import get_conn, put_conn
 
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_text_output, _is_recent_timestamp
+from .retrieval import _get_query_embedding
 from .schemas import AnalyzeLandscapeSkillInput
-from .sql_builders import _build_topic_where_clause
+from .semantic_pool import fetch_semantic_url_pool
+
+# ---------------------------------------------------------------------------
+# Default entity list (kept as sensible defaults; users may override)
+# ---------------------------------------------------------------------------
 
 DEFAULT_LANDSCAPE_ENTITIES = [
     "OpenAI",
@@ -32,121 +42,39 @@ DEFAULT_LANDSCAPE_ENTITIES = [
     "Cisco",
 ]
 
-LANDSCAPE_ENTITY_ALIASES = {
-    "openai": "OpenAI",
-    "anthropic": "Anthropic",
-    "google": "Google",
-    "谷歌": "Google",
-    "microsoft": "Microsoft",
-    "微软": "Microsoft",
-    "meta": "Meta",
-    "amazon": "Amazon",
-    "aws": "Amazon",
-    "亚马逊": "Amazon",
-    "nvidia": "NVIDIA",
-    "英伟达": "NVIDIA",
-    "apple": "Apple",
-    "苹果": "Apple",
-    "tesla": "Tesla",
-    "特斯拉": "Tesla",
-    "tsmc": "TSMC",
-    "台积电": "TSMC",
-    "intel": "Intel",
-    "英特尔": "Intel",
-    "amd": "AMD",
-    "crowdstrike": "CrowdStrike",
-    "palo alto": "Palo Alto Networks",
-    "palo alto networks": "Palo Alto Networks",
-    "cloudflare": "Cloudflare",
-    "cisco": "Cisco",
-    "xai": "xAI",
-    "x.ai": "xAI",
+# ---------------------------------------------------------------------------
+# Signal anchor texts for embedding-based classification (Method B)
+# ---------------------------------------------------------------------------
+
+SIGNAL_ANCHOR_TEXTS: dict[str, str] = {
+    "compute_cost": (
+        "GPU TPU chip semiconductor datacenter data center server compute "
+        "training cost inference cost capex power consumption energy "
+        "算力 芯片 电力 能耗 数据中心 服务器 计算成本"
+    ),
+    "algorithm_efficiency": (
+        "model benchmark reasoning architecture transformer agent inference "
+        "distillation fine-tuning parameter efficiency quantization "
+        "算法 模型 推理 架构 蒸馏 微调 量化 参数效率"
+    ),
+    "data_moat": (
+        "dataset data corpus licensing proprietary copyright privacy "
+        "synthetic data curation annotation training data "
+        "数据 语料 授权 版权 隐私 合成数据 标注"
+    ),
+    "go_to_market": (
+        "enterprise customer pricing revenue subscription partnership "
+        "adoption sales ARR growth market share commercialize "
+        "商业化 客户 定价 收入 订阅 合作 落地 营收"
+    ),
+    "policy_security": (
+        "regulation compliance antitrust lawsuit security breach "
+        "vulnerability policy military export control sanctions "
+        "监管 合规 诉讼 安全 漏洞 军方 出口管制 制裁"
+    ),
 }
 
-LANDSCAPE_SIGNAL_KEYWORDS = {
-    "compute_cost": [
-        "gpu",
-        "tpu",
-        "chip",
-        "semiconductor",
-        "datacenter",
-        "data center",
-        "server",
-        "compute",
-        "training cost",
-        "inference cost",
-        "capex",
-        "算力",
-        "芯片",
-        "电力",
-        "能耗",
-    ],
-    "algorithm_efficiency": [
-        "model",
-        "benchmark",
-        "reasoning",
-        "architecture",
-        "transformer",
-        "agent",
-        "inference",
-        "算法",
-        "模型",
-        "推理",
-        "架构",
-        "蒸馏",
-        "微调",
-    ],
-    "data_moat": [
-        "dataset",
-        "data",
-        "corpus",
-        "licensing",
-        "proprietary",
-        "copyright",
-        "privacy",
-        "数据",
-        "语料",
-        "授权",
-        "版权",
-        "隐私",
-    ],
-    "go_to_market": [
-        "enterprise",
-        "customer",
-        "pricing",
-        "revenue",
-        "subscription",
-        "partnership",
-        "adoption",
-        "sales",
-        "商业化",
-        "客户",
-        "定价",
-        "收入",
-        "订阅",
-        "合作",
-        "落地",
-    ],
-    "policy_security": [
-        "regulation",
-        "compliance",
-        "antitrust",
-        "lawsuit",
-        "security",
-        "breach",
-        "vulnerability",
-        "policy",
-        "military",
-        "监管",
-        "合规",
-        "诉讼",
-        "安全",
-        "漏洞",
-        "军方",
-    ],
-}
-
-LANDSCAPE_SIGNAL_LABELS = {
+LANDSCAPE_SIGNAL_LABELS: dict[str, str] = {
     "compute_cost": "Compute/Cost",
     "algorithm_efficiency": "Algorithm/Efficiency",
     "data_moat": "Data/Moat",
@@ -154,8 +82,82 @@ LANDSCAPE_SIGNAL_LABELS = {
     "policy_security": "Policy/Security",
 }
 
+# Module-level lazy cache for signal anchor embeddings
+_signal_anchor_cache: dict[str, list[float]] | None = None
+
+
+def _get_signal_anchors() -> dict[str, list[float]]:
+    """Compute and cache embeddings for each signal-category anchor text."""
+    global _signal_anchor_cache
+    if _signal_anchor_cache is not None:
+        return _signal_anchor_cache
+
+    anchors: dict[str, list[float]] = {}
+    for key, text in SIGNAL_ANCHOR_TEXTS.items():
+        vec = _get_query_embedding(text)
+        if vec:
+            anchors[key] = vec
+    _signal_anchor_cache = anchors
+    return anchors
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    """Simple cosine similarity between two vectors."""
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = sum(x * x for x in a) ** 0.5
+    norm_b = sum(x * x for x in b) ** 0.5
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def _classify_signal_by_embedding(
+    article_embeddings: dict[str, list[float]],
+    anchors: dict[str, list[float]],
+) -> dict[str, int]:
+    """Classify articles into signal categories using embedding anchor similarity.
+
+    For each article embedding, compute cosine similarity against each anchor
+    and assign the article to the category with the highest similarity.
+
+    Parameters
+    ----------
+    article_embeddings:
+        Mapping from URL to embedding vector.
+    anchors:
+        Mapping from signal category key to anchor embedding.
+
+    Returns
+    -------
+    dict[str, int]
+        Count per signal category.
+    """
+    counts = {k: 0 for k in SIGNAL_ANCHOR_TEXTS.keys()}
+    if not anchors:
+        return counts
+
+    anchor_keys = list(anchors.keys())
+    anchor_vecs = [anchors[k] for k in anchor_keys]
+
+    for _url, emb in article_embeddings.items():
+        best_key = anchor_keys[0]
+        best_sim = -1.0
+        for key, anchor_vec in zip(anchor_keys, anchor_vecs):
+            sim = _cosine_similarity(emb, anchor_vec)
+            if sim > best_sim:
+                best_sim = sim
+                best_key = key
+        counts[best_key] += 1
+
+    return counts
+
 
 def _normalize_landscape_entities(entities: str | list[str] | None) -> list[str]:
+    """Parse user-supplied entity list, falling back to defaults.
+
+    Unlike the old implementation, no alias translation is performed;
+    the embedding model handles cross-language matching natively.
+    """
     raw_items: list[str] = []
     if isinstance(entities, str):
         raw_items = [x.strip() for x in re.split(r"[,\n;/|，、]+", entities) if x.strip()]
@@ -165,31 +167,56 @@ def _normalize_landscape_entities(entities: str | list[str] | None) -> list[str]
     if not raw_items:
         return list(DEFAULT_LANDSCAPE_ENTITIES)
 
+    # Deduplicate while preserving order
     normalized: list[str] = []
     seen: set[str] = set()
     for item in raw_items:
-        alias_key = item.strip().lower()
-        name = LANDSCAPE_ENTITY_ALIASES.get(alias_key, item.strip())
-        key = name.lower()
+        key = item.lower()
         if key in seen:
             continue
         seen.add(key)
-        normalized.append(name)
+        normalized.append(item)
 
-    if not normalized:
-        return list(DEFAULT_LANDSCAPE_ENTITIES)
-    return normalized[:12]
+    return normalized[:12] if normalized else list(DEFAULT_LANDSCAPE_ENTITIES)
 
 
-def _landscape_signal_counts(rows: list[tuple]) -> dict[str, int]:
-    """Keyword-proxy variable counts from (headline + summary) rows."""
-    counts = {k: 0 for k in LANDSCAPE_SIGNAL_KEYWORDS.keys()}
-    for _, _, headline, summary, _ in rows:
-        text = f"{headline or ''} {summary or ''}".lower()
-        for key, tokens in LANDSCAPE_SIGNAL_KEYWORDS.items():
-            if any(token in text for token in tokens):
-                counts[key] += 1
-    return counts
+def _fetch_entity_url_pools(
+    entity_list: list[str],
+    *,
+    topic: str,
+    days: int,
+    limit_per_entity: int = 50,
+) -> tuple[dict[str, list[str]], dict[str, str]]:
+    """Build per-entity URL pools via semantic recall.
+
+    Returns
+    -------
+    entity_url_map:
+        Mapping from entity name to list of URLs.
+    url_to_entity:
+        Mapping from URL to entity with highest similarity (arbitration).
+    """
+    # Collect (url, sim, entity) tuples
+    url_best_sim: dict[str, float] = {}
+    url_best_entity: dict[str, str] = {}
+    entity_raw_pools: dict[str, list[tuple[str, float]]] = {}
+
+    for entity in entity_list:
+        query = f"{entity} {topic}".strip() if topic else entity
+        pool = fetch_semantic_url_pool(query, days=days, limit=limit_per_entity)
+        entity_raw_pools[entity] = pool
+
+        for url, sim in pool:
+            if url not in url_best_sim or sim > url_best_sim[url]:
+                url_best_sim[url] = sim
+                url_best_entity[url] = entity
+
+    # Build per-entity URL lists from arbitrated assignments
+    entity_url_map: dict[str, list[str]] = {name: [] for name in entity_list}
+    for url, entity in url_best_entity.items():
+        entity_url_map[entity].append(url)
+
+    return entity_url_map, url_best_entity
 
 
 def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit_per_entity: int = 3) -> str:
@@ -204,42 +231,22 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
     limit_per_entity = _clamp_int(limit_per_entity, 1, 5)
     entity_list = _normalize_landscape_entities(entities)
 
-    values_sql = ", ".join(["(%s, %s)"] * len(entity_list))
-    params_entities: list[Any] = []
-    for name in entity_list:
-        params_entities.extend([name, f"%{name}%"])
+    # --- Semantic entity matching ---
+    entity_url_map, url_to_entity = _fetch_entity_url_pools(
+        entity_list, topic=topic, days=days,
+    )
 
-    topic_where_sql = ""
-    topic_params: list[Any] = []
-    if topic:
-        topic_clause_sql, topic_params = _build_topic_where_clause(topic, table_alias="v")
-        topic_where_sql = f"AND {topic_clause_sql}"
+    # Flatten all matched URLs
+    all_matched_urls: list[str] = []
+    seen_urls: set[str] = set()
+    for urls in entity_url_map.values():
+        for url in urls:
+            if url not in seen_urls:
+                seen_urls.add(url)
+                all_matched_urls.append(url)
 
-    cte = f"""
-        WITH entities(canonical, pattern) AS (
-            VALUES {values_sql}
-        ),
-        matched AS (
-            SELECT
-                e.canonical AS entity,
-                v.source_type,
-                COALESCE(v.title_cn, v.title) AS headline,
-                COALESCE(v.summary, '') AS summary,
-                v.url,
-                v.points,
-                v.sentiment,
-                v.created_at
-            FROM view_dashboard_news v
-            JOIN entities e
-              ON (
-                  v.title ILIKE e.pattern
-                  OR COALESCE(v.title_cn, '') ILIKE e.pattern
-                  OR COALESCE(v.summary, '') ILIKE e.pattern
-              )
-            WHERE v.created_at >= NOW() - %s::interval
-              {topic_where_sql}
-        )
-    """
+    if not all_matched_urls:
+        return f"No landscape data in the last {days} days for entities: {', '.join(entity_list)}."
 
     conn = None
     try:
@@ -252,34 +259,112 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
         if db_now is None or not isinstance(db_now, datetime):
             db_now = datetime.now(timezone.utc).replace(tzinfo=None)
 
+        # --- Fetch all matched article metadata in one query ---
         cur.execute(
-            cte
-            + """
+            """
             SELECT
-                entity,
-                COUNT(*) AS cnt,
-                ROUND(AVG(points)::numeric, 1) AS avg_points,
-                COUNT(*) FILTER (WHERE sentiment = 'Positive') AS pos_cnt,
-                COUNT(*) FILTER (WHERE sentiment = 'Neutral')  AS neu_cnt,
-                COUNT(*) FILTER (WHERE sentiment = 'Negative') AS neg_cnt
-            FROM matched
-            GROUP BY entity
-            ORDER BY cnt DESC, entity ASC
+                COALESCE(v.title_cn, v.title) AS headline,
+                v.url,
+                COALESCE(v.summary, '') AS summary,
+                v.source_type,
+                v.points,
+                v.sentiment,
+                v.created_at
+            FROM view_dashboard_news v
+            WHERE v.url = ANY(%s)
+              AND v.created_at >= NOW() - %s::interval
             """,
-            tuple(params_entities + [f"{days} days"] + topic_params),
+            (all_matched_urls, f"{days} days"),
         )
-        stats_rows = cur.fetchall()
+        article_rows = cur.fetchall()
 
-        cur.execute(
-            cte
-            + """
-            SELECT COUNT(*) AS total_cnt, COUNT(DISTINCT entity) AS active_entities
-            FROM matched
-            """,
-            tuple(params_entities + [f"{days} days"] + topic_params),
-        )
-        total_cnt, active_entities = cur.fetchone()
+        # Build article lookup by URL
+        article_by_url: dict[str, tuple] = {}
+        for row in article_rows:
+            headline, url, summary, source_type, points, sentiment, created_at = row
+            article_by_url[url] = row
 
+        total_cnt = len(article_by_url)
+        active_entities = sum(1 for name in entity_list if any(u in article_by_url for u in entity_url_map.get(name, [])))
+
+        # --- Compute per-entity stats ---
+        split_days = max(3, days // 2)
+        prev_days = max(1, days - split_days)
+        cutoff_ts = db_now - timedelta(days=split_days)
+
+        stat_map: dict[str, dict[str, Any]] = {}
+        source_counts: dict[str, int] = {}
+        entity_source_counts: dict[str, dict[str, int]] = {}
+        momentum_map: dict[str, dict[str, int]] = {name: {"recent": 0, "previous": 0} for name in entity_list}
+
+        for name in entity_list:
+            entity_urls = entity_url_map.get(name, [])
+            cnt = 0
+            points_sum = 0.0
+            pos_cnt = neu_cnt = neg_cnt = 0
+            per_entity_source: dict[str, int] = {}
+
+            for url in entity_urls:
+                art = article_by_url.get(url)
+                if art is None:
+                    continue
+                headline, _, summary, source_type, points, sentiment, created_at = art
+                cnt += 1
+                points_sum += int(points or 0)
+
+                if sentiment == "Positive":
+                    pos_cnt += 1
+                elif sentiment == "Neutral":
+                    neu_cnt += 1
+                elif sentiment == "Negative":
+                    neg_cnt += 1
+
+                source_counts[source_type] = source_counts.get(source_type, 0) + 1
+                per_entity_source[source_type] = per_entity_source.get(source_type, 0) + 1
+
+                if _is_recent_timestamp(created_at, cutoff_ts):
+                    momentum_map[name]["recent"] += 1
+                else:
+                    momentum_map[name]["previous"] += 1
+
+            avg_points = round(points_sum / cnt, 1) if cnt > 0 else 0.0
+            stat_map[name] = {
+                "cnt": cnt,
+                "avg_points": avg_points,
+                "pos_cnt": pos_cnt,
+                "neu_cnt": neu_cnt,
+                "neg_cnt": neg_cnt,
+            }
+            entity_source_counts[name] = per_entity_source
+
+        # --- Signal classification via embedding anchors ---
+        anchors = _get_signal_anchors()
+        signal_counts: dict[str, int] = {k: 0 for k in SIGNAL_ANCHOR_TEXTS.keys()}
+
+        if anchors:
+            # Fetch embeddings for matched articles
+            cur.execute(
+                """
+                SELECT e.url, e.embedding
+                FROM news_embeddings e
+                WHERE e.url = ANY(%s)
+                """,
+                (all_matched_urls,),
+            )
+            emb_rows = cur.fetchall()
+            if emb_rows:
+                article_embeddings: dict[str, list[float]] = {}
+                for emb_url, emb_vec in emb_rows:
+                    # pgvector returns a string or list; normalise
+                    if isinstance(emb_vec, str):
+                        emb_vec = [float(x) for x in emb_vec.strip("[]").split(",")]
+                    elif hasattr(emb_vec, "tolist"):
+                        emb_vec = emb_vec.tolist()
+                    article_embeddings[str(emb_url)] = emb_vec
+
+                signal_counts = _classify_signal_by_embedding(article_embeddings, anchors)
+
+        # --- Topic scope count ---
         topic_scope_sql = """
             SELECT COUNT(*) AS topic_articles
             FROM view_dashboard_news v
@@ -287,81 +372,33 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
         """
         topic_scope_params: list[Any] = [f"{days} days"]
         if topic:
-            topic_clause_sql, topic_scope_topic_params = _build_topic_where_clause(topic, table_alias="v")
-            topic_scope_sql += f" AND {topic_clause_sql}"
-            topic_scope_params.extend(topic_scope_topic_params)
-        cur.execute(topic_scope_sql, tuple(topic_scope_params))
-        topic_articles = int(cur.fetchone()[0] or 0)
+            # Use semantic pool to estimate topic scope
+            topic_pool = fetch_semantic_url_pool(topic, days=days, limit=500)
+            topic_articles = len(topic_pool) if topic_pool else 0
+        else:
+            cur.execute(topic_scope_sql, tuple(topic_scope_params))
+            topic_articles = int(cur.fetchone()[0] or 0)
 
-        cur.execute(
-            cte
-            + """
-            , ranked AS (
-                SELECT
-                    entity,
-                    source_type,
-                    headline,
-                    url,
-                    points,
-                    created_at,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY entity
-                        ORDER BY points DESC NULLS LAST, created_at DESC
-                    ) AS rn
-                FROM matched
-            )
-            SELECT entity, source_type, headline, url, points, created_at, rn
-            FROM ranked
-            WHERE rn <= %s
-            ORDER BY entity, rn
-            """,
-            tuple(params_entities + [f"{days} days"] + topic_params + [limit_per_entity]),
-        )
-        top_rows = cur.fetchall()
+        # --- Top evidence URLs per entity ---
+        # Build from in-memory data: sort each entity's articles by points
+        top_rows: list[tuple] = []
+        for name in entity_list:
+            entity_urls = entity_url_map.get(name, [])
+            entity_articles = []
+            for url in entity_urls:
+                art = article_by_url.get(url)
+                if art is not None:
+                    headline, _, summary, source_type, points, sentiment, created_at = art
+                    entity_articles.append((name, source_type, headline, url, points, created_at))
+            # Sort by points desc, then created_at desc
+            entity_articles.sort(key=lambda x: (-(x[4] or 0), x[5] if x[5] else datetime.min), reverse=False)
+            entity_articles.sort(key=lambda x: -(x[4] or 0))
+            for rank, art_tuple in enumerate(entity_articles[:limit_per_entity], 1):
+                top_rows.append(art_tuple + (rank,))
 
-        cur.execute(
-            cte
-            + """
-            SELECT entity, source_type, headline, summary, created_at
-            FROM matched
-            """,
-            tuple(params_entities + [f"{days} days"] + topic_params),
-        )
-        sample_rows = cur.fetchall()
         cur.close()
 
-        if not total_cnt:
-            if topic_articles > 0:
-                return (
-                    f"Topic '{topic_label}' has {topic_articles} articles in the last {days} days, "
-                    "but no tracked entities matched. Try passing explicit entities."
-                )
-            return f"No landscape data in the last {days} days for entities: {', '.join(entity_list)}."
-
-        stat_map: dict[str, tuple[int, Any, int, int, int]] = {}
-        for entity, cnt, avg_points, pos_cnt, neu_cnt, neg_cnt in stats_rows:
-            stat_map[entity] = (cnt, avg_points, pos_cnt, neu_cnt, neg_cnt)
-
-        split_days = max(3, days // 2)
-        prev_days = max(1, days - split_days)
-        cutoff_ts = db_now - timedelta(days=split_days)
-
-        source_counts: dict[str, int] = {}
-        entity_source_counts: dict[str, dict[str, int]] = {}
-        momentum_map: dict[str, dict[str, int]] = {name: {"recent": 0, "previous": 0} for name in entity_list}
-        for entity, source_type, headline, summary, created_at in sample_rows:
-            source_counts[source_type] = source_counts.get(source_type, 0) + 1
-            per_entity = entity_source_counts.setdefault(entity, {})
-            per_entity[source_type] = per_entity.get(source_type, 0) + 1
-            if entity not in momentum_map:
-                momentum_map[entity] = {"recent": 0, "previous": 0}
-            if _is_recent_timestamp(created_at, cutoff_ts):
-                momentum_map[entity]["recent"] += 1
-            else:
-                momentum_map[entity]["previous"] += 1
-
-        signal_counts = _landscape_signal_counts(sample_rows)
-
+        # --- Format output ---
         lines = [
             f"Landscape snapshot: topic={topic_label} (last {days} days)",
             f"Entities requested: {', '.join(entity_list)}",
@@ -390,15 +427,21 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
             else:
                 delta_text = f"{((float(recent) - float(previous)) / float(previous)) * 100:+.1f}%"
 
-            if name not in stat_map:
+            stats = stat_map.get(name, {})
+            cnt = stats.get("cnt", 0)
+            if cnt == 0:
                 lines.append(
                     f"  {name}: count=0, share=0.0%, avg_points=0, "
                     f"sentiment(P/N/Ng)=0/0/0, momentum_recent_vs_prev={recent}/{previous} ({delta_text})"
                 )
                 continue
-            cnt, avg_points, pos_cnt, neu_cnt, neg_cnt = stat_map[name]
+
             share = (float(cnt) / float(total_cnt)) * 100 if total_cnt else 0.0
-            avg_points_value = float(avg_points) if avg_points is not None else 0.0
+            avg_points_value = float(stats.get("avg_points", 0.0))
+            pos_cnt = stats.get("pos_cnt", 0)
+            neu_cnt = stats.get("neu_cnt", 0)
+            neg_cnt = stats.get("neg_cnt", 0)
+
             top_source_note = ""
             per_entity_source = entity_source_counts.get(name, {})
             if per_entity_source:
@@ -411,12 +454,12 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
                 f"momentum_recent_vs_prev={recent}/{previous} ({delta_text}){top_source_note}"
             )
 
-        lines.append("Variable signals (keyword proxy, headline+summary):")
+        lines.append("Variable signals (embedding anchor classification):")
         for key, label in LANDSCAPE_SIGNAL_LABELS.items():
             signal_cnt = int(signal_counts.get(key, 0))
             signal_share = (float(signal_cnt) / float(total_cnt)) * 100 if total_cnt else 0.0
             lines.append(f"  {label}: count={signal_cnt}, share={signal_share:.1f}%")
-        lines.append("Signal note: keyword proxy for triage; verify with evidence URLs.")
+        lines.append("Signal note: classified by embedding similarity to category anchors.")
 
         lines.append("Evidence URLs:")
         for entity, source_type, headline, url, points, created_at, rank in top_rows:

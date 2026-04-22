@@ -7,6 +7,35 @@ from services.db import get_conn, put_conn
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_text_output
 from .schemas import CompareTopicsSkillInput
+from .semantic_pool import fetch_semantic_url_pool
+
+
+def _resolve_topic_pools(
+    topic_a: str, topic_b: str, *, days: int
+) -> tuple[list[str], list[str]]:
+    """Build two non-overlapping URL lists from semantic pools.
+
+    When a URL appears in both pools, it is assigned to the topic
+    with the higher similarity score (intersection arbitration).
+    """
+    pool_a = fetch_semantic_url_pool(topic_a, days=days, limit=200)
+    pool_b = fetch_semantic_url_pool(topic_b, days=days, limit=200)
+
+    sim_a = {url: sim for url, sim in pool_a}
+    sim_b = {url: sim for url, sim in pool_b}
+
+    urls_a: list[str] = []
+    urls_b: list[str] = []
+
+    for url in set(sim_a.keys()) | set(sim_b.keys()):
+        sa = sim_a.get(url, -1.0)
+        sb = sim_b.get(url, -1.0)
+        if sa >= sb:
+            urls_a.append(url)
+        else:
+            urls_b.append(url)
+
+    return urls_a, urls_b
 
 
 def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
@@ -20,26 +49,38 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
     days = _clamp_int(days, 1, 90)
     split_days = max(3, days // 2)
     prev_days = max(1, days - split_days)
-    query_a = f"%{topic_a}%"
-    query_b = f"%{topic_b}%"
+
+    # Semantic vector pools with intersection arbitration
+    urls_a, urls_b = _resolve_topic_pools(topic_a, topic_b, days=days)
+    if not urls_a and not urls_b:
+        return (
+            f"No semantically matched articles for either '{topic_a}' or "
+            f"'{topic_b}' in the last {days} days."
+        )
+
+    # Combined list for the outer WHERE filter
+    urls_all = urls_a + urls_b
 
     conn = None
     try:
         conn = get_conn()
         cur = conn.cursor()
+
+        # --- 1. Core metrics per group ---
         cur.execute(
             """
             WITH labeled AS (
                 SELECT
                     CASE
-                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'A'
-                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'B'
+                        WHEN url = ANY(%s) THEN 'A'
+                        WHEN url = ANY(%s) THEN 'B'
                         ELSE NULL
                     END AS grp,
                     points,
                     sentiment
                 FROM tech_news
                 WHERE created_at >= NOW() - %s::interval
+                  AND url = ANY(%s)
             )
             SELECT
                 grp,
@@ -53,22 +94,24 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
             GROUP BY grp
             ORDER BY grp
             """,
-            (query_a, query_a, query_a, query_b, query_b, query_b, f"{days} days"),
+            (urls_a, urls_b, f"{days} days", urls_all),
         )
         metric_rows = cur.fetchall()
 
+        # --- 2. Source mix ---
         cur.execute(
             """
             WITH labeled AS (
                 SELECT
                     CASE
-                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'A'
-                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'B'
+                        WHEN url = ANY(%s) THEN 'A'
+                        WHEN url = ANY(%s) THEN 'B'
                         ELSE NULL
                     END AS grp,
                     source_type
                 FROM view_dashboard_news
                 WHERE created_at >= NOW() - %s::interval
+                  AND url = ANY(%s)
             )
             SELECT grp, source_type, COUNT(*) AS cnt
             FROM labeled
@@ -76,22 +119,24 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
             GROUP BY grp, source_type
             ORDER BY grp, cnt DESC, source_type ASC
             """,
-            (query_a, query_a, query_a, query_b, query_b, query_b, f"{days} days"),
+            (urls_a, urls_b, f"{days} days", urls_all),
         )
         source_rows = cur.fetchall()
 
+        # --- 3. Momentum (recent vs previous) ---
         cur.execute(
             """
             WITH labeled AS (
                 SELECT
                     CASE
-                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'A'
-                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'B'
+                        WHEN url = ANY(%s) THEN 'A'
+                        WHEN url = ANY(%s) THEN 'B'
                         ELSE NULL
                     END AS grp,
                     created_at
                 FROM tech_news
                 WHERE created_at >= NOW() - %s::interval
+                  AND url = ANY(%s)
             )
             SELECT
                 grp,
@@ -103,26 +148,24 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
             ORDER BY grp
             """,
             (
-                query_a,
-                query_a,
-                query_a,
-                query_b,
-                query_b,
-                query_b,
+                urls_a,
+                urls_b,
                 f"{days} days",
+                urls_all,
                 f"{split_days} days",
                 f"{split_days} days",
             ),
         )
         momentum_rows = cur.fetchall()
 
+        # --- 4. Top evidence URLs ---
         cur.execute(
             """
             WITH candidates AS (
                 SELECT
                     CASE
-                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'A'
-                        WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'B'
+                        WHEN url = ANY(%s) THEN 'A'
+                        WHEN url = ANY(%s) THEN 'B'
                         ELSE NULL
                     END AS grp,
                     source_type,
@@ -133,14 +176,15 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
                     ROW_NUMBER() OVER (
                         PARTITION BY
                             CASE
-                                WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'A'
-                                WHEN (title ILIKE %s OR COALESCE(title_cn,'') ILIKE %s OR COALESCE(summary,'') ILIKE %s) THEN 'B'
+                                WHEN url = ANY(%s) THEN 'A'
+                                WHEN url = ANY(%s) THEN 'B'
                                 ELSE NULL
                             END
                         ORDER BY points DESC NULLS LAST, created_at DESC
                     ) AS rn
                 FROM view_dashboard_news
                 WHERE created_at >= NOW() - %s::interval
+                  AND url = ANY(%s)
             )
             SELECT grp, source_type, headline, url, points, created_at, rn
             FROM candidates
@@ -148,19 +192,12 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
             ORDER BY grp, rn
             """,
             (
-                query_a,
-                query_a,
-                query_a,
-                query_b,
-                query_b,
-                query_b,
-                query_a,
-                query_a,
-                query_a,
-                query_b,
-                query_b,
-                query_b,
+                urls_a,
+                urls_b,
+                urls_a,
+                urls_b,
                 f"{days} days",
+                urls_all,
             ),
         )
         top_rows = cur.fetchall()

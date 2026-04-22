@@ -1,38 +1,83 @@
-"""Tests for topic expansion config loading."""
+"""Tests for semantic pool — replacement for the old topic-expansion config tests.
+
+The original test_topic_config.py validated hardcoded dictionary loading from
+``sql_builders.py``.  That module has been deprecated in favour of
+``semantic_pool.fetch_semantic_url_pool``.  These tests verify the new
+semantic infrastructure at a unit level (mocked embedding API).
+"""
 
 from __future__ import annotations
 
-import json
-import uuid
-from pathlib import Path
-from shutil import rmtree
+from unittest.mock import patch
 
-from agent.skills.sql_builders import load_topic_query_expansions
-
-
-def test_default_topic_expansion_contains_ai_keywords() -> None:
-    expansions = load_topic_query_expansions(force_reload=True)
-    assert "ai" in expansions
-    lowered = {item.lower() for item in expansions["ai"]}
-    assert "gpt" in lowered
+from agent.skills.semantic_pool import (
+    _cache_get,
+    _cache_set,
+    _embedding_cache,
+    _evict_stale_cache,
+    _get_embedding_with_retry,
+)
 
 
-def test_topic_expansion_loader_supports_env_override(monkeypatch) -> None:
-    tmp_root = Path("tests/unit/.tmp_topic_config")
-    tmp_root.mkdir(parents=True, exist_ok=True)
-    tmp_dir = tmp_root / f"case_{uuid.uuid4().hex}"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        config_path = tmp_dir / "topic_query_expansions.json"
-        config_path.write_text(
-            json.dumps({"ai": ["AI", "DeepSeek"], "security": ["security"]}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        monkeypatch.setenv("AGENT_TOPIC_EXPANSIONS_PATH", str(config_path))
+def test_cache_set_and_get_happy_path() -> None:
+    """Stored embeddings are retrievable within TTL."""
+    _embedding_cache.clear()
+    vec = [0.1, 0.2, 0.3]
+    _cache_set("test_query", vec)
+    result = _cache_get("test_query")
+    assert result == vec
+    _embedding_cache.clear()
 
-        expansions = load_topic_query_expansions(force_reload=True)
-        assert expansions["ai"] == ["AI", "DeepSeek"]
-    finally:
-        monkeypatch.delenv("AGENT_TOPIC_EXPANSIONS_PATH", raising=False)
-        load_topic_query_expansions(force_reload=True)
-        rmtree(tmp_dir, ignore_errors=True)
+
+def test_cache_get_returns_none_for_missing_key() -> None:
+    _embedding_cache.clear()
+    assert _cache_get("nonexistent") is None
+
+
+def test_evict_stale_cache_removes_expired_entries() -> None:
+    """Entries older than TTL are evicted."""
+    _embedding_cache.clear()
+    # Insert an entry with a timestamp far in the past
+    _embedding_cache["old_query"] = ([0.1], 0.0)
+    _evict_stale_cache()
+    assert "old_query" not in _embedding_cache
+    _embedding_cache.clear()
+
+
+def test_get_embedding_with_retry_returns_on_first_success() -> None:
+    """If the first call succeeds, no retry occurs."""
+    _embedding_cache.clear()
+    fake_vec = [0.5] * 10
+    with patch(
+        "agent.skills.semantic_pool._get_query_embedding",
+        return_value=fake_vec,
+    ) as mock_embed:
+        result = _get_embedding_with_retry("hello")
+    assert result == fake_vec
+    mock_embed.assert_called_once()
+    _embedding_cache.clear()
+
+
+def test_get_embedding_with_retry_retries_on_failure(monkeypatch) -> None:
+    """On first failure, the function retries and succeeds on the second call."""
+    _embedding_cache.clear()
+    monkeypatch.setenv("SEMANTIC_POOL_RETRY_COUNT", "1")
+    fake_vec = [0.9] * 10
+    call_count = {"n": 0}
+
+    def _mock_embed(query: str):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return None  # first call fails
+        return fake_vec
+
+    with patch(
+        "agent.skills.semantic_pool._get_query_embedding",
+        side_effect=_mock_embed,
+    ):
+        # Reduce delay to speed up test
+        with patch("agent.skills.semantic_pool._DEFAULT_RETRY_DELAY", 0.01):
+            result = _get_embedding_with_retry("hello")
+    assert result == fake_vec
+    assert call_count["n"] == 2
+    _embedding_cache.clear()

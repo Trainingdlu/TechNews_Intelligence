@@ -65,3 +65,8 @@ skills-lock.json
 eval/datasets/generated_rag_testset*.csv
 eval/datasets/_mock_generated_rag_testset.csv
 eval/datasets/versions/v*/
+eval/datasets/*.checkpoint.json
+eval/datasets/*.checkpoint.json.bak
+eval/datasets/*.jsonl
+eval/datasets/*_manifest.json
+*.log

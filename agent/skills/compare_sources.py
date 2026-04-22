@@ -7,7 +7,7 @@ from services.db import get_conn, put_conn
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_text_output
 from .schemas import CompareSourcesSkillInput
-from .sql_builders import _build_topic_where_clause
+from .semantic_pool import fetch_semantic_url_pool
 
 
 def compare_sources(topic: str, days: int = 14) -> str:
@@ -17,12 +17,19 @@ def compare_sources(topic: str, days: int = 14) -> str:
         return "compare_sources requires topic."
 
     days = _clamp_int(days, 1, 90)
-    topic_clause, topic_params = _build_topic_where_clause(topic)
+
+    # Semantic vector pool replaces the old ILIKE + hardcoded dictionary approach
+    url_pool = fetch_semantic_url_pool(topic, days=days, limit=200)
+    if not url_pool:
+        return f"No comparison data for '{topic}' in {days} days."
+
+    urls = [u for u, _ in url_pool]
+
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            f"""
+            """
             SELECT
                 source_type,
                 COUNT(*) AS cnt,
@@ -32,16 +39,16 @@ def compare_sources(topic: str, days: int = 14) -> str:
                 COUNT(*) FILTER (WHERE sentiment = 'Negative') AS neg_cnt
             FROM view_dashboard_news
             WHERE created_at >= NOW() - %s::interval
-              AND {topic_clause}
+              AND url = ANY(%s)
             GROUP BY source_type
             ORDER BY source_type
             """,
-            tuple([f"{days} days"] + topic_params),
+            (f"{days} days", urls),
         )
         stats_rows = cur.fetchall()
 
         cur.execute(
-            f"""
+            """
             WITH ranked AS (
                 SELECT
                     source_type,
@@ -52,14 +59,14 @@ def compare_sources(topic: str, days: int = 14) -> str:
                     ROW_NUMBER() OVER (PARTITION BY source_type ORDER BY points DESC NULLS LAST, created_at DESC) AS rn
                 FROM view_dashboard_news
                 WHERE created_at >= NOW() - %s::interval
-                  AND {topic_clause}
+                  AND url = ANY(%s)
             )
             SELECT source_type, headline, url, points, created_at, rn
             FROM ranked
             WHERE rn <= 3
             ORDER BY source_type, rn
             """,
-            tuple([f"{days} days"] + topic_params),
+            (f"{days} days", urls),
         )
         top_rows = cur.fetchall()
         cur.close()

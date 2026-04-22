@@ -7,7 +7,7 @@ from services.db import get_conn, put_conn
 from ..core.skill_contracts import SkillEnvelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_text_output
 from .schemas import BuildTimelineSkillInput
-from .sql_builders import _build_topic_where_clause
+from .semantic_pool import fetch_semantic_url_pool
 
 
 def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
@@ -18,12 +18,28 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
 
     days = _clamp_int(days, 1, 180)
     limit = _clamp_int(limit, 3, 40)
-    topic_clause, topic_params = _build_topic_where_clause(topic)
+
+    # Semantic vector pool replaces the old ILIKE + hardcoded dictionary approach
+    url_pool = fetch_semantic_url_pool(topic, days=days, limit=limit * 5)
+
+    # Auto-retry with wider window if empty and original window is narrow
+    if not url_pool and days < 90:
+        retry_days = min(180, max(60, days * 2))
+        print(f"[Tool] build_timeline: empty for {days}d, auto-retrying with {retry_days}d")
+        url_pool = fetch_semantic_url_pool(topic, days=retry_days, limit=limit * 5)
+        if url_pool:
+            days = retry_days
+
+    if not url_pool:
+        return f"No timeline data for '{topic}' in {days} days."
+
+    urls = [u for u, _ in url_pool]
+
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute(
-            f"""
+            """
             SELECT
                 created_at,
                 source_type,
@@ -32,41 +48,15 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
                 points,
                 url
             FROM view_dashboard_news
-            WHERE created_at >= NOW() - %s::interval
-              AND {topic_clause}
+            WHERE url = ANY(%s)
+              AND created_at >= NOW() - %s::interval
             ORDER BY created_at ASC
             LIMIT %s
             """,
-            tuple([f"{days} days"] + topic_params + [limit]),
+            (urls, f"{days} days", limit),
         )
         rows = cur.fetchall()
         cur.close()
-
-        if not rows and days < 90:
-            retry_days = min(180, max(60, days * 2))
-            print(f"[Tool] build_timeline: empty for {days}d, auto-retrying with {retry_days}d")
-            cur = conn.cursor()
-            cur.execute(
-                f"""
-                SELECT
-                    created_at,
-                    source_type,
-                    COALESCE(title_cn, title) AS headline,
-                    sentiment,
-                    points,
-                    url
-                FROM view_dashboard_news
-                WHERE created_at >= NOW() - %s::interval
-                  AND {topic_clause}
-                ORDER BY created_at ASC
-                LIMIT %s
-                """,
-                tuple([f"{retry_days} days"] + topic_params + [limit]),
-            )
-            rows = cur.fetchall()
-            cur.close()
-            if rows:
-                days = retry_days
 
         if not rows:
             return f"No timeline data for '{topic}' in {days} days."
