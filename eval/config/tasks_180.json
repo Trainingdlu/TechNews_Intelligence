@@ -1,0 +1,1772 @@
+[
+  {
+    "task_id": "search_news.normal",
+    "skill": "search_news",
+    "intent_label": "search_news",
+    "retrieval_mode": "evaluable",
+    "scenario": "normal",
+    "example_question": "Find English news related to Claude.",
+    "parameter_template": {
+      "query": "Claude related English news",
+      "days": 21
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "Claude related English news",
+            "days": 21
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "Claude",
+            "days": 21,
+            "limit": 10
+          }
+        },
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "Claude related English news",
+            "days": 21
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "search_news"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 10,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "Claude",
+        "Anthropic"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "normal"
+    ]
+  },
+  {
+    "task_id": "search_news.conflict",
+    "skill": "search_news",
+    "intent_label": "search_news",
+    "retrieval_mode": "evaluable",
+    "scenario": "conflict",
+    "example_question": "Search mixed intent query that requires clarifying target entity before retrieval.",
+    "parameter_template": {
+      "query": "OpenAI vs Anthropic but only one target after clarification",
+      "days": 21
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "OpenAI vs Anthropic but only one target after clarification",
+            "days": 21
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "OpenAI vs Anthropic but only one target after clarification",
+            "days": 21,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "OpenAI vs Anthropic but only one target after clarification",
+            "days": 21
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "search_news"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": true,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 8,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "Claude",
+        "Anthropic"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "conflict"
+    ]
+  },
+  {
+    "task_id": "search_news.empty",
+    "skill": "search_news",
+    "intent_label": "search_news",
+    "retrieval_mode": "non_retrieval",
+    "scenario": "empty",
+    "example_question": "Search for a very rare technical keyword and expect no relevant results.",
+    "parameter_template": {
+      "query": "ultra-rare-keyword-zzqv-2026",
+      "days": 14
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "ultra-rare-keyword-zzqv-2026",
+            "days": 14
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "ultra-rare-keyword-zzqv-2026",
+            "days": 14,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "ultra-rare-keyword-zzqv-2026",
+            "days": 14
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "search_news"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 4,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "Claude",
+        "Anthropic"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "empty"
+    ]
+  },
+  {
+    "task_id": "search_news.boundary",
+    "skill": "search_news",
+    "intent_label": "search_news",
+    "retrieval_mode": "evaluable",
+    "scenario": "boundary",
+    "example_question": "Search cross-market AI governance updates with a narrow time window and return the most relevant items.",
+    "parameter_template": {
+      "query": "AI governance export controls edge cases",
+      "days": 5
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "Claude related English news",
+            "days": 21
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "Claude",
+            "days": 21,
+            "limit": 10
+          }
+        },
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "Claude related English news",
+            "days": 21
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "search_news"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "hard",
+    "sampling": {
+      "days": 30,
+      "n_min": 2,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "Claude",
+        "Anthropic"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "boundary"
+    ]
+  },
+  {
+    "task_id": "fulltext_batch.normal",
+    "skill": "fulltext_batch",
+    "intent_label": "fulltext_batch",
+    "retrieval_mode": "evaluable",
+    "scenario": "normal",
+    "example_question": "Batch read full text for OpenAI Voice Engine topic without explicit URLs.",
+    "parameter_template": {
+      "urls": "OpenAI Voice Engine recent 14 days",
+      "max_chars_per_article": 4000
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "fulltext_batch",
+          "args": {
+            "urls": "OpenAI Voice Engine recent 14 days",
+            "max_chars_per_article": 4000
+          }
+        }
+      ],
+      [
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "OpenAI Voice Engine recent 14 days",
+            "days": 14
+          }
+        },
+        {
+          "tool": "fulltext_batch",
+          "args": {
+            "urls": "OpenAI Voice Engine recent 14 days",
+            "max_chars_per_article": 4000
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "fulltext_batch"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "hard",
+    "sampling": {
+      "days": 30,
+      "n_min": 10,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Voice"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "normal"
+    ]
+  },
+  {
+    "task_id": "fulltext_batch.conflict",
+    "skill": "fulltext_batch",
+    "intent_label": "fulltext_batch",
+    "retrieval_mode": "evaluable",
+    "scenario": "conflict",
+    "example_question": "Ask fulltext batch to both avoid auto-select and not provide URLs; clarification needed.",
+    "parameter_template": {
+      "urls": "need clarification: no urls but no auto-select allowed",
+      "max_chars_per_article": 4000
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "fulltext_batch",
+          "args": {
+            "urls": "need clarification: no urls but no auto-select allowed",
+            "max_chars_per_article": 4000
+          }
+        }
+      ],
+      [
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "need clarification: no urls but no auto-select allowed",
+            "days": 14
+          }
+        },
+        {
+          "tool": "fulltext_batch",
+          "args": {
+            "urls": "need clarification: no urls but no auto-select allowed",
+            "max_chars_per_article": 4000
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "fulltext_batch"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": true,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 8,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Voice"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "conflict"
+    ]
+  },
+  {
+    "task_id": "fulltext_batch.empty",
+    "skill": "fulltext_batch",
+    "intent_label": "fulltext_batch",
+    "retrieval_mode": "non_retrieval",
+    "scenario": "empty",
+    "example_question": "Batch read full text for a rare query expected to return no candidates.",
+    "parameter_template": {
+      "urls": "ultra-rare-fulltext-query-zzqv-2026",
+      "max_chars_per_article": 4000
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "fulltext_batch",
+          "args": {
+            "urls": "ultra-rare-fulltext-query-zzqv-2026",
+            "max_chars_per_article": 4000
+          }
+        }
+      ],
+      [
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "ultra-rare-fulltext-query-zzqv-2026",
+            "days": 14
+          }
+        },
+        {
+          "tool": "fulltext_batch",
+          "args": {
+            "urls": "ultra-rare-fulltext-query-zzqv-2026",
+            "max_chars_per_article": 4000
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "fulltext_batch"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "hard",
+    "sampling": {
+      "days": 30,
+      "n_min": 4,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Voice"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "empty"
+    ]
+  },
+  {
+    "task_id": "fulltext_batch.boundary",
+    "skill": "fulltext_batch",
+    "intent_label": "fulltext_batch",
+    "retrieval_mode": "evaluable",
+    "scenario": "boundary",
+    "example_question": "Without URLs, auto-select OpenAI Voice Engine docs in last 14 days and read full text.",
+    "parameter_template": {
+      "urls": "OpenAI Voice Engine recent 14 days",
+      "max_chars_per_article": 4000
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "fulltext_batch",
+          "args": {
+            "urls": "OpenAI Voice Engine recent 14 days",
+            "max_chars_per_article": 4000
+          }
+        }
+      ],
+      [
+        {
+          "tool": "search_news",
+          "args": {
+            "query": "OpenAI Voice Engine",
+            "days": 14
+          }
+        },
+        {
+          "tool": "fulltext_batch",
+          "args": {
+            "urls": "OpenAI Voice Engine recent 14 days",
+            "max_chars_per_article": 4000
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "fulltext_batch"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "hard",
+    "sampling": {
+      "days": 30,
+      "n_min": 6,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Voice"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "boundary"
+    ]
+  },
+  {
+    "task_id": "compare_topics.normal",
+    "skill": "compare_topics",
+    "intent_label": "compare_topics",
+    "retrieval_mode": "evaluable",
+    "scenario": "normal",
+    "example_question": "Compare OpenAI and Anthropic heat and source mix in last 21 days.",
+    "parameter_template": {
+      "topic_a": "OpenAI",
+      "topic_b": "Anthropic",
+      "days": 21
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "compare_topics",
+          "args": {
+            "topic_a": "OpenAI",
+            "topic_b": "Anthropic",
+            "days": 21
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "OpenAI",
+            "days": 21,
+            "limit": 10
+          }
+        },
+        {
+          "tool": "compare_topics",
+          "args": {
+            "topic_a": "OpenAI",
+            "topic_b": "Anthropic",
+            "days": 21
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "compare_topics"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 9,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Anthropic"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "normal"
+    ]
+  },
+  {
+    "task_id": "compare_topics.conflict",
+    "skill": "compare_topics",
+    "intent_label": "compare_topics",
+    "retrieval_mode": "evaluable",
+    "scenario": "conflict",
+    "example_question": "Compare A/B but also include a third entity in same request; requires clarification.",
+    "parameter_template": {
+      "topic_a": "OpenAI",
+      "topic_b": "Anthropic plus xAI",
+      "days": 21
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "compare_topics",
+          "args": {
+            "topic_a": "OpenAI",
+            "topic_b": "Anthropic plus xAI",
+            "days": 21
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "OpenAI",
+            "days": 21,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "compare_topics",
+          "args": {
+            "topic_a": "OpenAI",
+            "topic_b": "Anthropic plus xAI",
+            "days": 21
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "compare_topics"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": true,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 7,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Anthropic"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "conflict"
+    ]
+  },
+  {
+    "task_id": "compare_topics.empty",
+    "skill": "compare_topics",
+    "intent_label": "compare_topics",
+    "retrieval_mode": "non_retrieval",
+    "scenario": "empty",
+    "example_question": "Compare two rare entities in recent window expecting insufficient data.",
+    "parameter_template": {
+      "topic_a": "rare_entity_alpha",
+      "topic_b": "rare_entity_beta",
+      "days": 21
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "compare_topics",
+          "args": {
+            "topic_a": "rare_entity_alpha",
+            "topic_b": "rare_entity_beta",
+            "days": 21
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "rare_entity_alpha",
+            "days": 21,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "compare_topics",
+          "args": {
+            "topic_a": "rare_entity_alpha",
+            "topic_b": "rare_entity_beta",
+            "days": 21
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "compare_topics"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 4,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Anthropic"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "empty"
+    ]
+  },
+  {
+    "task_id": "compare_topics.boundary",
+    "skill": "compare_topics",
+    "intent_label": "compare_topics",
+    "retrieval_mode": "evaluable",
+    "scenario": "boundary",
+    "example_question": "Compare two adjacent AI subtopics with sparse overlap and summarize key differences.",
+    "parameter_template": {
+      "topic_a": "AI red teaming",
+      "topic_b": "model auditing",
+      "days": 10
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "compare_topics",
+          "args": {
+            "topic_a": "OpenAI",
+            "topic_b": "Anthropic",
+            "days": 21
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "OpenAI",
+            "days": 21,
+            "limit": 10
+          }
+        },
+        {
+          "tool": "compare_topics",
+          "args": {
+            "topic_a": "OpenAI",
+            "topic_b": "Anthropic",
+            "days": 21
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "compare_topics"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "hard",
+    "sampling": {
+      "days": 30,
+      "n_min": 2,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Anthropic"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "boundary"
+    ]
+  },
+  {
+    "task_id": "compare_sources.normal",
+    "skill": "compare_sources",
+    "intent_label": "compare_sources",
+    "retrieval_mode": "evaluable",
+    "scenario": "normal",
+    "example_question": "Compare NVIDIA coverage and sentiment on HackerNews vs TechCrunch in last 14 days.",
+    "parameter_template": {
+      "topic": "NVIDIA",
+      "days": 14
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "compare_sources",
+          "args": {
+            "topic": "NVIDIA",
+            "days": 14
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "NVIDIA",
+            "days": 14,
+            "limit": 10
+          }
+        },
+        {
+          "tool": "compare_sources",
+          "args": {
+            "topic": "NVIDIA",
+            "days": 14
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "compare_sources"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 9,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "NVIDIA"
+      ],
+      "sources": [
+        "HackerNews",
+        "TechCrunch"
+      ],
+      "languages": []
+    },
+    "tags": [
+      "normal"
+    ]
+  },
+  {
+    "task_id": "compare_sources.conflict",
+    "skill": "compare_sources",
+    "intent_label": "compare_sources",
+    "retrieval_mode": "evaluable",
+    "scenario": "conflict",
+    "example_question": "Compare sources while requesting conflicting source scope constraints.",
+    "parameter_template": {
+      "topic": "NVIDIA with conflicting source constraints",
+      "days": 14
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "compare_sources",
+          "args": {
+            "topic": "NVIDIA with conflicting source constraints",
+            "days": 14
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "NVIDIA with conflicting source constraints",
+            "days": 14,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "compare_sources",
+          "args": {
+            "topic": "NVIDIA with conflicting source constraints",
+            "days": 14
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "compare_sources"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": true,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 7,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "NVIDIA"
+      ],
+      "sources": [
+        "HackerNews",
+        "TechCrunch"
+      ],
+      "languages": []
+    },
+    "tags": [
+      "conflict"
+    ]
+  },
+  {
+    "task_id": "compare_sources.empty",
+    "skill": "compare_sources",
+    "intent_label": "compare_sources",
+    "retrieval_mode": "non_retrieval",
+    "scenario": "empty",
+    "example_question": "Compare source coverage for a rare topic with likely empty result.",
+    "parameter_template": {
+      "topic": "rare source compare keyword",
+      "days": 14
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "compare_sources",
+          "args": {
+            "topic": "rare source compare keyword",
+            "days": 14
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "rare source compare keyword",
+            "days": 14,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "compare_sources",
+          "args": {
+            "topic": "rare source compare keyword",
+            "days": 14
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "compare_sources"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 30,
+      "n_min": 4,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "NVIDIA"
+      ],
+      "sources": [
+        "HackerNews",
+        "TechCrunch"
+      ],
+      "languages": []
+    },
+    "tags": [
+      "empty"
+    ]
+  },
+  {
+    "task_id": "compare_sources.boundary",
+    "skill": "compare_sources",
+    "intent_label": "compare_sources",
+    "retrieval_mode": "evaluable",
+    "scenario": "boundary",
+    "example_question": "Compare source bias and sentiment for a low-frequency topic over a narrow window.",
+    "parameter_template": {
+      "topic": "AI benchmark leakage",
+      "days": 10
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "compare_sources",
+          "args": {
+            "topic": "NVIDIA",
+            "days": 14
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "NVIDIA",
+            "days": 14,
+            "limit": 10
+          }
+        },
+        {
+          "tool": "compare_sources",
+          "args": {
+            "topic": "NVIDIA",
+            "days": 14
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "compare_sources"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "hard",
+    "sampling": {
+      "days": 30,
+      "n_min": 2,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "NVIDIA"
+      ],
+      "sources": [
+        "HackerNews",
+        "TechCrunch"
+      ],
+      "languages": []
+    },
+    "tags": [
+      "boundary"
+    ]
+  },
+  {
+    "task_id": "build_timeline.normal",
+    "skill": "build_timeline",
+    "intent_label": "build_timeline",
+    "retrieval_mode": "evaluable",
+    "scenario": "normal",
+    "example_question": "Build OpenAI timeline for last 30 days, max 12 events.",
+    "parameter_template": {
+      "topic": "OpenAI",
+      "days": 30,
+      "limit": 12
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "build_timeline",
+          "args": {
+            "topic": "OpenAI",
+            "days": 30,
+            "limit": 12
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "OpenAI",
+            "days": 30,
+            "sort": "time_asc",
+            "limit": 12
+          }
+        },
+        {
+          "tool": "build_timeline",
+          "args": {
+            "topic": "OpenAI",
+            "days": 30,
+            "limit": 12
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "build_timeline"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "easy",
+    "sampling": {
+      "days": 45,
+      "n_min": 10,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "normal"
+    ]
+  },
+  {
+    "task_id": "build_timeline.conflict",
+    "skill": "build_timeline",
+    "intent_label": "build_timeline",
+    "retrieval_mode": "evaluable",
+    "scenario": "conflict",
+    "example_question": "Build one timeline but ask to merge two unrelated entities without clear priority.",
+    "parameter_template": {
+      "topic": "OpenAI and Anthropic mixed timeline",
+      "days": 30,
+      "limit": 12
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "build_timeline",
+          "args": {
+            "topic": "OpenAI and Anthropic mixed timeline",
+            "days": 30,
+            "limit": 12
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "OpenAI and Anthropic mixed timeline",
+            "days": 30,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "build_timeline",
+          "args": {
+            "topic": "OpenAI and Anthropic mixed timeline",
+            "days": 30,
+            "limit": 12
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "build_timeline"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": true,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 45,
+      "n_min": 8,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "conflict"
+    ]
+  },
+  {
+    "task_id": "build_timeline.empty",
+    "skill": "build_timeline",
+    "intent_label": "build_timeline",
+    "retrieval_mode": "non_retrieval",
+    "scenario": "empty",
+    "example_question": "Build timeline for an ultra-low-frequency topic in a very short window expecting empty.",
+    "parameter_template": {
+      "topic": "rare timeline keyword",
+      "days": 7,
+      "limit": 12
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "build_timeline",
+          "args": {
+            "topic": "rare timeline keyword",
+            "days": 7,
+            "limit": 12
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "rare timeline keyword",
+            "days": 7,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "build_timeline",
+          "args": {
+            "topic": "rare timeline keyword",
+            "days": 7,
+            "limit": 12
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "build_timeline"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "easy",
+    "sampling": {
+      "days": 45,
+      "n_min": 4,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "empty"
+    ]
+  },
+  {
+    "task_id": "build_timeline.boundary",
+    "skill": "build_timeline",
+    "intent_label": "build_timeline",
+    "retrieval_mode": "evaluable",
+    "scenario": "boundary",
+    "example_question": "Build low-frequency topic timeline for last 14 days, expecting auto-expand.",
+    "parameter_template": {
+      "topic": "low frequency topic",
+      "days": 14,
+      "limit": 12
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "build_timeline",
+          "args": {
+            "topic": "low frequency topic",
+            "days": 14,
+            "limit": 12
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "low frequency topic",
+            "days": 30,
+            "sort": "time_desc",
+            "limit": 12
+          }
+        },
+        {
+          "tool": "build_timeline",
+          "args": {
+            "topic": "low frequency topic",
+            "days": 14,
+            "limit": 12
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "build_timeline"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "hard",
+    "sampling": {
+      "days": 90,
+      "n_min": 6,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Anthropic",
+        "Google"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "boundary"
+    ]
+  },
+  {
+    "task_id": "trend_analysis.normal",
+    "skill": "trend_analysis",
+    "intent_label": "trend_analysis",
+    "retrieval_mode": "evaluable",
+    "scenario": "normal",
+    "example_question": "Analyze Google momentum in recent 14 days vs previous 14 days.",
+    "parameter_template": {
+      "topic": "Google",
+      "window": 14
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "trend_analysis",
+          "args": {
+            "topic": "Google",
+            "window": 14
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "Google",
+            "days": 28,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "trend_analysis",
+          "args": {
+            "topic": "Google",
+            "window": 14
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "trend_analysis"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "easy",
+    "sampling": {
+      "days": 45,
+      "n_min": 10,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "Google"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "normal"
+    ]
+  },
+  {
+    "task_id": "trend_analysis.conflict",
+    "skill": "trend_analysis",
+    "intent_label": "trend_analysis",
+    "retrieval_mode": "evaluable",
+    "scenario": "conflict",
+    "example_question": "Ask trend analysis to compare multiple topics in one single-topic request.",
+    "parameter_template": {
+      "topic": "OpenAI and Anthropic combined trend",
+      "window": 14
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "trend_analysis",
+          "args": {
+            "topic": "OpenAI and Anthropic combined trend",
+            "window": 14
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "OpenAI and Anthropic combined trend",
+            "days": 14,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "trend_analysis",
+          "args": {
+            "topic": "OpenAI and Anthropic combined trend",
+            "window": 14
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "trend_analysis"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": true,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 45,
+      "n_min": 8,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "Google"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "conflict"
+    ]
+  },
+  {
+    "task_id": "trend_analysis.empty",
+    "skill": "trend_analysis",
+    "intent_label": "trend_analysis",
+    "retrieval_mode": "non_retrieval",
+    "scenario": "empty",
+    "example_question": "Analyze trend for rare keyword with no baseline and near-empty observations.",
+    "parameter_template": {
+      "topic": "ultra-rare trend keyword",
+      "window": 7
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "trend_analysis",
+          "args": {
+            "topic": "ultra-rare trend keyword",
+            "window": 7
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "ultra-rare trend keyword",
+            "days": 7,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "trend_analysis",
+          "args": {
+            "topic": "ultra-rare trend keyword",
+            "window": 7
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "trend_analysis"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "easy",
+    "sampling": {
+      "days": 45,
+      "n_min": 4,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "Google"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "empty"
+    ]
+  },
+  {
+    "task_id": "trend_analysis.boundary",
+    "skill": "trend_analysis",
+    "intent_label": "trend_analysis",
+    "retrieval_mode": "evaluable",
+    "scenario": "boundary",
+    "example_question": "Analyze a new keyword trend for last 7 days compared with previous 7 days.",
+    "parameter_template": {
+      "topic": "newly emerged keyword",
+      "window": 7
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "trend_analysis",
+          "args": {
+            "topic": "newly emerged keyword",
+            "window": 7
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "newly emerged keyword",
+            "days": 14,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "trend_analysis",
+          "args": {
+            "topic": "newly emerged keyword",
+            "window": 7
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "trend_analysis"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "hard",
+    "sampling": {
+      "days": 21,
+      "n_min": 6,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Google",
+        "Anthropic"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "boundary"
+    ]
+  },
+  {
+    "task_id": "analyze_landscape.normal",
+    "skill": "analyze_landscape",
+    "intent_label": "analyze_landscape",
+    "retrieval_mode": "evaluable",
+    "scenario": "normal",
+    "example_question": "Analyze AI foundation-model landscape in last 30 days with default entities.",
+    "parameter_template": {
+      "topic": "AI foundation model",
+      "days": 30,
+      "entities": "",
+      "limit_per_entity": 3
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "analyze_landscape",
+          "args": {
+            "topic": "AI foundation model",
+            "days": 30,
+            "entities": "",
+            "limit_per_entity": 3
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "AI foundation model",
+            "days": 30,
+            "limit": 12
+          }
+        },
+        {
+          "tool": "analyze_landscape",
+          "args": {
+            "topic": "AI foundation model",
+            "days": 30,
+            "entities": "",
+            "limit_per_entity": 3
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "analyze_landscape"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 45,
+      "n_min": 14,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Anthropic",
+        "Google",
+        "Microsoft",
+        "Meta"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "normal"
+    ]
+  },
+  {
+    "task_id": "analyze_landscape.conflict",
+    "skill": "analyze_landscape",
+    "intent_label": "analyze_landscape",
+    "retrieval_mode": "evaluable",
+    "scenario": "conflict",
+    "example_question": "Analyze landscape but require contradictory entity scope instructions.",
+    "parameter_template": {
+      "topic": "AI foundation model",
+      "days": 30,
+      "entities": "default and fixed mutually conflicting",
+      "limit_per_entity": 3
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "analyze_landscape",
+          "args": {
+            "topic": "AI foundation model",
+            "days": 30,
+            "entities": "default and fixed mutually conflicting",
+            "limit_per_entity": 3
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "AI foundation model",
+            "days": 30,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "analyze_landscape",
+          "args": {
+            "topic": "AI foundation model",
+            "days": 30,
+            "entities": "default and fixed mutually conflicting",
+            "limit_per_entity": 3
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "analyze_landscape"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": true,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 45,
+      "n_min": 8,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Anthropic",
+        "Google",
+        "Microsoft",
+        "Meta"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "conflict"
+    ]
+  },
+  {
+    "task_id": "analyze_landscape.empty",
+    "skill": "analyze_landscape",
+    "intent_label": "analyze_landscape",
+    "retrieval_mode": "non_retrieval",
+    "scenario": "empty",
+    "example_question": "Analyze landscape for a niche theme with low or empty matched entities.",
+    "parameter_template": {
+      "topic": "niche micro domain",
+      "days": 30,
+      "entities": "rare_entity_alpha,rare_entity_beta",
+      "limit_per_entity": 3
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "analyze_landscape",
+          "args": {
+            "topic": "niche micro domain",
+            "days": 30,
+            "entities": "rare_entity_alpha,rare_entity_beta",
+            "limit_per_entity": 3
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "niche micro domain",
+            "days": 30,
+            "limit": 8
+          }
+        },
+        {
+          "tool": "analyze_landscape",
+          "args": {
+            "topic": "niche micro domain",
+            "days": 30,
+            "entities": "rare_entity_alpha,rare_entity_beta",
+            "limit_per_entity": 3
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "analyze_landscape"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "medium",
+    "sampling": {
+      "days": 45,
+      "n_min": 4,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Anthropic",
+        "Google",
+        "Microsoft",
+        "Meta"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "empty"
+    ]
+  },
+  {
+    "task_id": "analyze_landscape.boundary",
+    "skill": "analyze_landscape",
+    "intent_label": "analyze_landscape",
+    "retrieval_mode": "evaluable",
+    "scenario": "boundary",
+    "example_question": "Analyze an emerging niche AI segment with limited recent coverage.",
+    "parameter_template": {
+      "topic": "agent safety sandbox",
+      "days": 14,
+      "entities": "",
+      "limit_per_entity": 2
+    },
+    "acceptable_tool_paths": [
+      [
+        {
+          "tool": "analyze_landscape",
+          "args": {
+            "topic": "AI foundation model",
+            "days": 30,
+            "entities": "",
+            "limit_per_entity": 3
+          }
+        }
+      ],
+      [
+        {
+          "tool": "query_news",
+          "args": {
+            "query": "AI foundation model",
+            "days": 30,
+            "limit": 12
+          }
+        },
+        {
+          "tool": "analyze_landscape",
+          "args": {
+            "topic": "AI foundation model",
+            "days": 30,
+            "entities": "",
+            "limit_per_entity": 3
+          }
+        }
+      ]
+    ],
+    "required_tools": [
+      "analyze_landscape"
+    ],
+    "forbidden_tools": [],
+    "should_clarify": false,
+    "difficulty": "hard",
+    "sampling": {
+      "days": 45,
+      "n_min": 2,
+      "pool_size": 12,
+      "candidate_limit": 300,
+      "keywords": [
+        "OpenAI",
+        "Anthropic",
+        "Google",
+        "Microsoft",
+        "Meta"
+      ],
+      "sources": [],
+      "languages": []
+    },
+    "tags": [
+      "boundary"
+    ]
+  }
+]

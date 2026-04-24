@@ -10,6 +10,7 @@ import requests
 from services.db import get_conn, put_conn
 
 from .helpers import _clamp_int
+from .recall_profile import resolve_recall_profile
 from .rerank import RERANK_MODE_NONE, rerank_candidates, resolve_rerank_mode
 
 
@@ -117,6 +118,7 @@ def lookup_candidates_by_query(
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Return unified retrieval candidates for query-driven skills."""
     query_clean = (query or "").strip()
+    recall_profile = resolve_recall_profile()
     resolved_mode = resolve_rerank_mode(
         rerank_mode,
         env_keys=("SEARCH_NEWS_RERANK_MODE", "FULLTEXT_BATCH_RERANK_MODE", "NEWS_RERANK_MODE"),
@@ -127,13 +129,20 @@ def lookup_candidates_by_query(
             "candidate_count": 0,
             "top_k": 0,
             "fallback": False,
+            "recall_profile": recall_profile.as_dict(),
         }
 
     days = _clamp_int(days, 1, 365)
     limit = _clamp_int(limit, 1, 12)
-    candidate_pool_limit = limit if resolved_mode == RERANK_MODE_NONE else min(limit * 6, 72)
+    if resolved_mode == RERANK_MODE_NONE:
+        candidate_pool_limit = limit
+    else:
+        candidate_pool_limit = min(
+            limit * int(recall_profile.query_cand_multiplier),
+            int(recall_profile.query_cand_max),
+        )
     keyword_fetch_limit = max(limit * 4, candidate_pool_limit)
-    semantic_fetch_limit = max(limit * 6, candidate_pool_limit)
+    semantic_fetch_limit = max(limit * int(recall_profile.query_cand_multiplier), candidate_pool_limit)
     q = f"%{query_clean}%"
     query_vec = _get_query_embedding(query_clean)
 
@@ -292,6 +301,7 @@ def lookup_candidates_by_query(
             limit=limit,
             rerank_mode=resolved_mode,
         )
+        meta["recall_profile"] = recall_profile.as_dict()
         return [_row_to_candidate(row) for row in ranked_rows], meta
     finally:
         put_conn(conn)

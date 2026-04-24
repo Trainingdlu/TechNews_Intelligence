@@ -483,7 +483,7 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
         try:
             rerank_query = f"{topic_label} competitive landscape" if topic else "technology competitive landscape"
             reranked, _, rerank_meta = retrieve_and_rerank(
-                rerank_query, days=days, top_k=5, pool_limit=150,
+                rerank_query, days=days, top_k=5,
             )
             evidence_block = format_reranked_evidence(
                 reranked, header="Reranked Landscape Evidence",

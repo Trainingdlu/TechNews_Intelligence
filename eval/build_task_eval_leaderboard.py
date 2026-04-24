@@ -1,7 +1,7 @@
-"""Build matrix leaderboard for task_eval_v1 layered reports.
+"""Build matrix leaderboard for task_eval layered reports.
 
 Input:
-- matrix manifest from eval/run_matrix_eval.py (runner=task_eval_v1)
+- matrix manifest from eval/run_matrix_eval.py (runner=task_eval)
 
 Output:
 - JSON leaderboard report
@@ -25,7 +25,7 @@ except ImportError:  # package-style import fallback
     from .common import get_nested, to_float, to_int
 
 MISSING = "missing"
-DEFAULT_BASELINE_GROUP = "G0_baseline"
+DEFAULT_BASELINE_GROUP = "G0"
 DEFAULT_TOP_K = 5
 DEFAULT_BOOTSTRAP_SAMPLES = 1000
 DEFAULT_BOOTSTRAP_SEED = 11
@@ -40,7 +40,7 @@ class MetricSpec:
     summary_path: str = ""
     case_layer: str = ""
     case_key: str = ""
-    n_scope: str = "case"  # case|retrieval
+    n_scope: str = "case"  # case|retrieval|empty
 
 
 @dataclass
@@ -141,6 +141,33 @@ METRIC_SPECS: list[MetricSpec] = [
         summary_path="summary.retrieval.gold_hit_rate",
         case_layer="retrieval",
         case_key="gold_hit_rate",
+        n_scope="retrieval",
+    ),
+    MetricSpec(
+        name="avg_hit_rate_at_10",
+        layer="retrieval",
+        direction="higher_better",
+        summary_path="summary.retrieval.hit_rate_at_10",
+        case_layer="retrieval",
+        case_key="hit_rate_at_10",
+        n_scope="retrieval",
+    ),
+    MetricSpec(
+        name="retrieval_depth_gain",
+        layer="retrieval",
+        direction="higher_better",
+        summary_path="summary.retrieval.depth_gain",
+        case_layer="retrieval",
+        case_key="depth_gain",
+        n_scope="retrieval",
+    ),
+    MetricSpec(
+        name="retrieval_rcs",
+        layer="retrieval",
+        direction="higher_better",
+        summary_path="summary.retrieval.rcs",
+        case_layer="retrieval",
+        case_key="rcs",
         n_scope="retrieval",
     ),
     MetricSpec(
@@ -253,6 +280,34 @@ METRIC_SPECS: list[MetricSpec] = [
         case_layer="retrieval",
         case_key="precision_at_5",
         n_scope="retrieval",
+    ),
+    # --- Empty-risk layer --- #
+    MetricSpec(
+        name="empty_response_accuracy",
+        layer="risk",
+        direction="higher_better",
+        summary_path="summary.empty_risk.empty_response_accuracy",
+        case_layer="empty_risk",
+        case_key="empty_response_accuracy",
+        n_scope="empty",
+    ),
+    MetricSpec(
+        name="empty_hallucination_rate",
+        layer="risk",
+        direction="lower_better",
+        summary_path="summary.empty_risk.empty_hallucination_rate",
+        case_layer="empty_risk",
+        case_key="empty_hallucination_rate",
+        n_scope="empty",
+    ),
+    MetricSpec(
+        name="empty_recovery_suggestion_rate",
+        layer="risk",
+        direction="higher_better",
+        summary_path="summary.empty_risk.empty_recovery_suggestion_rate",
+        case_layer="empty_risk",
+        case_key="empty_recovery_suggestion_rate",
+        n_scope="empty",
     ),
     # --- Generation layer (LLM-as-a-Judge) ---
     MetricSpec(
@@ -405,7 +460,13 @@ def _observe_metric(spec: MetricSpec, group: GroupArtifacts) -> MetricObservatio
 
     case_count = _to_int(report.get("case_count"))
     retrieval_case_count = _to_int(get_nested(report, "summary.retrieval.case_count"))
-    n = retrieval_case_count if spec.n_scope == "retrieval" else case_count
+    empty_case_count = _to_int(get_nested(report, "summary.empty_risk.case_count"))
+    if spec.n_scope == "retrieval":
+        n = retrieval_case_count
+    elif spec.n_scope == "empty":
+        n = empty_case_count
+    else:
+        n = case_count
     if n is None and samples:
         n = len(samples)
     return MetricObservation(value=summary_value, n=n, samples=samples)
@@ -631,7 +692,7 @@ def _infer_dataset_info(groups: list[GroupArtifacts]) -> dict[str, str]:
     return {
         "path": dataset_path or MISSING,
         "version": version,
-        "suite": "task_eval_v1",
+        "suite": "task_eval",
     }
 
 
@@ -645,7 +706,8 @@ def _build_recommendations(report: dict[str, Any]) -> list[str]:
             metric = str(item.get("metric", ""))
             if metric in {"avg_recall_at_10", "avg_mrr_at_10", "avg_ndcg_at_10",
                           "avg_recall_at_5", "avg_mrr_at_5", "avg_ndcg_at_5",
-                          "avg_hit_rate_at_5", "avg_precision_at_5"}:
+                          "avg_hit_rate_at_5", "avg_hit_rate_at_10", "avg_precision_at_5",
+                          "retrieval_depth_gain", "retrieval_rcs"}:
                 recommendations.append("Retrieval regression detected: tune recall/rerank settings and re-run matrix.")
                 break
             if metric in {"tool_path_hit_rate", "tool_param_accuracy", "tool_forbidden_tool_rate"}:
@@ -659,6 +721,9 @@ def _build_recommendations(report: dict[str, Any]) -> list[str]:
                 break
             if metric in {"avg_error_rate", "system_timeout_rate", "system_fallback_rate", "p95_latency"}:
                 recommendations.append("System regression detected: inspect timeouts/fallbacks and trace-level failures.")
+                break
+            if metric in {"empty_response_accuracy", "empty_hallucination_rate", "empty_recovery_suggestion_rate"}:
+                recommendations.append("Empty-scenario risk increased: improve no-result handling and fallback suggestions.")
                 break
     gains = report.get("top_gains", [])
     if isinstance(gains, list) and gains:
@@ -699,7 +764,7 @@ def _fmt_ci(ci: dict[str, Any]) -> str:
 
 def _render_markdown(report: dict[str, Any], metric_order: list[str]) -> str:
     lines: list[str] = []
-    lines.append("# Task Eval v1 Matrix Leaderboard")
+    lines.append("# Task Eval Matrix Leaderboard")
     lines.append("")
     lines.append(f"- Generated at (UTC): `{report.get('generated_at_utc', MISSING)}`")
     lines.append(f"- Manifest: `{report.get('manifest_path', MISSING)}`")
@@ -826,8 +891,8 @@ def build_leaderboard_report(
     manifest["_manifest_path"] = str(manifest_path)
 
     runner = str(manifest.get("runner", "")).strip().lower()
-    if runner and runner != "task_eval_v1":
-        _warn(warnings, f"[Warn] manifest runner is `{runner}`; expected `task_eval_v1`.")
+    if runner and runner != "task_eval":
+        _warn(warnings, f"[Warn] manifest runner is `{runner}`; expected `task_eval`.")
 
     groups = _load_group_artifacts(manifest, eval_dir=eval_dir, warnings=warnings)
     if not groups:
@@ -871,7 +936,7 @@ def build_leaderboard_report(
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "manifest_path": str(manifest_path),
         "matrix_generated_at_utc": str(manifest.get("generated_at_utc", MISSING)),
-        "runner": str(manifest.get("runner", "task_eval_v1")),
+        "runner": str(manifest.get("runner", "task_eval")),
         "baseline_group": baseline_group,
         "dataset": _infer_dataset_info(groups),
         "metric_order": metric_order,
@@ -886,7 +951,7 @@ def build_leaderboard_report(
 
 
 def _build_parser(eval_dir: Path) -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Build task_eval_v1 matrix leaderboard report.")
+    parser = argparse.ArgumentParser(description="Build task_eval matrix leaderboard report.")
     parser.add_argument(
         "--manifest",
         type=Path,
@@ -926,13 +991,13 @@ def _build_parser(eval_dir: Path) -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-json",
         type=Path,
-        default=eval_dir / "reports" / "leaderboard" / "task_eval_v1_latest.json",
+        default=eval_dir / "reports" / "leaderboard" / "task_eval_latest.json",
         help="Output path for leaderboard JSON.",
     )
     parser.add_argument(
         "--output-md",
         type=Path,
-        default=eval_dir / "reports" / "leaderboard" / "task_eval_v1_latest.md",
+        default=eval_dir / "reports" / "leaderboard" / "task_eval_latest.md",
         help="Output path for leaderboard markdown.",
     )
     return parser
@@ -964,10 +1029,10 @@ def main() -> int:
     output_json.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     output_md.write_text(markdown, encoding="utf-8")
 
-    print(f"[TaskEvalV1Leaderboard] manifest={manifest_path}")
-    print(f"[TaskEvalV1Leaderboard] groups={len(report.get('groups', []) or [])}")
-    print(f"[TaskEvalV1Leaderboard] json={output_json}")
-    print(f"[TaskEvalV1Leaderboard] markdown={output_md}")
+    print(f"[TaskEvalLeaderboard] manifest={manifest_path}")
+    print(f"[TaskEvalLeaderboard] groups={len(report.get('groups', []) or [])}")
+    print(f"[TaskEvalLeaderboard] json={output_json}")
+    print(f"[TaskEvalLeaderboard] markdown={output_md}")
     return 0
 
 

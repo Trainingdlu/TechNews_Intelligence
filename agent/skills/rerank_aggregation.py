@@ -14,6 +14,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from .recall_profile import resolve_recall_profile
 from .rerank import RERANK_MODE_LLM, rerank_candidates
 from .semantic_pool import fetch_semantic_candidates
 
@@ -22,8 +23,8 @@ def retrieve_and_rerank(
     query: str,
     *,
     days: int = 14,
-    pool_limit: int = 200,
-    pre_rerank_limit: int = 30,
+    pool_limit: int | None = None,
+    pre_rerank_limit: int | None = None,
     top_k: int = 5,
     rerank_mode: str = RERANK_MODE_LLM,
     sim_floor: float | None = None,
@@ -60,10 +61,18 @@ def retrieve_and_rerank(
         - ``meta`` — Pipeline metadata (timing, pool_size, rerank info).
     """
     t0 = time.time()
+    recall_profile = resolve_recall_profile()
+    effective_pool_limit = int(pool_limit) if pool_limit and int(pool_limit) > 0 else int(recall_profile.macro_pool_limit)
+    effective_pre_rerank_limit = (
+        int(pre_rerank_limit)
+        if pre_rerank_limit and int(pre_rerank_limit) > 0
+        else int(recall_profile.pre_rerank_limit)
+    )
+    effective_pre_rerank_limit = max(1, min(effective_pre_rerank_limit, effective_pool_limit))
 
     # Stage 1: Semantic recall with time-decay scoring
     candidates = fetch_semantic_candidates(
-        query, days=days, limit=pool_limit, sim_floor=sim_floor,
+        query, days=days, limit=effective_pool_limit, sim_floor=sim_floor,
     )
     all_urls = [c["url"] for c in candidates]
     pool_size = len(candidates)
@@ -80,7 +89,7 @@ def retrieve_and_rerank(
         return [], all_urls, meta
 
     # Stage 2: Truncate to pre_rerank_limit (already sorted by final_score)
-    pre_rerank_candidates = candidates[:pre_rerank_limit]
+    pre_rerank_candidates = candidates[:effective_pre_rerank_limit]
 
     # Stage 3: Rerank via Jina (or passthrough if mode=none)
     reranked, rerank_meta = rerank_candidates(
@@ -97,6 +106,7 @@ def retrieve_and_rerank(
         "pre_rerank_size": len(pre_rerank_candidates),
         "top_k": top_k,
         "rerank_mode": rerank_mode,
+        "recall_profile": recall_profile.as_dict(),
         "pipeline_ms": pipeline_ms,
         **rerank_meta,
     }

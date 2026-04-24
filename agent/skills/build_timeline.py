@@ -67,7 +67,7 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
         # --- Reranked Key Context (Top-5) ---
         try:
             reranked, _, rerank_meta = retrieve_and_rerank(
-                topic, days=days, top_k=5, pool_limit=100,
+                topic, days=days, top_k=5,
             )
             context_block = format_reranked_evidence(
                 reranked, header="Key Context (Reranked)",

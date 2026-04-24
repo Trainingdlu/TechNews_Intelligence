@@ -18,10 +18,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 
 # ---------------------------------------------------------------------------
-# LLM builder (reused from build_task_dataset_v1.py pattern)
+# LLM builder (reused from build_task_dataset.py pattern)
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "gemini-2.5-pro"
+DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_PROVIDER = "vertex"
 
 
@@ -98,7 +98,7 @@ RELEVANCY_SYSTEM = (
     "Think step by step:\n"
     "1) Identify the user's core question and intent.\n"
     "2) Check if the answer addresses that specific question.\n"
-    "3) Evaluate completeness â€” does it cover the key aspects?\n"
+    "3) Evaluate completeness â€?does it cover the key aspects?\n"
     "4) Assign a score from 1 to 5.\n\n"
     "Scoring rubric:\n"
     "- 5: Directly and completely answers the question with relevant details.\n"
@@ -268,3 +268,4 @@ class LLMJudge:
                 (faith.get("score", 0) + relev.get("score", 0)) / 2.0, 2
             ),
         }
+

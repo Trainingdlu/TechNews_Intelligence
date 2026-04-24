@@ -6,7 +6,7 @@
 
 | 路径 | 作用 |
 | --- | --- |
-| `.github/workflows/` | CI、部署、手动评测工作流（`ci.yml`/`deploy.yml`/`eval-manual.yml`） |
+| `.github/workflows/` | CI 与部署工作流（`ci.yml`/`deploy.yml`） |
 | `.vscode/` | 编辑器工作区配置（当前为 `settings.json`） |
 | `agent/` | Agent 运行时核心：ReAct、工具、提示词、技能基础设施、MCP 扩展 |
 | `app/` | 应用入口层：API、Telegram Bot、CLI |
@@ -82,11 +82,12 @@
 
 | 路径 | 说明 |
 | --- | --- |
-| `eval/run_eval.py` | 评测入口 |
-| `eval/eval_core.py` | 指标与质量门控核心 |
-| `eval/dataset_loader.py` | 数据集加载与筛选 |
-| `eval/capabilities.py` | 能力维度定义 |
-| `eval/datasets/` | 评测数据集（`default`/`smoke`/`accuracy_snapshot` 等） |
+| `eval/build_task_dataset.py` | 任务驱动题集生成与审计入口 |
+| `eval/run_task_eval.py` | 任务驱动执行与分层评分入口 |
+| `eval/run_matrix_eval.py` | 矩阵串联执行入口（task-only） |
+| `eval/config/tasks_180.json` | 正式 task 配置 |
+| `eval/config/matrix.json` | 正式矩阵配置（G0/G1/G2） |
+| `eval/datasets/` | 任务驱动数据集与冻结版本目录 |
 | `eval/reports/` | 评测结果输出目录 |
 | `tests/unit/` | 单元测试用例 |
 | `tests/utils/` | 测试辅助代码 |
@@ -102,4 +103,3 @@
 - `.pytest_cache/`
 - 各目录下 `__pycache__/`
 - `tests/unit/.tmp_mcp_stdio/`
-

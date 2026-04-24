@@ -1,4 +1,4 @@
-"""Task-driven evaluation schema (v1).
+"""Task-driven evaluation schema.
 
 This module is intentionally isolated from legacy capability pipelines.
 """

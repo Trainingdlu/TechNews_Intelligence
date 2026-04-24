@@ -23,13 +23,14 @@ from typing import Any
 from services.db import get_conn, put_conn
 
 from .helpers import _clamp_int
+from .recall_profile import resolve_recall_profile
 from .retrieval import _get_query_embedding
 
 # ---------------------------------------------------------------------------
 # Tuning knobs (overridable via environment variables)
 # ---------------------------------------------------------------------------
 
-_DEFAULT_PROBES = 10          # IVFFlat scan breadth (env: PGVECTOR_PROBES)
+_DEFAULT_PROBES = 10         # IVFFlat scan breadth (legacy fallback)
 _DEFAULT_SIM_FLOOR = 0.20    # Minimum cosine similarity to keep
 _OVERSAMPLE_RATIO = 2.0      # Fetch extra rows to compensate for post-filter
 _DEFAULT_RETRY_COUNT = 2     # Embedding API retry attempts
@@ -210,12 +211,11 @@ def fetch_semantic_candidates(
 
     days = _clamp_int(days, 1, 365)
     limit = _clamp_int(limit, 1, 500)
-    probes = _clamp_int(
-        int(os.getenv("PGVECTOR_PROBES", str(_DEFAULT_PROBES))),
-        1, 100,
-    )
-    floor = sim_floor if sim_floor is not None else _DEFAULT_SIM_FLOOR
-    oversample_limit = int(limit * _OVERSAMPLE_RATIO)
+    recall_profile = resolve_recall_profile()
+    probes = _clamp_int(int(recall_profile.pgvector_probes), 1, 200)
+    floor = sim_floor if sim_floor is not None else float(recall_profile.sim_floor)
+    oversample_ratio = max(1.0, float(recall_profile.oversample_ratio))
+    oversample_limit = int(limit * oversample_ratio)
 
     query_vec = _get_embedding_with_retry(query_clean)
     if query_vec is None:
@@ -288,7 +288,8 @@ def fetch_semantic_candidates(
 
         print(
             f"[semantic_pool] query={query_clean!r}, days={days}, "
-            f"probes={probes}, requested={limit}, returned={len(candidates)}"
+            f"profile={recall_profile.profile}, probes={probes}, floor={floor:.3f}, "
+            f"oversample={oversample_ratio:.2f}, requested={limit}, returned={len(candidates)}"
         )
         return candidates
     except Exception as exc:
@@ -334,4 +335,3 @@ def fetch_semantic_url_pool(
         query, days=days, limit=limit, sim_floor=sim_floor,
     )
     return [(c["url"], c["final_score"]) for c in candidates]
-

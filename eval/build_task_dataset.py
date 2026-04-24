@@ -1,4 +1,4 @@
-"""Build task-driven eval dataset (v1).
+"""Build task-driven eval dataset.
 
 Flow:
 1) Load task types (task-driven).
@@ -28,14 +28,14 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from services.db import get_conn, put_conn
 
 try:
-    from task_eval_v1_schema import (
+    from task_eval_schema import (
         build_news_pool_hash,
         load_task_types,
         normalize_case,
         validate_case,
     )
 except ImportError:  # package-style import fallback
-    from .task_eval_v1_schema import (
+    from .task_eval_schema import (
         build_news_pool_hash,
         load_task_types,
         normalize_case,
@@ -43,8 +43,16 @@ except ImportError:  # package-style import fallback
     )
 
 
-DEFAULT_MODEL = "gemini-2.5-pro"
+DEFAULT_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_PROVIDER = "vertex"
+SCHEMA_VERSION = "task_eval_schema@2026-04-24"
+BUILD_LOGIC_VERSION = "task_dataset_build@2026-04-24"
+SCENARIO_RETRIEVAL_MODE_MAP: dict[str, str] = {
+    "normal": "evaluable",
+    "conflict": "evaluable",
+    "boundary": "evaluable",
+    "empty": "non_retrieval",
+}
 T = TypeVar("T")
 
 
@@ -52,6 +60,108 @@ T = TypeVar("T")
 class Pool:
     pool_id: str
     docs: list[dict[str, Any]]
+
+
+def _json_sha256(payload: Any) -> str:
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _normalize_sampling_for_fingerprint(task_types: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for task in task_types:
+        sampling = task.get("sampling", {})
+        if not isinstance(sampling, dict):
+            sampling = {}
+        rows.append(
+            {
+                "task_id": str(task.get("task_id", "")).strip(),
+                "skill": str(task.get("skill", "")).strip(),
+                "scenario": str(task.get("scenario", "")).strip().lower(),
+                "retrieval_mode": str(task.get("retrieval_mode", "")).strip().lower(),
+                "sampling": {
+                    "n_min": int(sampling.get("n_min", 0) or 0),
+                    "days": int(sampling.get("days", 0) or 0),
+                    "pool_size": int(sampling.get("pool_size", 0) or 0),
+                    "candidate_limit": int(sampling.get("candidate_limit", 0) or 0),
+                    "keywords": sorted(str(item).strip() for item in sampling.get("keywords", []) if str(item).strip()),
+                    "sources": sorted(str(item).strip() for item in sampling.get("sources", []) if str(item).strip()),
+                    "languages": sorted(
+                        str(item).strip().lower()
+                        for item in sampling.get("languages", [])
+                        if str(item).strip()
+                    ),
+                },
+            }
+        )
+    rows.sort(key=lambda row: row.get("task_id", ""))
+    return rows
+
+
+def build_dataset_fingerprint_payload(
+    *,
+    args: argparse.Namespace,
+    task_types: list[dict[str, Any]],
+) -> dict[str, Any]:
+    task_file = args.task_types.resolve()
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "build_logic_version": BUILD_LOGIC_VERSION,
+        "task_type_file": str(task_file),
+        "task_type_file_sha256": _file_sha256(task_file),
+        "task_type_count": len(task_types),
+        "seed": int(args.seed),
+        "pools_per_task_override": int(args.pools_per_task),
+        "coverage_policy_enforced": bool(args.enforce_coverage_policy),
+        "scenario_retrieval_map_enforced": bool(getattr(args, "enforce_scenario_retrieval_map", False)),
+        "audit_policy": {
+            "enabled": not bool(args.disable_audit),
+            "max_regen_rounds": int(args.audit_max_regen_rounds),
+            "regen_mode": str(args.audit_regen_mode),
+            "initial_cases_per_audit_call": int(getattr(args, "initial_cases_per_audit_call", 0)),
+            "regen_cases_per_audit_call": int(getattr(args, "regen_cases_per_audit_call", 1)),
+            "pools_per_generation_call": int(args.pools_per_generation_call),
+            "regen_pools_per_generation_call": int(args.regen_pools_per_generation_call),
+        },
+        "generator_profile": {
+            "provider": str(args.provider),
+            "model": str(args.model),
+            "temperature": float(args.temperature),
+            "audit_temperature": float(args.audit_temperature),
+        },
+        "sampling_controls": _normalize_sampling_for_fingerprint(task_types),
+    }
+
+
+def build_dataset_fingerprint(
+    *,
+    args: argparse.Namespace,
+    task_types: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any]]:
+    payload = build_dataset_fingerprint_payload(args=args, task_types=task_types)
+    return _json_sha256(payload), payload
+
+
+def validate_scenario_retrieval_map(task_types: list[dict[str, Any]]) -> None:
+    violations: list[str] = []
+    for task in task_types:
+        task_id = str(task.get("task_id", "")).strip() or "<unknown>"
+        scenario = str(task.get("scenario", "")).strip().lower()
+        retrieval_mode = str(task.get("retrieval_mode", "")).strip().lower()
+        expected = SCENARIO_RETRIEVAL_MODE_MAP.get(scenario)
+        if not expected:
+            continue
+        if retrieval_mode != expected:
+            violations.append(
+                f"{task_id}: scenario={scenario} requires retrieval_mode={expected}, got={retrieval_mode}"
+            )
+    if violations:
+        joined = "; ".join(violations)
+        raise ValueError(f"scenario->retrieval_mode policy violated: {joined}")
 
 
 def _resolve_preferred_provider() -> str:
@@ -742,7 +852,7 @@ def _invoke_json(
                 raise
             sleep_sec = max(0.0, float(backoff_sec)) * (2 ** (attempt - 1))
             print(
-                "[TaskDatasetV1][Retry] attempt=%s/%s backoff=%.2fs error=%s"
+                "[TaskDataset][Retry] attempt=%s/%s backoff=%.2fs error=%s"
                 % (attempt, attempts, sleep_sec, exc)
             )
             time.sleep(sleep_sec)
@@ -766,59 +876,80 @@ def _generate_for_task(
     pool_chunks = _chunk_list(pools, int(pools_per_generation_call))
 
     for chunk_idx, pools_chunk in enumerate(pool_chunks, 1):
-        system_prompt, user_prompt = _generator_prompts(
-            task, pools_chunk, rejection_reasons=rejection_reasons,
-        )
-        payload = _invoke_json(
-            llm,
-            system_prompt,
-            user_prompt,
-            max_retries=llm_max_retries,
-            backoff_sec=llm_backoff_sec,
-        )
+        try:
+            system_prompt, user_prompt = _generator_prompts(
+                task, pools_chunk, rejection_reasons=rejection_reasons,
+            )
+            payload = _invoke_json(
+                llm,
+                system_prompt,
+                user_prompt,
+                max_retries=llm_max_retries,
+                backoff_sec=llm_backoff_sec,
+            )
 
-        rows = payload.get("cases", [])
-        if not isinstance(rows, list):
-            raise ValueError(f"{task['task_id']}: generator output missing cases list.")
+            rows = payload.get("cases", [])
+            if not isinstance(rows, list):
+                raise ValueError(f"{task['task_id']}: generator output missing cases list.")
 
-        by_pool: dict[str, dict[str, Any]] = {}
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            pool_id = str(row.get("pool_id", "")).strip()
-            if not pool_id:
-                continue
-            by_pool[pool_id] = row
+            by_pool: dict[str, dict[str, Any]] = {}
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                pool_id = str(row.get("pool_id", "")).strip()
+                if not pool_id:
+                    continue
+                by_pool[pool_id] = row
 
-        missing = [pool.pool_id for pool in pools_chunk if pool.pool_id not in by_pool]
-        if missing:
-            raise ValueError(f"{task['task_id']}: missing generated cases for pools={missing}")
+            missing = [pool.pool_id for pool in pools_chunk if pool.pool_id not in by_pool]
+            if missing:
+                raise ValueError(f"{task['task_id']}: missing generated cases for pools={missing}")
 
-        for pool in pools_chunk:
-            suffix_match = re.search(r"\.pool\.(\d+)$", pool.pool_id)
-            if suffix_match:
-                suffix = f"{int(suffix_match.group(1)):03d}"
+            for pool in pools_chunk:
+                suffix_match = re.search(r"\.pool\.(\d+)$", pool.pool_id)
+                if suffix_match:
+                    suffix = f"{int(suffix_match.group(1)):03d}"
+                else:
+                    suffix = hashlib.sha1(pool.pool_id.encode("utf-8")).hexdigest()[:8]
+                case_id = f"{task['task_id']}.{suffix}"
+                raw_case = _repair_generated_case(
+                    by_pool[pool.pool_id],
+                    task,
+                    pool_map[pool.pool_id],
+                )
+                normalized = normalize_case(
+                    raw_case,
+                    task_type=task,
+                    case_id=case_id,
+                    pool_id=pool.pool_id,
+                    input_news_pool=pool_map[pool.pool_id],
+                )
+                out_cases.append(normalized)
+        except Exception as exc:
+            # Cost/stability trade-off: try larger chunk first, fallback to single-pool calls on failure.
+            if int(pools_per_generation_call) > 1 and len(pools_chunk) > 1:
+                print(
+                    "[TaskDataset][Fallback] task=%s generation chunk=%s/%s size=%s failed=%s -> retry single-pool mode"
+                    % (task["task_id"], chunk_idx, len(pool_chunks), len(pools_chunk), exc)
+                )
+                fallback_cases = _generate_for_task(
+                    llm,
+                    task,
+                    pools_chunk,
+                    llm_max_retries=llm_max_retries,
+                    llm_backoff_sec=llm_backoff_sec,
+                    pools_per_generation_call=1,
+                    inter_llm_call_sleep_sec=inter_llm_call_sleep_sec,
+                    rejection_reasons=rejection_reasons,
+                )
+                out_cases.extend(fallback_cases)
             else:
-                suffix = hashlib.sha1(pool.pool_id.encode("utf-8")).hexdigest()[:8]
-            case_id = f"{task['task_id']}.{suffix}"
-            raw_case = _repair_generated_case(
-                by_pool[pool.pool_id],
-                task,
-                pool_map[pool.pool_id],
-            )
-            normalized = normalize_case(
-                raw_case,
-                task_type=task,
-                case_id=case_id,
-                pool_id=pool.pool_id,
-                input_news_pool=pool_map[pool.pool_id],
-            )
-            out_cases.append(normalized)
+                raise
 
         if chunk_idx < len(pool_chunks) and float(inter_llm_call_sleep_sec) > 0:
             sleep_sec = float(inter_llm_call_sleep_sec)
             print(
-                "[TaskDatasetV1][Throttle] task=%s phase=generation chunk=%s/%s sleep=%.2fs"
+                "[TaskDataset][Throttle] task=%s phase=generation chunk=%s/%s sleep=%.2fs"
                 % (task["task_id"], chunk_idx, len(pool_chunks), sleep_sec)
             )
             time.sleep(sleep_sec)
@@ -864,32 +995,173 @@ def _audit_cases(
         if chunk_idx < len(case_chunks) and float(inter_llm_call_sleep_sec) > 0:
             sleep_sec = float(inter_llm_call_sleep_sec)
             print(
-                "[TaskDatasetV1][Throttle] task=%s phase=audit chunk=%s/%s sleep=%.2fs"
+                "[TaskDataset][Throttle] task=%s phase=audit chunk=%s/%s sleep=%.2fs"
                 % (task["task_id"], chunk_idx, len(case_chunks), sleep_sec)
             )
             time.sleep(sleep_sec)
     return rejected
 
 
+def _audit_regen_failed_only(
+    *,
+    llm: Any,
+    audit_llm: Any,
+    task: dict[str, Any],
+    pools: list[Pool],
+    generated_cases: list[dict[str, Any]],
+    llm_max_retries: int,
+    llm_backoff_sec: float,
+    max_regen_rounds: int,
+    initial_cases_per_audit_call: int,
+    regen_cases_per_audit_call: int,
+    pools_per_generation_call: int,
+    regen_pools_per_generation_call: int,
+    inter_llm_call_sleep_sec: float,
+) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    """Audit + regeneration loop that only retries rejected cases."""
+    if not generated_cases:
+        return [], {}
+
+    ordered_case_ids = [str(case.get("case_id", "")).strip() for case in generated_cases]
+    case_by_id = {str(case.get("case_id", "")).strip(): case for case in generated_cases}
+    pool_by_id = {pool.pool_id: pool for pool in pools}
+
+    rejected = _audit_cases(
+        audit_llm,
+        task,
+        generated_cases,
+        llm_max_retries=llm_max_retries,
+        llm_backoff_sec=llm_backoff_sec,
+        cases_per_audit_call=int(initial_cases_per_audit_call),
+        inter_llm_call_sleep_sec=inter_llm_call_sleep_sec,
+    )
+    if not rejected:
+        kept = [case_by_id[cid] for cid in ordered_case_ids if cid in case_by_id]
+        return kept, {}
+
+    pending_rejected = dict(rejected)
+    consecutive_llm_errors = 0
+    regen_chunk_size = (
+        int(regen_pools_per_generation_call)
+        if int(regen_pools_per_generation_call) > 0
+        else int(pools_per_generation_call)
+    )
+    if regen_chunk_size <= 0:
+        regen_chunk_size = 1
+    for regen_round in range(1, max(0, int(max_regen_rounds)) + 1):
+        if not pending_rejected:
+            break
+
+        regen_pools: list[Pool] = []
+        seen_pool_ids: set[str] = set()
+        for case_id in pending_rejected.keys():
+            case = case_by_id.get(str(case_id).strip())
+            if not isinstance(case, dict):
+                continue
+            pool_id = str(case.get("pool_id", "")).strip()
+            if not pool_id or pool_id in seen_pool_ids:
+                continue
+            pool = pool_by_id.get(pool_id)
+            if pool is None:
+                continue
+            seen_pool_ids.add(pool_id)
+            regen_pools.append(pool)
+
+        if not regen_pools:
+            break
+
+        print(
+            "[TaskDataset][AuditRegen][FailedOnly] task=%s round=%s/%s rejected=%s regen_pools=%s reasons=%s"
+            % (
+                task["task_id"],
+                regen_round,
+                max_regen_rounds,
+                len(pending_rejected),
+                len(regen_pools),
+                pending_rejected,
+            )
+        )
+
+        try:
+            regenerated = _generate_for_task(
+                llm,
+                task,
+                regen_pools,
+                llm_max_retries=llm_max_retries,
+                llm_backoff_sec=llm_backoff_sec,
+                pools_per_generation_call=regen_chunk_size,
+                inter_llm_call_sleep_sec=inter_llm_call_sleep_sec,
+                rejection_reasons=pending_rejected,
+            )
+            consecutive_llm_errors = 0
+        except Exception as regen_exc:
+            consecutive_llm_errors += 1
+            print(
+                "[TaskDataset][CircuitBreaker] task=%s regen LLM error #%d: %s"
+                % (task["task_id"], consecutive_llm_errors, regen_exc)
+            )
+            if consecutive_llm_errors >= 3:
+                print(
+                    "[TaskDataset][CircuitBreaker] task=%s aborting regen after %d consecutive LLM errors."
+                    % (task["task_id"], consecutive_llm_errors)
+                )
+                break
+            continue
+
+        regenerated_cases: list[dict[str, Any]] = []
+        for row in regenerated:
+            if not isinstance(row, dict):
+                continue
+            case_id = str(row.get("case_id", "")).strip()
+            if not case_id:
+                continue
+            case_by_id[case_id] = row
+            regenerated_cases.append(row)
+
+        if not regenerated_cases:
+            break
+
+        pending_rejected = _audit_cases(
+            audit_llm,
+            task,
+            regenerated_cases,
+            llm_max_retries=llm_max_retries,
+            llm_backoff_sec=llm_backoff_sec,
+            cases_per_audit_call=int(regen_cases_per_audit_call),
+            inter_llm_call_sleep_sec=inter_llm_call_sleep_sec,
+        )
+
+    if pending_rejected:
+        print(
+            "[TaskDataset][Warning] %s: reached max retries. Dropping rejected cases=%s"
+            % (task["task_id"], pending_rejected)
+        )
+        for case_id in pending_rejected.keys():
+            case_by_id.pop(str(case_id).strip(), None)
+
+    kept = [case_by_id[cid] for cid in ordered_case_ids if cid in case_by_id]
+    return kept, pending_rejected
+
+
 def _parse_args() -> argparse.Namespace:
     eval_dir = Path(__file__).resolve().parent
-    parser = argparse.ArgumentParser(description="Build task-driven eval dataset v1.")
+    parser = argparse.ArgumentParser(description="Build task-driven eval dataset.")
     parser.add_argument(
         "--task-types",
         type=Path,
-        default=eval_dir / "config" / "task_types_v1.json",
+        default=eval_dir / "config" / "tasks_180.json",
         help="Task type config JSON file.",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=eval_dir / "datasets" / "task_eval_v1_cases.jsonl",
+        default=eval_dir / "datasets" / "task_eval_cases.jsonl",
         help="Output dataset JSONL path.",
     )
     parser.add_argument(
         "--manifest-output",
         type=Path,
-        default=eval_dir / "datasets" / "task_eval_v1_manifest.json",
+        default=eval_dir / "datasets" / "task_eval_manifest.json",
         help="Output manifest JSON path.",
     )
     parser.add_argument(
@@ -960,10 +1232,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--audit-max-regen-rounds",
         type=int,
-        default=int(os.getenv("TASK_EVAL_AUDIT_MAX_REGEN_ROUNDS", "8")),
+        default=int(os.getenv("AUDIT_MAX_REGEN_ROUNDS", os.getenv("TASK_EVAL_AUDIT_MAX_REGEN_ROUNDS", "3"))),
         help=(
-            "Max regeneration rounds after audit rejection (0 means no regen, only one audit pass). Default 8."
+            "Max regeneration rounds after audit rejection (0 means no regen, only one audit pass). Default 3."
         ),
+    )
+    parser.add_argument(
+        "--audit-regen-mode",
+        type=str,
+        default=str(os.getenv("AUDIT_REGEN_MODE", "failed_only")).strip().lower() or "failed_only",
+        help="Audit regeneration mode: failed_only|full. Default failed_only.",
     )
     parser.add_argument(
         "--llm-max-retries",
@@ -980,14 +1258,32 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--pools-per-generation-call",
         type=int,
-        default=int(os.getenv("TASK_EVAL_POOLS_PER_GENERATION_CALL", "0")),
-        help="If > 0, split one task's pools into multiple generation calls (0 means all pools in one call).",
+        default=int(os.getenv("TASK_EVAL_POOLS_PER_GENERATION_CALL", "2")),
+        help="If > 0, split one task's pools into multiple generation calls. Default 2.",
+    )
+    parser.add_argument(
+        "--regen-pools-per-generation-call",
+        type=int,
+        default=int(os.getenv("REGEN_POOLS_PER_GENERATION_CALL", "1")),
+        help="If > 0, split failed-case regeneration pools into multiple generation calls. Default 1 (single-case regen).",
+    )
+    parser.add_argument(
+        "--initial-cases-per-audit-call",
+        type=int,
+        default=int(os.getenv("INITIAL_CASES_PER_AUDIT_CALL", os.getenv("TASK_EVAL_CASES_PER_AUDIT_CALL", "0"))),
+        help="Chunk size for initial full-batch audit call (0 means one call per task).",
+    )
+    parser.add_argument(
+        "--regen-cases-per-audit-call",
+        type=int,
+        default=int(os.getenv("REGEN_CASES_PER_AUDIT_CALL", "1")),
+        help="Chunk size for failed-case re-audit calls during regeneration (default 1).",
     )
     parser.add_argument(
         "--cases-per-audit-call",
         type=int,
-        default=int(os.getenv("TASK_EVAL_CASES_PER_AUDIT_CALL", "0")),
-        help="If > 0, split one task's cases into multiple audit calls (0 means all cases in one call).",
+        default=None,
+        help="Deprecated alias; if set, applies to both initial/regen audit chunk size.",
     )
     parser.add_argument(
         "--inter-llm-call-sleep-sec",
@@ -1025,6 +1321,23 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Optional dotenv file loaded after agent/.env.",
     )
+    parser.add_argument(
+        "--enforce-scenario-retrieval-map",
+        action="store_true",
+        default=bool(int(os.getenv("TASK_EVAL_ENFORCE_SCENARIO_RETRIEVAL_MAP", "0") or 0)),
+        help="Enforce fixed scenario->retrieval_mode mapping (normal/conflict/boundary=evaluable, empty=non_retrieval).",
+    )
+    parser.add_argument(
+        "--no-enforce-scenario-retrieval-map",
+        dest="enforce_scenario_retrieval_map",
+        action="store_false",
+        help="Disable scenario->retrieval_mode enforcement.",
+    )
+    parser.add_argument(
+        "--print-fingerprint-only",
+        action="store_true",
+        help="Print dataset fingerprint JSON and exit without generation.",
+    )
     return parser.parse_args()
 
 
@@ -1053,6 +1366,24 @@ def main() -> int:
         strict_skill=bool(args.strict_skill_check),
         enforce_coverage_policy=bool(args.enforce_coverage_policy),
     )
+    if bool(getattr(args, "enforce_scenario_retrieval_map", False)):
+        validate_scenario_retrieval_map(task_types)
+    dataset_fingerprint, dataset_fingerprint_payload = build_dataset_fingerprint(
+        args=args,
+        task_types=task_types,
+    )
+    if bool(getattr(args, "print_fingerprint_only", False)):
+        print(
+            json.dumps(
+                {
+                    "dataset_fingerprint": dataset_fingerprint,
+                    "dataset_fingerprint_payload": dataset_fingerprint_payload,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
     llm = _build_chat_model(
         provider=str(args.provider),
         model_name=str(args.model),
@@ -1080,13 +1411,25 @@ def main() -> int:
     all_cases: list[dict[str, Any]] = []
     manifest_tasks: list[dict[str, Any]] = []
     completed_task_ids: set[str] = set()
+    audit_regen_mode = str(getattr(args, "audit_regen_mode", "failed_only")).strip().lower() or "failed_only"
+    if audit_regen_mode not in {"failed_only", "full"}:
+        print(f"[TaskDataset][Warn] unknown audit_regen_mode={audit_regen_mode}, fallback=failed_only")
+        audit_regen_mode = "failed_only"
+
+    initial_cases_per_audit_call = max(0, int(getattr(args, "initial_cases_per_audit_call", 0)))
+    regen_cases_per_audit_call = max(0, int(getattr(args, "regen_cases_per_audit_call", 1)))
+    if getattr(args, "cases_per_audit_call", None) is not None:
+        legacy_chunk = max(0, int(args.cases_per_audit_call))
+        initial_cases_per_audit_call = legacy_chunk
+        regen_cases_per_audit_call = legacy_chunk
 
     if bool(args.resume_from_checkpoint):
         checkpoint = _load_checkpoint(checkpoint_path)
         if checkpoint:
             cp_task_file = str(checkpoint.get("task_type_file", "")).strip()
+            cp_fingerprint = str(checkpoint.get("dataset_fingerprint", "")).strip()
             expected_task_file = str(args.task_types.resolve())
-            if cp_task_file == expected_task_file:
+            if cp_task_file == expected_task_file and (not cp_fingerprint or cp_fingerprint == dataset_fingerprint):
                 cp_cases = checkpoint.get("cases", [])
                 cp_tasks = checkpoint.get("tasks", [])
                 cp_completed = checkpoint.get("completed_task_ids", [])
@@ -1099,20 +1442,20 @@ def main() -> int:
                         str(item).strip() for item in cp_completed if str(item).strip()
                     }
                 print(
-                    "[TaskDatasetV1][Resume] checkpoint=%s completed_tasks=%s cases=%s"
+                    "[TaskDataset][Resume] checkpoint=%s completed_tasks=%s cases=%s"
                     % (checkpoint_path, len(completed_task_ids), len(all_cases))
                 )
             else:
                 print(
-                    "[TaskDatasetV1][Resume] skip checkpoint due to task file mismatch: cp=%s current=%s"
-                    % (cp_task_file, expected_task_file)
+                    "[TaskDataset][Resume] skip checkpoint due to config mismatch: cp_task=%s current_task=%s cp_fingerprint=%s current_fingerprint=%s"
+                    % (cp_task_file, expected_task_file, cp_fingerprint or "-", dataset_fingerprint)
                 )
 
     total_tasks = len(task_types)
     for task_idx, task in enumerate(task_types, 1):
         task_id = str(task.get("task_id", "")).strip()
         if task_id in completed_task_ids:
-            print("[TaskDatasetV1][Skip] task already completed in checkpoint: %s" % task_id)
+            print("[TaskDataset][Skip] task already completed in checkpoint: %s" % task_id)
             continue
 
         n_min = int(task.get("sampling", {}).get("n_min", 30))
@@ -1133,79 +1476,96 @@ def main() -> int:
         rejected: dict[str, str] = {}
         if not args.disable_audit:
             max_regen_rounds = max(0, int(args.audit_max_regen_rounds))
-            consecutive_llm_errors = 0
-            for regen_round in range(0, max_regen_rounds + 1):
-                rejected = _audit_cases(
-                    audit_llm,
-                    task,
-                    generated_cases,
+            if audit_regen_mode == "failed_only":
+                generated_cases, rejected = _audit_regen_failed_only(
+                    llm=llm,
+                    audit_llm=audit_llm,
+                    task=task,
+                    pools=pools,
+                    generated_cases=generated_cases,
                     llm_max_retries=int(args.llm_max_retries),
                     llm_backoff_sec=float(args.llm_backoff_sec),
-                    cases_per_audit_call=int(args.cases_per_audit_call),
+                    max_regen_rounds=max_regen_rounds,
+                    initial_cases_per_audit_call=initial_cases_per_audit_call,
+                    regen_cases_per_audit_call=regen_cases_per_audit_call,
+                    pools_per_generation_call=int(args.pools_per_generation_call),
+                    regen_pools_per_generation_call=int(args.regen_pools_per_generation_call),
                     inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
                 )
-                if not rejected:
-                    break
-                if regen_round >= max_regen_rounds:
-                    break
-
-                rejected_case_ids = set(rejected.keys())
-                regen_pools = [
-                    pool
-                    for pool in pools
-                    if any(
-                        case["pool_id"] == pool.pool_id and case["case_id"] in rejected_case_ids
-                        for case in generated_cases
-                    )
-                ]
-                if not regen_pools:
-                    break
-
-                print(
-                    "[TaskDatasetV1][AuditRegen] task=%s round=%s/%s rejected=%s regen_pools=%s reasons=%s"
-                    % (
-                        task["task_id"],
-                        regen_round + 1,
-                        max_regen_rounds,
-                        len(rejected),
-                        len(regen_pools),
-                        rejected,
-                    )
-                )
-                try:
-                    regenerated = _generate_for_task(
-                        llm,
+            else:
+                consecutive_llm_errors = 0
+                for regen_round in range(0, max_regen_rounds + 1):
+                    rejected = _audit_cases(
+                        audit_llm,
                         task,
-                        regen_pools,
+                        generated_cases,
                         llm_max_retries=int(args.llm_max_retries),
                         llm_backoff_sec=float(args.llm_backoff_sec),
-                        pools_per_generation_call=int(args.pools_per_generation_call),
+                        cases_per_audit_call=initial_cases_per_audit_call,
                         inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
-                        rejection_reasons=rejected,
                     )
-                    consecutive_llm_errors = 0
-                except Exception as regen_exc:
-                    consecutive_llm_errors += 1
-                    print(
-                        "[TaskDatasetV1][CircuitBreaker] task=%s regen LLM error #%d: %s"
-                        % (task["task_id"], consecutive_llm_errors, regen_exc)
-                    )
-                    if consecutive_llm_errors >= 3:
-                        print(
-                            "[TaskDatasetV1][CircuitBreaker] task=%s aborting regen after %d consecutive LLM errors."
-                            % (task["task_id"], consecutive_llm_errors)
-                        )
+                    if not rejected:
                         break
-                    continue
-                regen_by_pool = {row["pool_id"]: row for row in regenerated}
-                for idx, row in enumerate(generated_cases):
-                    pool_id = row["pool_id"]
-                    if pool_id in regen_by_pool:
-                        generated_cases[idx] = regen_by_pool[pool_id]
+                    if regen_round >= max_regen_rounds:
+                        break
 
-            if rejected:
-                print(f"[TaskDatasetV1][Warning] {task['task_id']}: reached max retries. Dropping rejected cases={rejected}")
-                generated_cases =[case for case in generated_cases if case.get("case_id") not in rejected]
+                    rejected_case_ids = set(rejected.keys())
+                    regen_pools = [
+                        pool
+                        for pool in pools
+                        if any(
+                            case["pool_id"] == pool.pool_id and case["case_id"] in rejected_case_ids
+                            for case in generated_cases
+                        )
+                    ]
+                    if not regen_pools:
+                        break
+
+                    print(
+                        "[TaskDataset][AuditRegen][Full] task=%s round=%s/%s rejected=%s regen_pools=%s reasons=%s"
+                        % (
+                            task["task_id"],
+                            regen_round + 1,
+                            max_regen_rounds,
+                            len(rejected),
+                            len(regen_pools),
+                            rejected,
+                        )
+                    )
+                    try:
+                        regenerated = _generate_for_task(
+                            llm,
+                            task,
+                            regen_pools,
+                            llm_max_retries=int(args.llm_max_retries),
+                            llm_backoff_sec=float(args.llm_backoff_sec),
+                            pools_per_generation_call=int(args.pools_per_generation_call),
+                            inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
+                            rejection_reasons=rejected,
+                        )
+                        consecutive_llm_errors = 0
+                    except Exception as regen_exc:
+                        consecutive_llm_errors += 1
+                        print(
+                            "[TaskDataset][CircuitBreaker] task=%s regen LLM error #%d: %s"
+                            % (task["task_id"], consecutive_llm_errors, regen_exc)
+                        )
+                        if consecutive_llm_errors >= 3:
+                            print(
+                                "[TaskDataset][CircuitBreaker] task=%s aborting regen after %d consecutive LLM errors."
+                                % (task["task_id"], consecutive_llm_errors)
+                            )
+                            break
+                        continue
+                    regen_by_pool = {row["pool_id"]: row for row in regenerated}
+                    for idx, row in enumerate(generated_cases):
+                        pool_id = row["pool_id"]
+                        if pool_id in regen_by_pool:
+                            generated_cases[idx] = regen_by_pool[pool_id]
+
+                if rejected:
+                    print(f"[TaskDataset][Warning] {task['task_id']}: reached max retries. Dropping rejected cases={rejected}")
+                    generated_cases = [case for case in generated_cases if case.get("case_id") not in rejected]
 
         for case in generated_cases:
             validate_case(case, strict_skill=bool(args.strict_skill_check))
@@ -1235,23 +1595,30 @@ def main() -> int:
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
             "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
+            "audit_regen_mode": audit_regen_mode,
             "pools_per_generation_call": int(args.pools_per_generation_call),
-            "cases_per_audit_call": int(args.cases_per_audit_call),
+            "regen_pools_per_generation_call": int(args.regen_pools_per_generation_call),
+            "cases_per_audit_call": int(initial_cases_per_audit_call),
+            "initial_cases_per_audit_call": int(initial_cases_per_audit_call),
+            "regen_cases_per_audit_call": int(regen_cases_per_audit_call),
             "inter_llm_call_sleep_sec": float(args.inter_llm_call_sleep_sec),
             "inter_task_sleep_sec": float(args.inter_task_sleep_sec),
+            "scenario_retrieval_map_enforced": bool(getattr(args, "enforce_scenario_retrieval_map", False)),
+            "dataset_fingerprint": dataset_fingerprint,
+            "dataset_fingerprint_payload": dataset_fingerprint_payload,
             "completed_task_ids": sorted(completed_task_ids),
             "tasks": manifest_tasks,
             "cases": all_cases,
         }
         _write_json_atomic(checkpoint_path, checkpoint_payload)
         print(
-            "[TaskDatasetV1] task=%s pools=%s candidates=%s generated=%s"
+            "[TaskDataset] task=%s pools=%s candidates=%s generated=%s"
             % (task["task_id"], len(pools), len(candidates), len(generated_cases))
         )
         if float(args.inter_task_sleep_sec) > 0 and task_idx < total_tasks:
             sleep_sec = float(args.inter_task_sleep_sec)
             print(
-                "[TaskDatasetV1][Throttle] after task=%s sleep=%.2fs"
+                "[TaskDataset][Throttle] after task=%s sleep=%.2fs"
                 % (task["task_id"], sleep_sec)
             )
             time.sleep(sleep_sec)
@@ -1274,10 +1641,17 @@ def main() -> int:
         "llm_max_retries": int(args.llm_max_retries),
         "llm_backoff_sec": float(args.llm_backoff_sec),
         "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
+        "audit_regen_mode": audit_regen_mode,
         "pools_per_generation_call": int(args.pools_per_generation_call),
-        "cases_per_audit_call": int(args.cases_per_audit_call),
+        "regen_pools_per_generation_call": int(args.regen_pools_per_generation_call),
+        "cases_per_audit_call": int(initial_cases_per_audit_call),
+        "initial_cases_per_audit_call": int(initial_cases_per_audit_call),
+        "regen_cases_per_audit_call": int(regen_cases_per_audit_call),
         "inter_llm_call_sleep_sec": float(args.inter_llm_call_sleep_sec),
         "inter_task_sleep_sec": float(args.inter_task_sleep_sec),
+        "scenario_retrieval_map_enforced": bool(getattr(args, "enforce_scenario_retrieval_map", False)),
+        "dataset_fingerprint": dataset_fingerprint,
+        "dataset_fingerprint_payload": dataset_fingerprint_payload,
         "tasks": manifest_tasks,
     }
     manifest_path = args.manifest_output.resolve()
@@ -1298,10 +1672,17 @@ def main() -> int:
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
             "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
+            "audit_regen_mode": audit_regen_mode,
             "pools_per_generation_call": int(args.pools_per_generation_call),
-            "cases_per_audit_call": int(args.cases_per_audit_call),
+            "regen_pools_per_generation_call": int(args.regen_pools_per_generation_call),
+            "cases_per_audit_call": int(initial_cases_per_audit_call),
+            "initial_cases_per_audit_call": int(initial_cases_per_audit_call),
+            "regen_cases_per_audit_call": int(regen_cases_per_audit_call),
             "inter_llm_call_sleep_sec": float(args.inter_llm_call_sleep_sec),
             "inter_task_sleep_sec": float(args.inter_task_sleep_sec),
+            "scenario_retrieval_map_enforced": bool(getattr(args, "enforce_scenario_retrieval_map", False)),
+            "dataset_fingerprint": dataset_fingerprint,
+            "dataset_fingerprint_payload": dataset_fingerprint_payload,
             "completed_task_ids": sorted(completed_task_ids),
             "tasks": manifest_tasks,
             "cases": all_cases,
@@ -1309,9 +1690,9 @@ def main() -> int:
         },
     )
 
-    print("[TaskDatasetV1] output=%s cases=%s" % (output_path, len(all_cases)))
-    print("[TaskDatasetV1] manifest=%s" % manifest_path)
-    print("[TaskDatasetV1] checkpoint=%s" % checkpoint_path)
+    print("[TaskDataset] output=%s cases=%s" % (output_path, len(all_cases)))
+    print("[TaskDataset] manifest=%s" % manifest_path)
+    print("[TaskDataset] checkpoint=%s" % checkpoint_path)
     return 0
 
 

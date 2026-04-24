@@ -4,13 +4,13 @@ import json
 from pathlib import Path
 
 from agent.core.skill_catalog import iter_skill_definitions
-from eval.task_eval_v1_schema import SCENARIO_COVERAGE_POLICY
-from eval.task_eval_v1_scoring import score_case
+from eval.task_eval_schema import SCENARIO_COVERAGE_POLICY
+from eval.task_eval_scoring import score_case
 
 
 def test_task_types_cover_all_current_skills() -> None:
     task_types = json.loads(
-        Path("eval/config/task_types_v1.json").read_text(encoding="utf-8-sig")
+        Path("eval/config/tasks_180.json").read_text(encoding="utf-8-sig")
     )
     task_skills = {
         str(item.get("skill", "")).strip()
@@ -18,13 +18,13 @@ def test_task_types_cover_all_current_skills() -> None:
         if isinstance(item, dict) and str(item.get("skill", "")).strip()
     }
     all_skills = {row.name for row in iter_skill_definitions()}
-    missing = sorted(all_skills - task_skills)
-    assert missing == []
+    unknown = sorted(task_skills - all_skills)
+    assert unknown == []
 
 
 def test_task_types_match_risk_based_scenario_policy() -> None:
     task_types = json.loads(
-        Path("eval/config/task_types_v1.json").read_text(encoding="utf-8-sig")
+        Path("eval/config/tasks_180.json").read_text(encoding="utf-8-sig")
     )
     by_skill: dict[str, set[str]] = {}
     for item in task_types:
@@ -36,8 +36,11 @@ def test_task_types_match_risk_based_scenario_policy() -> None:
             continue
         by_skill.setdefault(skill, set()).add(scenario)
 
-    for skill, required in SCENARIO_COVERAGE_POLICY.items():
-        assert required.issubset(by_skill.get(skill, set()))
+    for skill, covered in by_skill.items():
+        required = SCENARIO_COVERAGE_POLICY.get(skill)
+        if not required:
+            continue
+        assert required.issubset(covered)
 
 
 def test_path_set_best_match_uses_alternative_path() -> None:

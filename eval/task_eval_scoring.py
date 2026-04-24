@@ -1,4 +1,4 @@
-"""Layered scoring for task-driven eval v1."""
+"""Layered scoring for task-driven eval."""
 
 from __future__ import annotations
 
@@ -32,6 +32,29 @@ TIMEOUT_MARKERS = ("timeout", "timed out", "deadline", "resource exhausted")
 NEGATION_MARKERS = (" not ", " no ", " never ", "没有", "无", "并非", "不是")
 TOKEN_RE = re.compile(r"[A-Za-z0-9_\u4e00-\u9fff]{2,}")
 NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
+EMPTY_ACK_MARKERS = (
+    "无结果",
+    "没有找到",
+    "未找到",
+    "暂无",
+    "no relevant",
+    "no results",
+    "not found",
+)
+RECOVERY_SUGGESTION_MARKERS = (
+    "建议",
+    "可尝试",
+    "放宽",
+    "扩大",
+    "调整",
+    "try",
+    "consider",
+    "broaden",
+    "widen",
+)
+RCS_RECALL_W = 0.4
+RCS_MRR_W = 0.3
+RCS_NDCG_W = 0.3
 
 ATTRIBUTION_CODES = (
     "INTENT_FAIL",
@@ -77,6 +100,20 @@ def _tokenize(value: str) -> list[str]:
 
 def _extract_numbers(value: str) -> set[str]:
     return {n for n in NUMBER_RE.findall(str(value or ""))}
+
+
+def _scenario_from_task_type(task_type: str) -> str:
+    parts = [part.strip().lower() for part in str(task_type or "").split(".") if part.strip()]
+    if not parts:
+        return ""
+    return parts[-1]
+
+
+def _contains_any_marker(text: str, markers: tuple[str, ...]) -> bool:
+    norm = str(text or "").strip().lower()
+    if not norm:
+        return False
+    return any(marker in norm for marker in markers)
 
 
 def _path_tools(path: list[dict[str, Any]]) -> list[str]:
@@ -356,11 +393,19 @@ def score_case(
             ndcg5 = ndcg_at_k(retrieved_urls, retrieval_gold_urls, 5)
             ndcg10 = ndcg_at_k(retrieved_urls, retrieval_gold_urls, 10)
             hit5 = hit_rate_at_k(retrieved_urls, retrieval_gold_urls, 5)
+            hit10 = hit_rate_at_k(retrieved_urls, retrieval_gold_urls, 10)
             prec5 = precision_at_k(retrieved_urls, retrieval_gold_urls, 5)
             gold_hit = 1.0 if set(retrieved_urls).intersection(retrieval_gold_urls) else 0.0
+            retrieval_rcs = (
+                (RCS_RECALL_W * recall10)
+                + (RCS_MRR_W * mrr10)
+                + (RCS_NDCG_W * ndcg10)
+            )
+            depth_gain = max(0.0, float(hit10) - float(hit5))
         else:
             recall5 = recall10 = mrr5 = mrr10 = ndcg5 = ndcg10 = None
-            hit5 = prec5 = gold_hit = None
+            hit5 = hit10 = prec5 = gold_hit = None
+            retrieval_rcs = depth_gain = None
 
         supported_count = 0
         mentioned_count = 0
@@ -439,8 +484,11 @@ def score_case(
                 "ndcg_at_5": ndcg5,
                 "ndcg_at_10": ndcg10,
                 "hit_rate_at_5": hit5,
+                "hit_rate_at_10": hit10,
                 "precision_at_5": prec5,
                 "gold_hit": gold_hit,
+                "retrieval_rcs": retrieval_rcs,
+                "depth_gain": depth_gain,
                 "claim_support_rate": claim_support_rate,
                 "unsupported_claim_rate": unsupported_claim_rate,
                 "contradiction_rate": contradiction_rate,
@@ -483,8 +531,11 @@ def score_case(
             "ndcg_at_5": _mean([row["ndcg_at_5"] for row in run_rows]),
             "ndcg_at_10": _mean([row["ndcg_at_10"] for row in run_rows]),
             "hit_rate_at_5": _mean([row["hit_rate_at_5"] for row in run_rows]),
+            "hit_rate_at_10": _mean([row["hit_rate_at_10"] for row in run_rows]),
             "precision_at_5": _mean([row["precision_at_5"] for row in run_rows]),
             "gold_hit_rate": _mean([row["gold_hit"] for row in run_rows]),
+            "rcs": _mean([row["retrieval_rcs"] for row in run_rows]),
+            "depth_gain": _mean([row["depth_gain"] for row in run_rows]),
         },
         "analysis": {
             "claim_support_rate": _mean([row["claim_support_rate"] for row in run_rows]),
@@ -555,7 +606,11 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "recall_at_10": None,
                 "mrr_at_10": None,
                 "ndcg_at_10": None,
+                "hit_rate_at_5": None,
+                "hit_rate_at_10": None,
                 "gold_hit_rate": None,
+                "rcs": None,
+                "depth_gain": None,
             },
             "analysis": {
                 "claim_support_rate": None,
@@ -569,6 +624,13 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "fallback_rate": 0.0,
                 "latency_p50_ms": 0.0,
                 "latency_p95_ms": 0.0,
+            },
+            "empty_risk": {
+                "case_count": 0,
+                "run_count": 0,
+                "empty_response_accuracy": None,
+                "empty_hallucination_rate": None,
+                "empty_recovery_suggestion_rate": None,
             },
             "attribution_breakdown": {},
         }
@@ -587,6 +649,11 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
     retrieval_rows: list[dict[str, Any]] = []
     analysis_rows: list[dict[str, Any]] = []
     system_rows: list[dict[str, Any]] = []
+    empty_case_count = 0
+    empty_run_count = 0
+    empty_ack_count = 0
+    empty_hallucination_count = 0
+    empty_recovery_count = 0
     latencies: list[float] = []
     attribution_count: dict[str, int] = defaultdict(int)
 
@@ -621,6 +688,27 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
             retrieval_rows.append(retrieval)
         analysis_rows.append(analysis)
         system_rows.append(system)
+        scenario = _scenario_from_task_type(str(case.get("task_type", "")))
+        if scenario == "empty":
+            empty_case_count += 1
+            for run in runs:
+                final_answer = str(run.get("final_answer", ""))
+                final_status = str(run.get("final_status", "")).strip().lower()
+                error_text = str(run.get("error", "")).strip()
+                empty_run_count += 1
+                empty_ack = _contains_any_marker(final_answer, EMPTY_ACK_MARKERS)
+                if (
+                    not empty_ack
+                    and final_status in {"clarification_required", "blocked"}
+                    and not error_text
+                ):
+                    empty_ack = True
+                if empty_ack:
+                    empty_ack_count += 1
+                if _contains_any_marker(final_answer, RECOVERY_SUGGESTION_MARKERS):
+                    empty_recovery_count += 1
+                if (not empty_ack) and (not error_text):
+                    empty_hallucination_count += 1
         if float(system.get("latency_p50_ms", 0.0) or 0.0) > 0:
             latencies.append(float(system.get("latency_p50_ms", 0.0)))
         if float(system.get("latency_p95_ms", 0.0) or 0.0) > 0:
@@ -648,7 +736,11 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
             "recall_at_10": _mean([row.get("recall_at_10") for row in retrieval_rows]),
             "mrr_at_10": _mean([row.get("mrr_at_10") for row in retrieval_rows]),
             "ndcg_at_10": _mean([row.get("ndcg_at_10") for row in retrieval_rows]),
+            "hit_rate_at_5": _mean([row.get("hit_rate_at_5") for row in retrieval_rows]),
+            "hit_rate_at_10": _mean([row.get("hit_rate_at_10") for row in retrieval_rows]),
             "gold_hit_rate": _mean([row.get("gold_hit_rate") for row in retrieval_rows]),
+            "rcs": _mean([row.get("rcs") for row in retrieval_rows]),
+            "depth_gain": _mean([row.get("depth_gain") for row in retrieval_rows]),
         },
         "analysis": {
             "claim_support_rate": _mean([row.get("claim_support_rate") for row in analysis_rows]),
@@ -662,6 +754,19 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
             "fallback_rate": _mean([row.get("fallback_rate") for row in system_rows]) or 0.0,
             "latency_p50_ms": median(latencies) if latencies else 0.0,
             "latency_p95_ms": _quantile(latencies, 0.95),
+        },
+        "empty_risk": {
+            "case_count": empty_case_count,
+            "run_count": empty_run_count,
+            "empty_response_accuracy": _safe_div(float(empty_ack_count), float(empty_run_count or 1))
+            if empty_run_count > 0
+            else None,
+            "empty_hallucination_rate": _safe_div(float(empty_hallucination_count), float(empty_run_count or 1))
+            if empty_run_count > 0
+            else None,
+            "empty_recovery_suggestion_rate": _safe_div(float(empty_recovery_count), float(empty_run_count or 1))
+            if empty_run_count > 0
+            else None,
         },
         "attribution_breakdown": dict(sorted(attribution_count.items(), key=lambda x: x[0])),
     }

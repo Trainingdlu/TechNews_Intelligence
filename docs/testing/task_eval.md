@@ -1,16 +1,16 @@
-# Task-Driven Evaluation v1
+# Task-Driven Evaluation
 
 ## 1. Scope
 - This pipeline is independent from legacy evaluation chains.
-- Legacy report-chain files were removed; this v1 flow is the active path.
+- Legacy report-chain files were removed; this flow is the active path.
 - Layered outputs are independent: `intent`, `tool`, `retrieval`, `analysis`, `system`.
 
 ## 2. Core Files
-- `eval/config/task_types_v1.json`: task type definitions (31 seeded tasks, covering all current skills).
-- `eval/task_eval_v1_schema.py`: task/case contracts and validators.
-- `eval/build_task_dataset_v1.py`: task-driven sampling + LLM expected-case generation + audit.
-- `eval/run_task_eval_v1.py`: real-agent execution + layered scoring + attribution.
-- `eval/task_eval_v1_scoring.py`: layer metrics and root-cause code logic.
+- `eval/config/tasks_180.json`: task type definitions (7 skills, 180 cases by default).
+- `eval/task_eval_schema.py`: task/case contracts and validators.
+- `eval/build_task_dataset.py`: task-driven sampling + LLM expected-case generation + audit.
+- `eval/run_task_eval.py`: real-agent execution + layered scoring + attribution.
+- `eval/task_eval_scoring.py`: layer metrics and root-cause code logic.
 
 ## 3. Task Type Contract
 Each task type includes:
@@ -71,10 +71,10 @@ Key hard rule:
 Command:
 
 ```bash
-python -m eval.build_task_dataset_v1 \
-  --task-types eval/config/task_types_v1.json \
-  --output eval/datasets/task_eval_v1_cases.jsonl \
-  --manifest-output eval/datasets/task_eval_v1_manifest.json
+python -m eval.build_task_dataset \
+  --task-types eval/config/tasks_180.json \
+  --output eval/datasets/task_eval_cases.jsonl \
+  --manifest-output eval/datasets/task_eval_manifest.json
 ```
 
 Behavior:
@@ -87,18 +87,18 @@ Behavior:
 Command:
 
 ```bash
-python -m eval.run_task_eval_v1 \
-  --dataset eval/datasets/task_eval_v1_cases.jsonl \
-  --output eval/reports/task_eval_v1_latest.json \
+python -m eval.run_task_eval \
+  --dataset eval/datasets/task_eval_cases.jsonl \
+  --output eval/reports/task_eval_latest.json \
   --runs-per-case 1
 ```
 
 For stability probes:
 
 ```bash
-python -m eval.run_task_eval_v1 \
-  --dataset eval/datasets/task_eval_v1_cases.jsonl \
-  --output eval/reports/task_eval_v1_stability.json \
+python -m eval.run_task_eval \
+  --dataset eval/datasets/task_eval_cases.jsonl \
+  --output eval/reports/task_eval_stability.json \
   --runs-per-case 3
 ```
 
@@ -123,9 +123,9 @@ No mixed single release score is computed.
 Primary cause for each case is stored in case-level `attribution`.
 
 ## 9. Notes
-- Gatekeeping thresholds are intentionally deferred in this v1 implementation.
+- Gatekeeping thresholds are intentionally deferred in this implementation.
 - To enforce gates later, consume `report.summary.<layer>` directly with hard per-layer thresholds.
-- One-click matrix + leaderboard execution: `deployment/scripts/eval/run_skill_matrix_pipeline.sh`.
+- One-click matrix + leaderboard execution: `deployment/scripts/eval/run_eval.sh`.
 Path scoring rule:
 - Tool-path evaluation uses `acceptable_tool_paths` set, not a single path.
 - Runtime scoring selects the best matching path by priority:
@@ -133,3 +133,4 @@ Path scoring rule:
   2) higher ordered coverage
   3) higher parameter accuracy
   4) shorter expected path
+

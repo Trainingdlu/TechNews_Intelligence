@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import uuid
 
 import pytest
 
-from eval.task_eval_v1_schema import (
+from eval.task_eval_schema import (
     build_news_pool_hash,
     load_task_types,
     normalize_case,
@@ -53,12 +54,18 @@ def _pool() -> list[dict]:
     ]
 
 
-def test_load_task_types_accepts_valid_file(tmp_path: Path) -> None:
-    path = tmp_path / "tasks.json"
+def test_load_task_types_accepts_valid_file() -> None:
+    tmp_root = Path.cwd() / ".tmp_pytest_task_eval_schema"
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    path = tmp_root / f"tasks_{uuid.uuid4().hex}.json"
     path.write_text(json.dumps([_task_type()]), encoding="utf-8")
-    rows = load_task_types(path, strict_skill=False, enforce_coverage_policy=False)
-    assert len(rows) == 1
-    assert rows[0]["task_id"] == "query_news.filter.precise.normal"
+    try:
+        rows = load_task_types(path, strict_skill=False, enforce_coverage_policy=False)
+        assert len(rows) == 1
+        assert rows[0]["task_id"] == "query_news.filter.precise.normal"
+    finally:
+        if path.exists():
+            path.unlink()
 
 
 def test_normalize_case_enforces_retrieval_gold_subset() -> None:

@@ -271,10 +271,10 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
         # --- Reranked Top Evidence (per-group Top-3) ---
         try:
             reranked_a, _, meta_a = retrieve_and_rerank(
-                topic_a, days=days, top_k=3, pool_limit=100,
+                topic_a, days=days, top_k=3,
             )
             reranked_b, _, meta_b = retrieve_and_rerank(
-                topic_b, days=days, top_k=3, pool_limit=100,
+                topic_b, days=days, top_k=3,
             )
             evidence_a = format_reranked_evidence(
                 reranked_a, header=f"Reranked Evidence: {topic_a}",

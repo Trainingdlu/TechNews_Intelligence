@@ -88,7 +88,7 @@ def compare_sources(topic: str, days: int = 14) -> str:
         # --- Reranked Top Evidence (Top-5) ---
         try:
             reranked, _, rerank_meta = retrieve_and_rerank(
-                topic, days=days, top_k=5, pool_limit=100,
+                topic, days=days, top_k=5,
             )
             evidence_block = format_reranked_evidence(
                 reranked, header=f"Reranked Evidence: {topic}",

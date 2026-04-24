@@ -26,24 +26,21 @@ def _case_dir():
 
 
 def test_load_matrix_groups_reads_default_matrix() -> None:
-    matrix_path = Path("eval/experiment_matrix.json")
+    matrix_path = Path("eval/config/matrix.json")
     groups = run_matrix_eval.load_matrix_groups(matrix_path)
     ids = [group.id for group in groups]
 
-    assert len(groups) == 6
-    assert ids[0] == "G0_baseline"
-    assert ids[-1] == "G5_full_optimized"
+    assert len(groups) == 3
+    assert ids == ["G0", "G1", "G2"]
 
 
 def test_load_matrix_config_reads_baseline_and_default_args() -> None:
-    matrix_path = Path("eval/experiment_matrix.json")
+    matrix_path = Path("eval/config/matrix.json")
     config = run_matrix_eval.load_matrix_config(matrix_path)
 
-    assert config.baseline_group == "G0_baseline"
-    assert config.frozen_dataset_version
-    assert config.runner == "task_eval_v1"
-    assert config.runner_script == "run_task_eval_v1.py"
-    assert config.default_run_eval_args == []
+    assert config.baseline_group == "G0"
+    assert config.runner_script == "run_task_eval.py"
+    assert config.default_runner_args == []
 
 
 def test_load_matrix_groups_rejects_duplicate_ids() -> None:
@@ -66,43 +63,71 @@ def test_load_matrix_groups_rejects_duplicate_ids() -> None:
             run_matrix_eval.load_matrix_groups(matrix_path)
 
 
-def test_resolve_forwarded_run_eval_args_defaults_and_conflict() -> None:
-    defaults = run_matrix_eval.resolve_forwarded_run_eval_args([])
-    assert defaults == ["--suite", "default", "--runs-per-question", "3"]
+def test_resolve_forwarded_runner_args_defaults_and_conflict() -> None:
+    defaults = run_matrix_eval.resolve_forwarded_runner_args([])
+    assert defaults == ["--runs-per-case", "1"]
 
-    v1_defaults = run_matrix_eval.resolve_forwarded_run_eval_args([], runner="task_eval_v1")
-    assert v1_defaults == ["--runs-per-case", "1"]
-
-    merged = run_matrix_eval.resolve_forwarded_run_eval_args(
-        ["--runs-per-question", "1"],
-        default_run_eval_args=["--dataset", "eval/datasets/versions/v20260417_1642/regression.jsonl"],
+    merged = run_matrix_eval.resolve_forwarded_runner_args(
+        ["--runs-per-case", "1"],
+        default_runner_args=["--dataset", "eval/datasets/versions/v20260417_1642/regression.jsonl"],
     )
     assert merged[:2] == ["--dataset", "eval/datasets/versions/v20260417_1642/regression.jsonl"]
-    assert merged[-2:] == ["--runs-per-question", "1"]
+    assert merged[-2:] == ["--runs-per-case", "1"]
 
     with pytest.raises(ValueError, match="--output/--experiment-group"):
-        run_matrix_eval.resolve_forwarded_run_eval_args(["--suite", "smoke", "--output", "x.json"])
+        run_matrix_eval.resolve_forwarded_runner_args(["--output", "x.json"])
 
     with pytest.raises(ValueError, match="Do not pass --output"):
-        run_matrix_eval.resolve_forwarded_run_eval_args(
-            ["--output", "x.json"],
-            runner="task_eval_v1",
-        )
+        run_matrix_eval.resolve_forwarded_runner_args(["--experiment-group", "G0"])
 
 
-def test_build_run_eval_command_includes_group_and_output() -> None:
+def test_load_matrix_config_accepts_task_eval_runner() -> None:
     with _case_dir() as case_dir:
-        run_eval_path = Path("eval/run_eval.py").resolve()
+        matrix_path = case_dir / "task_eval_matrix.json"
+        matrix_path.write_text(
+            json.dumps(
+                {
+                    "runner": "task_eval",
+                    "groups": [
+                        {"id": "G0", "description": "base", "env": {}},
+                    ],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        config = run_matrix_eval.load_matrix_config(matrix_path)
+        assert config.runner_script == "run_task_eval.py"
+
+
+def test_load_matrix_config_rejects_non_task_runner() -> None:
+    with _case_dir() as case_dir:
+        matrix_path = case_dir / "legacy_matrix.json"
+        matrix_path.write_text(
+            json.dumps(
+                {
+                    "runner": "legacy_runner",
+                    "groups": [{"id": "G0", "description": "legacy", "env": {}}],
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="Matrix runner must be task_eval"):
+            run_matrix_eval.load_matrix_config(matrix_path)
+
+
+def test_build_runner_command_includes_output_only() -> None:
+    with _case_dir() as case_dir:
+        runner_path = Path("eval/run_task_eval.py").resolve()
         output_path = case_dir / "g0.json"
-        cmd = run_matrix_eval.build_run_eval_command(
-            run_eval_path,
-            ["--suite", "smoke", "--runs-per-question", "1"],
+        cmd = run_matrix_eval.build_runner_command(
+            runner_path,
+            ["--runs-per-case", "1"],
             output_path=output_path,
-            group_id="G0_baseline",
         )
 
-        assert str(run_eval_path) in cmd
-        assert "--experiment-group" in cmd
-        assert "G0_baseline" in cmd
+        assert str(runner_path) in cmd
         assert "--output" in cmd
         assert str(output_path) in cmd
+        assert "--experiment-group" not in cmd

@@ -1,0 +1,34 @@
+{
+  "name": "recall_matrix",
+  "description": "Three-group serial retrieval matrix",
+  "runner": "task_eval",
+  "runner_script": "run_task_eval.py",
+  "baseline_group": "G0",
+  "default_runner_args": [],
+  "groups": [
+    {
+      "id": "G0",
+      "description": "base + no rerank",
+      "env": {
+        "EVAL_RECALL_PROFILE": "base",
+        "NEWS_RERANK_MODE": "none"
+      }
+    },
+    {
+      "id": "G1",
+      "description": "wide + no rerank",
+      "env": {
+        "EVAL_RECALL_PROFILE": "wide",
+        "NEWS_RERANK_MODE": "none"
+      }
+    },
+    {
+      "id": "G2",
+      "description": "wide + llm_rerank",
+      "env": {
+        "EVAL_RECALL_PROFILE": "wide",
+        "NEWS_RERANK_MODE": "llm_rerank"
+      }
+    }
+  ]
+}

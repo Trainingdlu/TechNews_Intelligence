@@ -149,7 +149,7 @@ def trend_analysis(topic: str, window: int = 7, response_format: str = "text") -
         # --- Reranked Top Evidence (Top-5) ---
         try:
             reranked, _, rerank_meta = retrieve_and_rerank(
-                topic, days=window * 2, top_k=5, pool_limit=100,
+                topic, days=window * 2, top_k=5,
             )
             evidence_block = format_reranked_evidence(
                 reranked, header=f"Reranked Evidence: {topic}",
