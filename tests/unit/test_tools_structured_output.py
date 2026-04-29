@@ -7,12 +7,25 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from agent.core.skill_catalog import iter_skill_definitions
+from agent.core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from agent.skills import analyze_landscape as landscape_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills import build_timeline as timeline_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills import compare_sources as compare_sources_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills import compare_topics as compare_topics_mod  # noqa: E402  pylint: disable=wrong-import-position
 from agent.skills import fulltext_batch as fulltext_mod  # noqa: E402  pylint: disable=wrong-import-position
 from agent.skills import helpers as helpers_mod  # noqa: E402  pylint: disable=wrong-import-position
 from agent.skills import query_news as query_news_mod  # noqa: E402  pylint: disable=wrong-import-position
 
 from agent.skills import trend_analysis as trend_mod  # noqa: E402  pylint: disable=wrong-import-position
-from agent.skills.schemas import QueryNewsSkillInput, TrendAnalysisSkillInput  # noqa: E402  pylint: disable=wrong-import-position
+from agent.skills.schemas import (  # noqa: E402  pylint: disable=wrong-import-position
+    AnalyzeLandscapeSkillInput,
+    BuildTimelineSkillInput,
+    CompareSourcesSkillInput,
+    CompareTopicsSkillInput,
+    QueryNewsSkillInput,
+    TrendAnalysisSkillInput,
+)
 
 
 class _FakeCursor:
@@ -35,6 +48,32 @@ class _FakeConn:
 
     def cursor(self):
         return _FakeCursor(self._rows)
+
+
+class _SequenceCursor:
+    def __init__(self, rowsets):
+        self._rowsets = list(rowsets)
+        self._current = []
+
+    def execute(self, _sql, _params=()):
+        self._current = self._rowsets.pop(0) if self._rowsets else []
+
+    def fetchall(self):
+        return list(self._current)
+
+    def fetchone(self):
+        return self._current[0] if self._current else None
+
+    def close(self):
+        return None
+
+
+class _SequenceConn:
+    def __init__(self, rowsets):
+        self._cursor = _SequenceCursor(rowsets)
+
+    def cursor(self):
+        return self._cursor
 
 
 class ToolStructuredOutputTests(unittest.TestCase):
@@ -225,3 +264,180 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(envelope.data["recent_count"], 8)
         self.assertEqual(len(envelope.evidence), 1)
         self.assertEqual(envelope.evidence[0].url, "https://example.com/evidence")
+
+    def test_envelope_helpers_add_stable_empty_and_error_contracts(self) -> None:
+        empty = build_empty_envelope("search_news", {"query": "x"}, "no_related_news")
+        self.assertEqual(empty.status, "empty")
+        self.assertEqual(empty.diagnostics["empty_reason"], "no_related_news")
+
+        error = build_error_envelope("search_news", {"query": "x"}, "search_news_failed")
+        self.assertEqual(error.status, "error")
+        self.assertEqual(error.error_code, "search_news_failed")
+        self.assertEqual(error.diagnostics["error_code"], "search_news_failed")
+
+        envelope = SkillEnvelope(
+            tool="search_news",
+            status="ok",
+            request={},
+            evidence=[
+                {
+                    "url": "https://example.com/a",
+                    "rank": 1,
+                    "match_score": 0.91,
+                    "score_components": {"semantic_score": 0.91},
+                    "metadata": {"points": 10},
+                }
+            ],
+        )
+        self.assertEqual(envelope.evidence[0].rank, 1)
+        self.assertEqual(envelope.evidence[0].match_score, 0.91)
+
+    def test_catalog_descriptions_are_specific_for_routing(self) -> None:
+        descriptions = {definition.name: definition.description for definition in iter_skill_definitions()}
+        self.assertIn("evidence", descriptions["search_news"].lower())
+        self.assertIn("match-score", descriptions["compare_topics"].lower())
+        self.assertIn("url", descriptions["read_news_content"].lower())
+
+    def test_compare_sources_skill_uses_structured_rows_for_evidence(self) -> None:
+        now = datetime(2026, 3, 28, 10, 0, 0)
+        fake_conn = _SequenceConn(
+            [
+                [("HackerNews", 1, 12.0, 1, 0, 0), ("TechCrunch", 1, 8.0, 0, 1, 0)],
+                [
+                    ("HackerNews", "HN title", "https://example.com/hn", 12, now, 1),
+                    ("TechCrunch", "TC title", "https://example.com/tc", 8, now, 1),
+                ],
+            ]
+        )
+        with (
+            patch.object(
+                compare_sources_mod,
+                "fetch_semantic_url_pool",
+                lambda *_args, **_kwargs: [("https://example.com/hn", 0.91), ("https://example.com/tc", 0.83)],
+            ),
+            patch.object(compare_sources_mod, "get_conn", lambda: fake_conn),
+            patch.object(compare_sources_mod, "put_conn", lambda _conn: None),
+            patch.object(compare_sources_mod, "retrieve_and_rerank", lambda *_args, **_kwargs: ([], [], {})),
+        ):
+            envelope = compare_sources_mod.compare_sources_skill(
+                CompareSourcesSkillInput(topic="OpenAI", days=14)
+            )
+
+        self.assertEqual(envelope.status, "ok")
+        self.assertEqual(envelope.data["metrics_by_source"]["HackerNews"]["count"], 1)
+        self.assertEqual(envelope.evidence[0].url, "https://example.com/hn")
+        self.assertEqual(envelope.evidence[0].match_score, 0.91)
+        self.assertEqual(envelope.diagnostics["evidence_count"], 2)
+
+    def test_build_timeline_skill_uses_structured_events_for_evidence(self) -> None:
+        now = datetime(2026, 3, 28, 10, 0, 0)
+        fake_conn = _SequenceConn(
+            [
+                [(now, "TechCrunch", "Launch event", "Positive", 99, "https://example.com/timeline")],
+            ]
+        )
+        with (
+            patch.object(
+                timeline_mod,
+                "fetch_semantic_url_pool",
+                lambda *_args, **_kwargs: [("https://example.com/timeline", 0.77)],
+            ),
+            patch.object(timeline_mod, "get_conn", lambda: fake_conn),
+            patch.object(timeline_mod, "put_conn", lambda _conn: None),
+            patch.object(timeline_mod, "retrieve_and_rerank", lambda *_args, **_kwargs: ([], [], {})),
+        ):
+            envelope = timeline_mod.build_timeline_skill(
+                BuildTimelineSkillInput(topic="OpenAI", days=30, limit=3)
+            )
+
+        self.assertEqual(envelope.status, "ok")
+        self.assertEqual(envelope.data["event_count"], 1)
+        self.assertEqual(envelope.data["events"][0]["title"], "Launch event")
+        self.assertEqual(envelope.evidence[0].url, "https://example.com/timeline")
+        self.assertEqual(envelope.evidence[0].match_score, 0.77)
+
+    def test_compare_topics_match_score_arbitrates_intersection_urls(self) -> None:
+        def fake_pool(query, **_kwargs):
+            if query == "OpenAI":
+                return [("https://example.com/shared", 0.40), ("https://example.com/a", 0.90)]
+            return [("https://example.com/shared", 0.85), ("https://example.com/b", 0.70)]
+
+        with patch.object(compare_topics_mod, "fetch_semantic_url_pool", fake_pool):
+            pool_a, pool_b = compare_topics_mod._resolve_topic_pool_scores("OpenAI", "Anthropic", days=14)
+
+        self.assertEqual([url for url, _score in pool_a], ["https://example.com/a"])
+        self.assertEqual(
+            [url for url, _score in pool_b],
+            ["https://example.com/shared", "https://example.com/b"],
+        )
+
+    def test_compare_topics_skill_uses_structured_rows_for_evidence(self) -> None:
+        now = datetime(2026, 3, 28, 10, 0, 0)
+        fake_conn = _SequenceConn(
+            [
+                [("A", 1, 20.0, 1, 0, 0), ("B", 1, 10.0, 0, 1, 0)],
+                [("A", "TechCrunch", 1), ("B", "HackerNews", 1)],
+                [("A", 1, 0), ("B", 0, 1)],
+                [
+                    ("A", "TechCrunch", "OpenAI title", "https://example.com/a", 20, now, 1),
+                    ("B", "HackerNews", "Anthropic title", "https://example.com/b", 10, now, 1),
+                ],
+            ]
+        )
+
+        def fake_pool(query, **_kwargs):
+            if query == "OpenAI":
+                return [("https://example.com/a", 0.92)]
+            return [("https://example.com/b", 0.81)]
+
+        with (
+            patch.object(compare_topics_mod, "fetch_semantic_url_pool", fake_pool),
+            patch.object(compare_topics_mod, "get_conn", lambda: fake_conn),
+            patch.object(compare_topics_mod, "put_conn", lambda _conn: None),
+        ):
+            envelope = compare_topics_mod.compare_topics_skill(
+                CompareTopicsSkillInput(topic_a="OpenAI", topic_b="Anthropic", days=14)
+            )
+
+        self.assertEqual(envelope.status, "ok")
+        self.assertEqual(envelope.data["metrics_by_topic"]["OpenAI"]["count"], 1)
+        self.assertEqual(envelope.evidence[0].url, "https://example.com/a")
+        self.assertEqual(envelope.evidence[0].match_score, 0.92)
+
+    def test_analyze_landscape_skill_uses_structured_rows_for_evidence(self) -> None:
+        now = datetime(2026, 3, 28, 10, 0, 0)
+        fake_conn = _SequenceConn(
+            [
+                [
+                    (
+                        "OpenAI evidence",
+                        "https://example.com/openai",
+                        "summary",
+                        "TechCrunch",
+                        42,
+                        "Positive",
+                        now,
+                    )
+                ],
+                [(12,)],
+            ]
+        )
+        with (
+            patch.object(
+                landscape_mod,
+                "_fetch_entity_url_pools",
+                lambda *_args, **_kwargs: ({"OpenAI": ["https://example.com/openai"]}, {"https://example.com/openai": "OpenAI"}),
+            ),
+            patch.object(landscape_mod, "_get_signal_anchors", lambda: {}),
+            patch.object(landscape_mod, "get_conn", lambda: fake_conn),
+            patch.object(landscape_mod, "put_conn", lambda _conn: None),
+            patch.object(landscape_mod, "retrieve_and_rerank", lambda *_args, **_kwargs: ([], [], {})),
+        ):
+            envelope = landscape_mod.analyze_landscape_skill(
+                AnalyzeLandscapeSkillInput(topic="", days=30, entities="OpenAI", limit_per_entity=1)
+            )
+
+        self.assertEqual(envelope.status, "ok")
+        self.assertEqual(envelope.data["coverage"]["matched_entity_articles"], 1)
+        self.assertEqual(envelope.data["entity_stats"]["OpenAI"]["count"], 1)
+        self.assertEqual(envelope.evidence[0].url, "https://example.com/openai")

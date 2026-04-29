@@ -25,9 +25,17 @@ from typing import Any, TypeVar
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from services.llm_provider import (
+    DEFAULT_VERTEX_MODEL,
+    build_chat_model as build_shared_chat_model,
+    resolve_model_config,
+)
 from services.db import get_conn, put_conn
 
 try:
+    from audit_task_topics import audit_task_with_sample
+    from corpus_sampler import build_eval_sample
+    from evidence_validator import EvidenceValidationResult, validate_case_evidence
     from task_eval_schema import (
         build_news_pool_hash,
         load_task_types,
@@ -35,6 +43,9 @@ try:
         validate_case,
     )
 except ImportError:  # package-style import fallback
+    from .audit_task_topics import audit_task_with_sample
+    from .corpus_sampler import build_eval_sample
+    from .evidence_validator import EvidenceValidationResult, validate_case_evidence
     from .task_eval_schema import (
         build_news_pool_hash,
         load_task_types,
@@ -43,17 +54,18 @@ except ImportError:  # package-style import fallback
     )
 
 
-DEFAULT_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_MODEL = DEFAULT_VERTEX_MODEL
 DEFAULT_PROVIDER = "vertex"
-SCHEMA_VERSION = "task_eval_schema@2026-04-24"
-BUILD_LOGIC_VERSION = "task_dataset_build@2026-04-24"
+SCHEMA_VERSION = "task_eval_schema@2026-04-25-evidence-quotes"
+BUILD_LOGIC_VERSION = "task_dataset_build@2026-04-29-topic-preflight"
 SCENARIO_RETRIEVAL_MODE_MAP: dict[str, str] = {
     "normal": "evaluable",
-    "conflict": "evaluable",
+    "conflict": "non_retrieval",
     "boundary": "evaluable",
     "empty": "non_retrieval",
 }
 T = TypeVar("T")
+_TASK_EVAL_MODEL_AUTO = "__task_eval_model_auto__"
 
 
 @dataclass
@@ -120,12 +132,21 @@ def build_dataset_fingerprint_payload(
         "scenario_retrieval_map_enforced": bool(getattr(args, "enforce_scenario_retrieval_map", False)),
         "audit_policy": {
             "enabled": not bool(args.disable_audit),
-            "max_regen_rounds": int(args.audit_max_regen_rounds),
-            "regen_mode": str(args.audit_regen_mode),
+            "max_seed_attempts": int(getattr(args, "seed_max_attempts", 3)),
+            "temperature_schedule": "feedback_descending",
+            "legacy_max_regen_rounds": int(args.audit_max_regen_rounds),
+            "legacy_regen_mode": str(args.audit_regen_mode),
             "initial_cases_per_audit_call": int(getattr(args, "initial_cases_per_audit_call", 0)),
             "regen_cases_per_audit_call": int(getattr(args, "regen_cases_per_audit_call", 1)),
             "pools_per_generation_call": int(args.pools_per_generation_call),
             "regen_pools_per_generation_call": int(args.regen_pools_per_generation_call),
+        },
+        "sampler_policy": {
+            "candidate_source": "eval_corpus_sampler",
+            "production_retrieval_topk_used": False,
+            "constraint_aware_packing": True,
+            "topic_preflight_gate": True,
+            "points_used": False,
         },
         "generator_profile": {
             "provider": str(args.provider),
@@ -168,9 +189,6 @@ def _resolve_preferred_provider() -> str:
     explicit = str(os.getenv("TASK_EVAL_PROVIDER", "")).strip()
     if explicit:
         return explicit
-    agent_provider = str(os.getenv("AGENT_MODEL_PROVIDER", "")).strip()
-    if agent_provider:
-        return agent_provider
     return DEFAULT_PROVIDER
 
 
@@ -185,7 +203,7 @@ def _load_eval_env(env_file: Path | None) -> None:
             raise FileNotFoundError(f"Env file not found: {candidate}")
         load_dotenv(dotenv_path=candidate, override=True)
 
-    # Prefer Vertex for all LLM invocations in this chain.
+    # Dataset generation defaults to Vertex unless TASK_EVAL_PROVIDER is explicit.
     if not str(os.getenv("TASK_EVAL_PROVIDER", "")).strip():
         os.environ["TASK_EVAL_PROVIDER"] = _resolve_preferred_provider()
 
@@ -232,39 +250,13 @@ def _coerce_text_content(content: Any) -> str:
 
 
 def _build_chat_model(provider: str, model_name: str, temperature: float) -> Any:
-    normalized = str(provider or DEFAULT_PROVIDER).strip().lower()
-    if normalized in {"gemini_api", "gemini", "google_ai_studio", "developer_api"}:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        api_key = str(os.getenv("GEMINI_API_KEY", "")).strip()
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY is required for provider=gemini_api.")
-        return ChatGoogleGenerativeAI(
-            model=model_name,
-            google_api_key=api_key,
-            temperature=float(temperature),
-        )
-
-    if normalized in {"vertex", "vertex_ai", "gcp"}:
-        from langchain_google_vertexai import ChatVertexAI
-
-        project = str(os.getenv("VERTEX_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", ""))).strip()
-        if not project:
-            raise ValueError("VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT is required for provider=vertex.")
-        location = str(
-            os.getenv(
-                "VERTEX_GENERATION_LOCATION",
-                os.getenv("VERTEX_LOCATION", os.getenv("GOOGLE_CLOUD_LOCATION", "global")),
-            )
-        ).strip()
-        return ChatVertexAI(
-            model=model_name,
-            project=project,
-            location=location,
-            temperature=float(temperature),
-        )
-
-    raise ValueError(f"Unsupported provider: {provider}")
+    return build_shared_chat_model(
+        provider=provider,
+        model_name=model_name,
+        temperature=float(temperature),
+        default_provider=DEFAULT_PROVIDER,
+        default_model=DEFAULT_MODEL,
+    )
 
 
 def _is_retryable_llm_error(exc: Exception) -> bool:
@@ -565,7 +557,7 @@ def _sample_candidates(task: dict[str, Any]) -> list[dict[str, Any]]:
             COALESCE(title_cn, '') AS title_cn
         FROM view_dashboard_news
         WHERE {' AND '.join(where_parts)}
-        ORDER BY created_at DESC, points DESC NULLS LAST
+        ORDER BY created_at DESC
         LIMIT %s
     """
     params.append(candidate_limit)
@@ -666,7 +658,7 @@ def _chunk_list(items: list[T], chunk_size: int) -> list[list[T]]:
     return [items[idx : idx + size] for idx in range(0, len(items), size)]
 
 
-def _pools_for_prompt(pools: list[Pool], *, summary_chars: int = 220) -> list[dict[str, Any]]:
+def _pools_for_prompt(pools: list[Pool], *, summary_chars: int = 700) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for pool in pools:
         docs = []
@@ -677,11 +669,13 @@ def _pools_for_prompt(pools: list[Pool], *, summary_chars: int = 220) -> list[di
                     "url": item["url"],
                     "title": item["title"],
                     "summary": str(item.get("summary", ""))[:summary_chars],
+                    "evidence_text": str(item.get("evidence_text", item.get("summary", "")))[:summary_chars],
                     "published_at": item["published_at"],
                     "source": item["source"],
                     "sentiment": item.get("sentiment", ""),
-                    "points": item.get("points", 0),
                     "language": item.get("language", ""),
+                    "channels": item.get("channels", []),
+                    "seed_similarity": item.get("seed_similarity", 0.0),
                 }
             )
         out.append(
@@ -699,6 +693,7 @@ def _generator_prompts(
     pools: list[Pool],
     *,
     rejection_reasons: dict[str, str] | None = None,
+    attempt_feedback: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     schema_hint = {
         "task_id": task["task_id"],
@@ -718,6 +713,12 @@ def _generator_prompts(
                     {
                         "claim": "verifiable claim from expected_answer",
                         "evidence_doc_ids": ["doc_id from same pool"],
+                        "evidence_quotes": [
+                            {
+                                "doc_id": "doc_id from same pool",
+                                "quote": "single continuous exact excerpt from title/summary/evidence_text",
+                            }
+                        ],
                         "claim_type": "fact|number|comparison",
                     }
                 ],
@@ -745,10 +746,14 @@ def _generator_prompts(
         "5) If retrieval_evaluable=true, retrieval_gold_doc_ids must be non-empty.\n"
         "6) expected_answer must be grounded in pool docs.\n"
         "7) verifiable_claims must be checkable and linked to evidence_doc_ids in pool.\n"
-        "8) expected_question and expected_answer must be written in Chinese (entity/product names may stay in English).\n"
-        "9) expected_tool_paths must be an exact subset of acceptable_tool_paths; do not alter tool args.\n"
-        "10) For non-empty scenarios, expected_question must be answerable by the pool and mention pool entities/topics.\n"
-        "11) Do not output markdown fences."
+        "8) Each non-empty retrieval-evaluable claim must include evidence_quotes. A quote must be a single, "
+        "continuous, exact excerpt from the same doc's title/summary/evidence_text. Do not paraphrase. "
+        "Do not combine non-adjacent sentences. Do not use ellipses (... or \\u2026).\n"
+        "9) expected_question and expected_answer must be written in Chinese (entity/product names may stay in English).\n"
+        "10) expected_tool_paths must be an exact subset of acceptable_tool_paths; do not alter tool args.\n"
+        "11) For non-empty scenarios, expected_question must be answerable by the pool and mention pool entities/topics.\n"
+        "12) For empty/non_retrieval scenarios, do not invent facts, leave retrieval gold empty, and verifiable_claims may be empty.\n"
+        "13) Do not output markdown fences."
     )
 
     # Feedback loop: inject previous rejection reasons
@@ -757,6 +762,11 @@ def _generator_prompts(
         for case_id, reason in rejection_reasons.items():
             feedback_lines.append(f"- {case_id}: {reason}")
         system_prompt += "\n".join(feedback_lines)
+    if attempt_feedback:
+        system_prompt += (
+            "\n\nPrevious seed attempt failed validation. Keep already valid fields when possible, "
+            "and specifically repair the failed fields described below."
+        )
 
     payload = {
         "task_definition": {
@@ -776,6 +786,7 @@ def _generator_prompts(
         },
         "news_pools": _pools_for_prompt(pools),
         "output_schema_example": schema_hint,
+        "attempt_feedback": attempt_feedback or [],
     }
     user_prompt = json.dumps(payload, ensure_ascii=False, indent=2)
     return system_prompt, user_prompt
@@ -1002,6 +1013,342 @@ def _audit_cases(
     return rejected
 
 
+def _case_id_for_pool(task: dict[str, Any], pool: Pool) -> str:
+    suffix_match = re.search(r"\.pool\.(\d+)$", pool.pool_id)
+    if suffix_match:
+        suffix = f"{int(suffix_match.group(1)):03d}"
+    else:
+        suffix = hashlib.sha1(pool.pool_id.encode("utf-8")).hexdigest()[:8]
+    return f"{task['task_id']}.{suffix}"
+
+
+def _seed_attempt_temperatures(base: float, max_attempts: int) -> list[float]:
+    attempts = max(1, int(max_attempts))
+    schedule = [float(base), min(float(base), 0.4), 0.1]
+    if attempts <= len(schedule):
+        return schedule[:attempts]
+    return schedule + [0.1 for _ in range(attempts - len(schedule))]
+
+
+def _audit_single_case_with_evidence(
+    llm: Any,
+    task: dict[str, Any],
+    case: dict[str, Any],
+    evidence_result: EvidenceValidationResult,
+    *,
+    llm_max_retries: int,
+    llm_backoff_sec: float,
+) -> tuple[bool, str]:
+    system_prompt = (
+        "You are a strict evaluation-case auditor.\n"
+        "Return strict JSON only.\n"
+        "Decide whether the generated case is usable for an automated retrieval/generation evaluation.\n"
+        "For non-empty cases, verify that each claim is supported by the quoted packed context and that "
+        "the answer does not exceed the evidence. For borderline fuzzy matches, decide whether this is "
+        "only a formatting difference or a semantic drift. For numeric uncertain matches, decide whether "
+        "the quantities are equivalent. For empty cases, reject invented concrete facts.\n"
+    )
+    docs = []
+    for doc in case.get("input_news_pool", []):
+        if not isinstance(doc, dict):
+            continue
+        docs.append(
+            {
+                "doc_id": doc.get("doc_id"),
+                "url": doc.get("url"),
+                "title": doc.get("title"),
+                "summary": doc.get("summary"),
+                "evidence_text": doc.get("evidence_text", doc.get("summary", "")),
+                "source": doc.get("source"),
+                "published_at": doc.get("published_at"),
+            }
+        )
+    payload = {
+        "task": {
+            "task_id": task["task_id"],
+            "skill": task["skill"],
+            "retrieval_mode": task["retrieval_mode"],
+            "scenario": task["scenario"],
+            "parameter_template": task["parameter_template"],
+            "acceptable_tool_paths": task["acceptable_tool_paths"],
+        },
+        "case": {
+            "case_id": case.get("case_id"),
+            "expected_question": case.get("expected_question"),
+            "expected_answer": case.get("expected_answer"),
+            "expected_tool_paths": case.get("expected_tool_paths"),
+            "retrieval_gold_doc_ids": case.get("retrieval_gold_doc_ids"),
+            "verifiable_claims": case.get("verifiable_claims"),
+            "retrieval_evaluable": case.get("retrieval_evaluable"),
+        },
+        "evidence_validation": evidence_result.as_case_metadata(),
+        "packed_context": docs,
+        "output_schema": {
+            "case_id": str(case.get("case_id", "")),
+            "accepted": True,
+            "reason": "short reason string",
+        },
+    }
+    result = _invoke_json(
+        llm,
+        system_prompt,
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        max_retries=llm_max_retries,
+        backoff_sec=llm_backoff_sec,
+    )
+    accepted = bool(result.get("accepted", False))
+    reason = str(result.get("reason", "")).strip() or ("accepted" if accepted else "audit_rejected")
+    print(
+        "[Audit] case=%s status=%s score=%.1f verdict=%s"
+        % (
+            case.get("case_id"),
+            evidence_result.status,
+            float(evidence_result.score),
+            "accepted" if accepted else "rejected",
+        )
+    )
+    return accepted, reason
+
+
+def _generate_single_case_attempt(
+    llm: Any,
+    task: dict[str, Any],
+    pool: Pool,
+    *,
+    llm_max_retries: int,
+    llm_backoff_sec: float,
+    attempt_feedback: list[dict[str, Any]],
+) -> dict[str, Any]:
+    system_prompt, user_prompt = _generator_prompts(task, [pool], attempt_feedback=attempt_feedback)
+    payload = _invoke_json(
+        llm,
+        system_prompt,
+        user_prompt,
+        max_retries=llm_max_retries,
+        backoff_sec=llm_backoff_sec,
+    )
+    rows = payload.get("cases", [])
+    if not isinstance(rows, list):
+        raise ValueError(f"{task['task_id']}: generator output missing cases list.")
+    by_pool = {
+        str(row.get("pool_id", "")).strip(): row
+        for row in rows
+        if isinstance(row, dict) and str(row.get("pool_id", "")).strip()
+    }
+    if pool.pool_id not in by_pool:
+        raise ValueError(f"{task['task_id']}: missing generated case for pool={pool.pool_id}")
+    case_id = _case_id_for_pool(task, pool)
+    raw_case = _repair_generated_case(by_pool[pool.pool_id], task, pool.docs)
+    return normalize_case(
+        raw_case,
+        task_type=task,
+        case_id=case_id,
+        pool_id=pool.pool_id,
+        input_news_pool=pool.docs,
+    )
+
+
+def _generate_case_for_seed(
+    *,
+    generation_llms: dict[float, Any],
+    audit_llm: Any,
+    task: dict[str, Any],
+    pool: Pool,
+    temperatures: list[float],
+    audit_enabled: bool,
+    llm_max_retries: int,
+    llm_backoff_sec: float,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, bool]:
+    feedback: list[dict[str, Any]] = []
+    attempts_meta: list[dict[str, Any]] = []
+    last_stage = "unknown"
+    last_reason = "unknown"
+    last_score = 0.0
+    api_error = False
+
+    for attempt_idx, temp in enumerate(temperatures, 1):
+        feedback_label = feedback[-1]["reason"] if feedback else "none"
+        print(
+            "[SeedAttempt] task=%s pool=%s attempt=%s/%s temp=%.2f feedback=%s"
+            % (task["task_id"], pool.pool_id, attempt_idx, len(temperatures), float(temp), feedback_label)
+        )
+        try:
+            case = _generate_single_case_attempt(
+                generation_llms[temp],
+                task,
+                pool,
+                llm_max_retries=llm_max_retries,
+                llm_backoff_sec=llm_backoff_sec,
+                attempt_feedback=feedback,
+            )
+        except Exception as exc:  # noqa: BLE001
+            last_stage = "llm_generation_error" if _is_retryable_llm_error(exc) else "schema"
+            last_reason = str(exc)
+            api_error = api_error or _is_retryable_llm_error(exc)
+            next_feedback = {
+                "failed_claim_index": 0,
+                "stage": last_stage,
+                "reason": type(exc).__name__,
+                "instruction": "Regenerate a valid strict JSON case for this exact pool.",
+                "detail": str(exc),
+            }
+            feedback.append(next_feedback)
+            attempts_meta.append({"attempt": attempt_idx, "temperature": temp, "stage": last_stage, "reason": last_reason})
+            continue
+
+        evidence_result = validate_case_evidence(case)
+        last_score = float(evidence_result.score)
+        if not evidence_result.accepted:
+            last_stage = "evidence_match"
+            last_reason = "; ".join(item.reason for item in evidence_result.feedback) or "evidence_validation_failed"
+            feedback.extend(item.as_dict() for item in evidence_result.feedback)
+            attempts_meta.append(
+                {
+                    "attempt": attempt_idx,
+                    "temperature": temp,
+                    "stage": last_stage,
+                    "reason": last_reason,
+                    "score": last_score,
+                }
+            )
+            continue
+
+        audit_required = bool(audit_enabled)
+        if evidence_result.audit_required and not audit_enabled:
+            last_stage = "audit"
+            last_reason = "audit_required_but_disabled"
+            feedback.append(
+                {
+                    "failed_claim_index": 0,
+                    "stage": "audit",
+                    "reason": last_reason,
+                    "instruction": "Replace borderline evidence with exact continuous quotes.",
+                }
+            )
+            attempts_meta.append(
+                {"attempt": attempt_idx, "temperature": temp, "stage": last_stage, "reason": last_reason}
+            )
+            continue
+
+        if audit_required:
+            try:
+                audit_ok, audit_reason = _audit_single_case_with_evidence(
+                    audit_llm,
+                    task,
+                    case,
+                    evidence_result,
+                    llm_max_retries=llm_max_retries,
+                    llm_backoff_sec=llm_backoff_sec,
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_stage = "llm_audit_error" if _is_retryable_llm_error(exc) else "audit"
+                last_reason = str(exc)
+                api_error = api_error or _is_retryable_llm_error(exc)
+                feedback.append(
+                    {
+                        "failed_claim_index": 0,
+                        "stage": last_stage,
+                        "reason": type(exc).__name__,
+                        "instruction": "Regenerate a case with exact non-borderline evidence quotes.",
+                        "detail": str(exc),
+                    }
+                )
+                attempts_meta.append(
+                    {"attempt": attempt_idx, "temperature": temp, "stage": last_stage, "reason": last_reason}
+                )
+                continue
+            if not audit_ok:
+                last_stage = "audit"
+                last_reason = audit_reason
+                feedback.append(
+                    {
+                        "failed_claim_index": 0,
+                        "stage": "audit",
+                        "reason": audit_reason,
+                        "instruction": "Revise only unsupported claims/quotes and keep valid fields stable.",
+                    }
+                )
+                attempts_meta.append(
+                    {"attempt": attempt_idx, "temperature": temp, "stage": last_stage, "reason": last_reason}
+                )
+                continue
+
+        case.update(evidence_result.as_case_metadata())
+        if evidence_result.audit_required:
+            case["evidence_match_status"] = "borderline_audit_pass"
+        case["seed_attempts"] = attempts_meta + [
+            {
+                "attempt": attempt_idx,
+                "temperature": temp,
+                "stage": "accepted",
+                "reason": "accepted",
+                "score": last_score,
+            }
+        ]
+        return case, None, api_error
+
+    drop = {
+        "task_id": task["task_id"],
+        "pool_id": pool.pool_id,
+        "pool_hash": build_news_pool_hash(pool.docs),
+        "attempts": len(temperatures),
+        "temperatures": temperatures,
+        "failure_stage": last_stage,
+        "reason": last_reason,
+        "last_score": round(last_score, 4),
+        "candidate_doc_ids": [str(doc.get("doc_id", "")) for doc in pool.docs],
+        "feedback_reasons": [str(item.get("reason", "")) for item in feedback],
+        "attempt_log": attempts_meta,
+    }
+    return None, drop, api_error
+
+
+def _generate_cases_seed_level(
+    *,
+    generation_llms: dict[float, Any],
+    audit_llm: Any,
+    task: dict[str, Any],
+    pools: list[Pool],
+    temperatures: list[float],
+    audit_enabled: bool,
+    llm_max_retries: int,
+    llm_backoff_sec: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int]:
+    generated: list[dict[str, Any]] = []
+    dropped: list[dict[str, Any]] = []
+    consecutive_api_errors = 0
+    for pool in pools:
+        case, drop, api_error = _generate_case_for_seed(
+            generation_llms=generation_llms,
+            audit_llm=audit_llm,
+            task=task,
+            pool=pool,
+            temperatures=temperatures,
+            audit_enabled=audit_enabled,
+            llm_max_retries=llm_max_retries,
+            llm_backoff_sec=llm_backoff_sec,
+        )
+        if api_error:
+            consecutive_api_errors += 1
+        else:
+            consecutive_api_errors = 0
+        if case is not None:
+            generated.append(case)
+        if drop is not None:
+            dropped.append(drop)
+            print(
+                "[TaskDataset][DropSeed] task=%s pool=%s stage=%s reason=%s"
+                % (task["task_id"], drop.get("pool_id"), drop.get("failure_stage"), drop.get("reason"))
+            )
+        if consecutive_api_errors >= 3:
+            print(
+                "[TaskDataset][CircuitBreaker] task=%s aborting after %d consecutive API-error seeds."
+                % (task["task_id"], consecutive_api_errors)
+            )
+            break
+    return generated, dropped, consecutive_api_errors
+
+
 def _audit_regen_failed_only(
     *,
     llm: Any,
@@ -1143,7 +1490,7 @@ def _audit_regen_failed_only(
     return kept, pending_rejected
 
 
-def _parse_args() -> argparse.Namespace:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     eval_dir = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="Build task-driven eval dataset.")
     parser.add_argument(
@@ -1204,12 +1551,12 @@ def _parse_args() -> argparse.Namespace:
         "--provider",
         type=str,
         default=_resolve_preferred_provider(),
-        help="LLM provider: gemini_api|vertex.",
+        help="LLM provider: gemini_api|vertex|deepseek.",
     )
     parser.add_argument(
         "--model",
         type=str,
-        default=os.getenv("TASK_EVAL_MODEL", os.getenv("GEMINI_MODEL", DEFAULT_MODEL)),
+        default=_TASK_EVAL_MODEL_AUTO,
         help="LLM model name.",
     )
     parser.add_argument(
@@ -1246,8 +1593,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llm-max-retries",
         type=int,
-        default=int(os.getenv("TASK_EVAL_LLM_MAX_RETRIES", "2")),
+        default=int(os.getenv("TASK_EVAL_LLM_MAX_RETRIES", "1")),
         help="Retry times for retryable LLM failures (429/quota/timeout).",
+    )
+    parser.add_argument(
+        "--seed-max-attempts",
+        type=int,
+        default=int(os.getenv("TASK_EVAL_SEED_MAX_ATTEMPTS", "3")),
+        help="Max quality attempts per packed pool seed. Default 3.",
     )
     parser.add_argument(
         "--llm-backoff-sec",
@@ -1325,7 +1678,7 @@ def _parse_args() -> argparse.Namespace:
         "--enforce-scenario-retrieval-map",
         action="store_true",
         default=bool(int(os.getenv("TASK_EVAL_ENFORCE_SCENARIO_RETRIEVAL_MAP", "0") or 0)),
-        help="Enforce fixed scenario->retrieval_mode mapping (normal/conflict/boundary=evaluable, empty=non_retrieval).",
+        help="Enforce fixed scenario->retrieval_mode mapping (normal/boundary=evaluable, conflict/empty=non_retrieval).",
     )
     parser.add_argument(
         "--no-enforce-scenario-retrieval-map",
@@ -1338,7 +1691,36 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print dataset fingerprint JSON and exit without generation.",
     )
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    provider_value = str(getattr(args, "provider", "") or "").strip() or _resolve_preferred_provider()
+    explicit_model = str(getattr(args, "model", "") or "").strip()
+    model_from_env = str(os.getenv("TASK_EVAL_MODEL", "")).strip()
+
+    if explicit_model and explicit_model != _TASK_EVAL_MODEL_AUTO:
+        resolved = resolve_model_config(
+            provider=provider_value,
+            model_name=explicit_model,
+            default_provider=DEFAULT_PROVIDER,
+            default_model=DEFAULT_MODEL,
+        )
+    else:
+        resolved = resolve_model_config(
+            provider=provider_value,
+            model_name=model_from_env or None,
+            default_provider=DEFAULT_PROVIDER,
+            default_model=DEFAULT_MODEL,
+        )
+
+    args.provider = resolved.provider
+    args.model = resolved.model
+    return args
+
+
+def _preparse_env_file(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--env-file", type=Path, default=None)
+    parsed, _unknown = parser.parse_known_args(argv)
+    return parsed
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
@@ -1357,9 +1739,10 @@ def _load_checkpoint(path: Path) -> dict[str, Any] | None:
     return payload
 
 
-def main() -> int:
-    args = _parse_args()
-    _load_eval_env(args.env_file)
+def main(argv: list[str] | None = None) -> int:
+    pre_args = _preparse_env_file(argv)
+    _load_eval_env(pre_args.env_file)
+    args = _parse_args(argv)
 
     task_types = load_task_types(
         args.task_types.resolve(),
@@ -1384,15 +1767,26 @@ def main() -> int:
             )
         )
         return 0
-    llm = _build_chat_model(
-        provider=str(args.provider),
-        model_name=str(args.model),
-        temperature=float(args.temperature),
+    seed_temperatures = _seed_attempt_temperatures(
+        float(args.temperature),
+        max(1, int(getattr(args, "seed_max_attempts", 3))),
     )
+    generation_llms: dict[float, Any] = {}
+    for temp in seed_temperatures:
+        if temp not in generation_llms:
+            generation_llms[temp] = _build_chat_model(
+                provider=str(args.provider),
+                model_name=str(args.model),
+                temperature=float(temp),
+            )
     # Separate audit LLM with deterministic temperature for LAAJ
     audit_temperature = float(getattr(args, "audit_temperature", 0.0))
-    if abs(audit_temperature - float(args.temperature)) < 1e-6:
-        audit_llm = llm  # reuse if temperatures match
+    matching_generation_temp = next(
+        (temp for temp in generation_llms if abs(audit_temperature - temp) < 1e-6),
+        None,
+    )
+    if matching_generation_temp is not None:
+        audit_llm = generation_llms[matching_generation_temp]  # reuse if temperatures match
     else:
         audit_llm = _build_chat_model(
             provider=str(args.provider),
@@ -1410,6 +1804,7 @@ def main() -> int:
 
     all_cases: list[dict[str, Any]] = []
     manifest_tasks: list[dict[str, Any]] = []
+    dropped_seeds: list[dict[str, Any]] = []
     completed_task_ids: set[str] = set()
     audit_regen_mode = str(getattr(args, "audit_regen_mode", "failed_only")).strip().lower() or "failed_only"
     if audit_regen_mode not in {"failed_only", "full"}:
@@ -1432,11 +1827,14 @@ def main() -> int:
             if cp_task_file == expected_task_file and (not cp_fingerprint or cp_fingerprint == dataset_fingerprint):
                 cp_cases = checkpoint.get("cases", [])
                 cp_tasks = checkpoint.get("tasks", [])
+                cp_dropped = checkpoint.get("dropped_seeds", [])
                 cp_completed = checkpoint.get("completed_task_ids", [])
                 if isinstance(cp_cases, list):
                     all_cases = [row for row in cp_cases if isinstance(row, dict)]
                 if isinstance(cp_tasks, list):
                     manifest_tasks = [row for row in cp_tasks if isinstance(row, dict)]
+                if isinstance(cp_dropped, list):
+                    dropped_seeds = [row for row in cp_dropped if isinstance(row, dict)]
                 if isinstance(cp_completed, list):
                     completed_task_ids = {
                         str(item).strip() for item in cp_completed if str(item).strip()
@@ -1461,111 +1859,72 @@ def main() -> int:
         n_min = int(task.get("sampling", {}).get("n_min", 30))
         pools_per_task = int(args.pools_per_task) if int(args.pools_per_task) > 0 else n_min
 
-        candidates = _sample_candidates(task)
-        pools = _build_pools(task, candidates, pools_per_task=pools_per_task, rng=rng)
-        generated_cases = _generate_for_task(
-            llm,
-            task,
-            pools,
-            llm_max_retries=int(args.llm_max_retries),
-            llm_backoff_sec=float(args.llm_backoff_sec),
-            pools_per_generation_call=int(args.pools_per_generation_call),
-            inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
-        )
+        try:
+            sample = build_eval_sample(task, pools_per_task=pools_per_task, rng=rng)
+            candidates = sample.candidates
+            pools = [Pool(pool_id=pool.pool_id, docs=pool.docs) for pool in sample.pools]
+            sample_meta = sample.meta
+            pool_meta_by_id = {pool.pool_id: pool.meta for pool in sample.pools}
+        except Exception as exc:  # noqa: BLE001
+            print(f"[TaskDataset][SamplerFallback] task={task_id} independent sampler failed: {exc}")
+            candidates = _sample_candidates(task)
+            pools = _build_pools(task, candidates, pools_per_task=pools_per_task, rng=rng)
+            sample_meta = {
+                "candidate_source": "legacy_eval_sampler_fallback",
+                "sampler_error": str(exc),
+                "candidate_docs": len(candidates),
+                "pool_count": len(pools),
+                "cluster_mode": "legacy_round_robin",
+                "cluster_fallback": True,
+                "cluster_fallback_reason": "independent_sampler_exception",
+            }
+            pool_meta_by_id = {pool.pool_id: {} for pool in pools}
 
-        rejected: dict[str, str] = {}
-        if not args.disable_audit:
-            max_regen_rounds = max(0, int(args.audit_max_regen_rounds))
-            if audit_regen_mode == "failed_only":
-                generated_cases, rejected = _audit_regen_failed_only(
-                    llm=llm,
-                    audit_llm=audit_llm,
-                    task=task,
-                    pools=pools,
-                    generated_cases=generated_cases,
-                    llm_max_retries=int(args.llm_max_retries),
-                    llm_backoff_sec=float(args.llm_backoff_sec),
-                    max_regen_rounds=max_regen_rounds,
-                    initial_cases_per_audit_call=initial_cases_per_audit_call,
-                    regen_cases_per_audit_call=regen_cases_per_audit_call,
-                    pools_per_generation_call=int(args.pools_per_generation_call),
-                    regen_pools_per_generation_call=int(args.regen_pools_per_generation_call),
-                    inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
+        topic_audit = audit_task_with_sample(task, candidates, sample_meta, pools)
+        if topic_audit.get("verdict") != "pass":
+            print(
+                "[TaskDataset][TopicAudit] task=%s verdict=%s issues=%s warnings=%s"
+                % (
+                    task["task_id"],
+                    topic_audit.get("verdict"),
+                    len(topic_audit.get("issues", [])),
+                    len(topic_audit.get("warnings", [])),
                 )
-            else:
-                consecutive_llm_errors = 0
-                for regen_round in range(0, max_regen_rounds + 1):
-                    rejected = _audit_cases(
-                        audit_llm,
-                        task,
-                        generated_cases,
-                        llm_max_retries=int(args.llm_max_retries),
-                        llm_backoff_sec=float(args.llm_backoff_sec),
-                        cases_per_audit_call=initial_cases_per_audit_call,
-                        inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
-                    )
-                    if not rejected:
-                        break
-                    if regen_round >= max_regen_rounds:
-                        break
+            )
 
-                    rejected_case_ids = set(rejected.keys())
-                    regen_pools = [
-                        pool
-                        for pool in pools
-                        if any(
-                            case["pool_id"] == pool.pool_id and case["case_id"] in rejected_case_ids
-                            for case in generated_cases
-                        )
-                    ]
-                    if not regen_pools:
-                        break
-
-                    print(
-                        "[TaskDataset][AuditRegen][Full] task=%s round=%s/%s rejected=%s regen_pools=%s reasons=%s"
-                        % (
-                            task["task_id"],
-                            regen_round + 1,
-                            max_regen_rounds,
-                            len(rejected),
-                            len(regen_pools),
-                            rejected,
-                        )
-                    )
-                    try:
-                        regenerated = _generate_for_task(
-                            llm,
-                            task,
-                            regen_pools,
-                            llm_max_retries=int(args.llm_max_retries),
-                            llm_backoff_sec=float(args.llm_backoff_sec),
-                            pools_per_generation_call=int(args.pools_per_generation_call),
-                            inter_llm_call_sleep_sec=float(args.inter_llm_call_sleep_sec),
-                            rejection_reasons=rejected,
-                        )
-                        consecutive_llm_errors = 0
-                    except Exception as regen_exc:
-                        consecutive_llm_errors += 1
-                        print(
-                            "[TaskDataset][CircuitBreaker] task=%s regen LLM error #%d: %s"
-                            % (task["task_id"], consecutive_llm_errors, regen_exc)
-                        )
-                        if consecutive_llm_errors >= 3:
-                            print(
-                                "[TaskDataset][CircuitBreaker] task=%s aborting regen after %d consecutive LLM errors."
-                                % (task["task_id"], consecutive_llm_errors)
-                            )
-                            break
-                        continue
-                    regen_by_pool = {row["pool_id"]: row for row in regenerated}
-                    for idx, row in enumerate(generated_cases):
-                        pool_id = row["pool_id"]
-                        if pool_id in regen_by_pool:
-                            generated_cases[idx] = regen_by_pool[pool_id]
-
-                if rejected:
-                    print(f"[TaskDataset][Warning] {task['task_id']}: reached max retries. Dropping rejected cases={rejected}")
-                    generated_cases = [case for case in generated_cases if case.get("case_id") not in rejected]
+        if pools:
+            generated_cases, dropped_for_task, _task_api_errors = _generate_cases_seed_level(
+                generation_llms=generation_llms,
+                audit_llm=audit_llm,
+                task=task,
+                pools=pools,
+                temperatures=seed_temperatures,
+                audit_enabled=not bool(args.disable_audit),
+                llm_max_retries=int(args.llm_max_retries),
+                llm_backoff_sec=float(args.llm_backoff_sec),
+            )
+        else:
+            generated_cases = []
+            dropped_for_task = [
+                {
+                    "task_id": task["task_id"],
+                    "pool_id": "",
+                    "pool_hash": "",
+                    "attempts": 0,
+                    "temperatures": seed_temperatures,
+                    "failure_stage": "packing",
+                    "reason": "no_valid_packed_pools",
+                    "last_score": 0.0,
+                    "candidate_doc_ids": [str(doc.get("doc_id", "")) for doc in candidates],
+                    "feedback_reasons": ["no_valid_packed_pools"],
+                    "attempt_log": [],
+                }
+            ]
+        dropped_seeds.extend(dropped_for_task)
+        for case in generated_cases:
+            pool_meta = pool_meta_by_id.get(str(case.get("pool_id", "")), {})
+            if pool_meta:
+                case["packing_meta"] = pool_meta
 
         for case in generated_cases:
             validate_case(case, strict_skill=bool(args.strict_skill_check))
@@ -1578,8 +1937,18 @@ def main() -> int:
                 "retrieval_mode": task["retrieval_mode"],
                 "scenario": task["scenario"],
                 "candidate_docs": len(candidates),
+                "embedding_docs": int(sample_meta.get("embedding_docs", 0) or 0),
+                "candidate_source": sample_meta.get("candidate_source", ""),
+                "candidate_channel_counts": sample_meta.get("candidate_channel_counts", {}),
+                "cluster_mode": sample_meta.get("cluster_mode", ""),
+                "cluster_count": sample_meta.get("cluster_count", 0),
+                "cluster_fallback": bool(sample_meta.get("cluster_fallback", False)),
+                "cluster_fallback_reason": sample_meta.get("cluster_fallback_reason", ""),
                 "pool_count": len(pools),
                 "generated_cases": len(generated_cases),
+                "dropped_seed_count": len(dropped_for_task),
+                "seed_attempt_temperatures": seed_temperatures,
+                "topic_audit": topic_audit,
             }
         )
         completed_task_ids.add(task["task_id"])
@@ -1592,6 +1961,9 @@ def main() -> int:
             "provider": str(args.provider),
             "model": str(args.model),
             "temperature": float(args.temperature),
+            "audit_temperature": float(args.audit_temperature),
+            "seed_max_attempts": int(args.seed_max_attempts),
+            "seed_attempt_temperatures": seed_temperatures,
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
             "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
@@ -1608,6 +1980,7 @@ def main() -> int:
             "dataset_fingerprint_payload": dataset_fingerprint_payload,
             "completed_task_ids": sorted(completed_task_ids),
             "tasks": manifest_tasks,
+            "dropped_seeds": dropped_seeds,
             "cases": all_cases,
         }
         _write_json_atomic(checkpoint_path, checkpoint_payload)
@@ -1628,6 +2001,12 @@ def main() -> int:
         for row in all_cases:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
+    topic_audit_summary = {
+        "points_used": False,
+        "pass": sum(1 for row in manifest_tasks if row.get("topic_audit", {}).get("verdict") == "pass"),
+        "warn": sum(1 for row in manifest_tasks if row.get("topic_audit", {}).get("verdict") == "warn"),
+        "fail": sum(1 for row in manifest_tasks if row.get("topic_audit", {}).get("verdict") == "fail"),
+    }
     manifest = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "task_type_file": str(args.task_types.resolve()),
@@ -1637,6 +2016,9 @@ def main() -> int:
         "provider": str(args.provider),
         "model": str(args.model),
         "temperature": float(args.temperature),
+        "audit_temperature": float(args.audit_temperature),
+        "seed_max_attempts": int(args.seed_max_attempts),
+        "seed_attempt_temperatures": seed_temperatures,
         "audit_enabled": not bool(args.disable_audit),
         "llm_max_retries": int(args.llm_max_retries),
         "llm_backoff_sec": float(args.llm_backoff_sec),
@@ -1652,7 +2034,10 @@ def main() -> int:
         "scenario_retrieval_map_enforced": bool(getattr(args, "enforce_scenario_retrieval_map", False)),
         "dataset_fingerprint": dataset_fingerprint,
         "dataset_fingerprint_payload": dataset_fingerprint_payload,
+        "topic_audit": topic_audit_summary,
         "tasks": manifest_tasks,
+        "dropped_seeds": dropped_seeds,
+        "dropped_seed_count": len(dropped_seeds),
     }
     manifest_path = args.manifest_output.resolve()
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1669,6 +2054,9 @@ def main() -> int:
             "provider": str(args.provider),
             "model": str(args.model),
             "temperature": float(args.temperature),
+            "audit_temperature": float(args.audit_temperature),
+            "seed_max_attempts": int(args.seed_max_attempts),
+            "seed_attempt_temperatures": seed_temperatures,
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
             "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
@@ -1683,8 +2071,10 @@ def main() -> int:
             "scenario_retrieval_map_enforced": bool(getattr(args, "enforce_scenario_retrieval_map", False)),
             "dataset_fingerprint": dataset_fingerprint,
             "dataset_fingerprint_payload": dataset_fingerprint_payload,
+            "topic_audit": topic_audit_summary,
             "completed_task_ids": sorted(completed_task_ids),
             "tasks": manifest_tasks,
+            "dropped_seeds": dropped_seeds,
             "cases": all_cases,
             "manifest_path": str(manifest_path),
         },

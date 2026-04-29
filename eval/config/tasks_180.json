@@ -5,9 +5,9 @@
     "intent_label": "search_news",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
-    "example_question": "Find English news related to Claude.",
+    "example_question": "查找 Anthropic Claude 模型与产品更新的近期新闻。",
     "parameter_template": {
-      "query": "Claude related English news",
+      "query": "Anthropic Claude 模型与产品更新",
       "days": 21
     },
     "acceptable_tool_paths": [
@@ -15,7 +15,7 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "Claude related English news",
+            "query": "Anthropic Claude 模型与产品更新",
             "days": 21
           }
         }
@@ -24,7 +24,7 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "Claude",
+            "query": "Anthropic Claude 模型与产品更新",
             "days": 21,
             "limit": 10
           }
@@ -32,7 +32,7 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "Claude related English news",
+            "query": "Anthropic Claude 模型与产品更新",
             "days": 21
           }
         }
@@ -45,13 +45,15 @@
     "should_clarify": false,
     "difficulty": "medium",
     "sampling": {
-      "days": 30,
-      "n_min": 10,
+      "days": 45,
+      "n_min": 12,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
+        "Anthropic",
         "Claude",
-        "Anthropic"
+        "模型更新",
+        "产品更新"
       ],
       "sources": [],
       "languages": []
@@ -64,11 +66,11 @@
     "task_id": "search_news.conflict",
     "skill": "search_news",
     "intent_label": "search_news",
-    "retrieval_mode": "evaluable",
+    "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
-    "example_question": "Search mixed intent query that requires clarifying target entity before retrieval.",
+    "example_question": "查询 Claude 更新，但需要先澄清用户指的是 Claude Code 还是 Claude API 定价。",
     "parameter_template": {
-      "query": "OpenAI vs Anthropic but only one target after clarification",
+      "query": "Claude 更新：需要澄清是 Claude Code 还是 Claude API 定价",
       "days": 21
     },
     "acceptable_tool_paths": [
@@ -76,7 +78,7 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "OpenAI vs Anthropic but only one target after clarification",
+            "query": "Claude 更新：需要澄清是 Claude Code 还是 Claude API 定价",
             "days": 21
           }
         }
@@ -85,15 +87,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "OpenAI vs Anthropic but only one target after clarification",
+            "query": "Claude 更新：需要澄清是 Claude Code 还是 Claude API 定价",
             "days": 21,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "search_news",
           "args": {
-            "query": "OpenAI vs Anthropic but only one target after clarification",
+            "query": "Claude 更新：需要澄清是 Claude Code 还是 Claude API 定价",
             "days": 21
           }
         }
@@ -107,11 +109,12 @@
     "difficulty": "medium",
     "sampling": {
       "days": 30,
-      "n_min": 8,
+      "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "Claude",
+        "Claude Code",
+        "Claude API 定价",
         "Anthropic"
       ],
       "sources": [],
@@ -127,9 +130,9 @@
     "intent_label": "search_news",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "Search for a very rare technical keyword and expect no relevant results.",
+    "example_question": "查询一个预期没有匹配新闻的合成 Claude 收购主题。",
     "parameter_template": {
-      "query": "ultra-rare-keyword-zzqv-2026",
+      "query": "zzqv 不存在的 Claude 收购 2026",
       "days": 14
     },
     "acceptable_tool_paths": [
@@ -137,7 +140,7 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "ultra-rare-keyword-zzqv-2026",
+            "query": "zzqv 不存在的 Claude 收购 2026",
             "days": 14
           }
         }
@@ -146,15 +149,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "ultra-rare-keyword-zzqv-2026",
+            "query": "zzqv 不存在的 Claude 收购 2026",
             "days": 14,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "search_news",
           "args": {
-            "query": "ultra-rare-keyword-zzqv-2026",
+            "query": "zzqv 不存在的 Claude 收购 2026",
             "days": 14
           }
         }
@@ -172,8 +175,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "Claude",
-        "Anthropic"
+        "zzqv",
+        "不存在的 Claude 收购 2026"
       ],
       "sources": [],
       "languages": []
@@ -188,18 +191,18 @@
     "intent_label": "search_news",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
-    "example_question": "Search cross-market AI governance updates with a narrow time window and return the most relevant items.",
+    "example_question": "查找 AI 芯片出口管制与模型训练云访问限制相关的窄主题近期新闻。",
     "parameter_template": {
-      "query": "AI governance export controls edge cases",
-      "days": 5
+      "query": "AI 芯片出口管制与模型训练云访问限制",
+      "days": 14
     },
     "acceptable_tool_paths": [
       [
         {
           "tool": "search_news",
           "args": {
-            "query": "Claude related English news",
-            "days": 21
+            "query": "AI 芯片出口管制与模型训练云访问限制",
+            "days": 14
           }
         }
       ],
@@ -207,16 +210,16 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "Claude",
-            "days": 21,
+            "query": "AI 芯片出口管制与模型训练云访问限制",
+            "days": 14,
             "limit": 10
           }
         },
         {
           "tool": "search_news",
           "args": {
-            "query": "Claude related English news",
-            "days": 21
+            "query": "AI 芯片出口管制与模型训练云访问限制",
+            "days": 14
           }
         }
       ]
@@ -228,13 +231,14 @@
     "should_clarify": false,
     "difficulty": "hard",
     "sampling": {
-      "days": 30,
-      "n_min": 2,
+      "days": 60,
+      "n_min": 6,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "Claude",
-        "Anthropic"
+        "AI 芯片出口管制",
+        "云访问限制",
+        "模型训练"
       ],
       "sources": [],
       "languages": []
@@ -249,9 +253,9 @@
     "intent_label": "fulltext_batch",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
-    "example_question": "Batch read full text for OpenAI Voice Engine topic without explicit URLs.",
+    "example_question": "批量读取 OpenAI Voice Engine 与 Realtime API 语音相关新闻全文。",
     "parameter_template": {
-      "urls": "OpenAI Voice Engine recent 14 days",
+      "urls": "OpenAI Voice Engine 与 Realtime API 语音新闻",
       "max_chars_per_article": 4000
     },
     "acceptable_tool_paths": [
@@ -259,7 +263,7 @@
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "OpenAI Voice Engine recent 14 days",
+            "urls": "OpenAI Voice Engine 与 Realtime API 语音新闻",
             "max_chars_per_article": 4000
           }
         }
@@ -268,14 +272,14 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "OpenAI Voice Engine recent 14 days",
+            "query": "OpenAI Voice Engine 与 Realtime API 语音新闻",
             "days": 14
           }
         },
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "OpenAI Voice Engine recent 14 days",
+            "urls": "OpenAI Voice Engine 与 Realtime API 语音新闻",
             "max_chars_per_article": 4000
           }
         }
@@ -288,13 +292,15 @@
     "should_clarify": false,
     "difficulty": "hard",
     "sampling": {
-      "days": 30,
-      "n_min": 10,
+      "days": 45,
+      "n_min": 12,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
         "OpenAI",
-        "Voice"
+        "Voice Engine",
+        "Realtime API",
+        "语音"
       ],
       "sources": [],
       "languages": []
@@ -307,11 +313,11 @@
     "task_id": "fulltext_batch.conflict",
     "skill": "fulltext_batch",
     "intent_label": "fulltext_batch",
-    "retrieval_mode": "evaluable",
+    "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
-    "example_question": "Ask fulltext batch to both avoid auto-select and not provide URLs; clarification needed.",
+    "example_question": "请求语音 AI 新闻全文，但既不提供 URL 又禁止自动选择，需要先澄清。",
     "parameter_template": {
-      "urls": "need clarification: no urls but no auto-select allowed",
+      "urls": "语音 AI 全文读取请求：没有 URL 且不允许自动选择",
       "max_chars_per_article": 4000
     },
     "acceptable_tool_paths": [
@@ -319,7 +325,7 @@
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "need clarification: no urls but no auto-select allowed",
+            "urls": "语音 AI 全文读取请求：没有 URL 且不允许自动选择",
             "max_chars_per_article": 4000
           }
         }
@@ -328,14 +334,14 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "need clarification: no urls but no auto-select allowed",
+            "query": "语音 AI 全文读取请求：没有 URL 且不允许自动选择",
             "days": 14
           }
         },
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "need clarification: no urls but no auto-select allowed",
+            "urls": "语音 AI 全文读取请求：没有 URL 且不允许自动选择",
             "max_chars_per_article": 4000
           }
         }
@@ -349,12 +355,14 @@
     "difficulty": "medium",
     "sampling": {
       "days": 30,
-      "n_min": 8,
+      "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Voice"
+        "语音 AI",
+        "全文读取",
+        "没有 URL",
+        "禁止自动选择"
       ],
       "sources": [],
       "languages": []
@@ -369,9 +377,9 @@
     "intent_label": "fulltext_batch",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "Batch read full text for a rare query expected to return no candidates.",
+    "example_question": "批量读取一个预期没有候选新闻的合成语音模型发布主题全文。",
     "parameter_template": {
-      "urls": "ultra-rare-fulltext-query-zzqv-2026",
+      "urls": "zzqv 不存在的语音模型发布 2026",
       "max_chars_per_article": 4000
     },
     "acceptable_tool_paths": [
@@ -379,7 +387,7 @@
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "ultra-rare-fulltext-query-zzqv-2026",
+            "urls": "zzqv 不存在的语音模型发布 2026",
             "max_chars_per_article": 4000
           }
         }
@@ -388,14 +396,14 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "ultra-rare-fulltext-query-zzqv-2026",
+            "query": "zzqv 不存在的语音模型发布 2026",
             "days": 14
           }
         },
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "ultra-rare-fulltext-query-zzqv-2026",
+            "urls": "zzqv 不存在的语音模型发布 2026",
             "max_chars_per_article": 4000
           }
         }
@@ -413,8 +421,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Voice"
+        "zzqv",
+        "不存在的语音模型发布 2026"
       ],
       "sources": [],
       "languages": []
@@ -429,9 +437,9 @@
     "intent_label": "fulltext_batch",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
-    "example_question": "Without URLs, auto-select OpenAI Voice Engine docs in last 14 days and read full text.",
+    "example_question": "批量读取 OpenAI Voice Engine 安全、同意和隐私相关主题全文。",
     "parameter_template": {
-      "urls": "OpenAI Voice Engine recent 14 days",
+      "urls": "OpenAI Voice Engine 安全、同意与隐私",
       "max_chars_per_article": 4000
     },
     "acceptable_tool_paths": [
@@ -439,7 +447,7 @@
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "OpenAI Voice Engine recent 14 days",
+            "urls": "OpenAI Voice Engine 安全、同意与隐私",
             "max_chars_per_article": 4000
           }
         }
@@ -448,14 +456,14 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "OpenAI Voice Engine",
+            "query": "OpenAI Voice Engine 安全、同意与隐私",
             "days": 14
           }
         },
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "OpenAI Voice Engine recent 14 days",
+            "urls": "OpenAI Voice Engine 安全、同意与隐私",
             "max_chars_per_article": 4000
           }
         }
@@ -468,13 +476,15 @@
     "should_clarify": false,
     "difficulty": "hard",
     "sampling": {
-      "days": 30,
+      "days": 45,
       "n_min": 6,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Voice"
+        "OpenAI Voice Engine",
+        "安全",
+        "同意",
+        "隐私"
       ],
       "sources": [],
       "languages": []
@@ -489,7 +499,7 @@
     "intent_label": "compare_topics",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
-    "example_question": "Compare OpenAI and Anthropic heat and source mix in last 21 days.",
+    "example_question": "比较 OpenAI 与 Anthropic 的近期新闻覆盖。",
     "parameter_template": {
       "topic_a": "OpenAI",
       "topic_b": "Anthropic",
@@ -532,8 +542,8 @@
     "should_clarify": false,
     "difficulty": "medium",
     "sampling": {
-      "days": 30,
-      "n_min": 9,
+      "days": 45,
+      "n_min": 12,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
@@ -551,12 +561,12 @@
     "task_id": "compare_topics.conflict",
     "skill": "compare_topics",
     "intent_label": "compare_topics",
-    "retrieval_mode": "evaluable",
+    "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
-    "example_question": "Compare A/B but also include a third entity in same request; requires clarification.",
+    "example_question": "比较 Claude 产品与 Anthropic 公司新闻，但需要先澄清比较范围。",
     "parameter_template": {
-      "topic_a": "OpenAI",
-      "topic_b": "Anthropic plus xAI",
+      "topic_a": "Claude 产品",
+      "topic_b": "Anthropic 公司范围歧义",
       "days": 21
     },
     "acceptable_tool_paths": [
@@ -564,8 +574,8 @@
         {
           "tool": "compare_topics",
           "args": {
-            "topic_a": "OpenAI",
-            "topic_b": "Anthropic plus xAI",
+            "topic_a": "Claude 产品",
+            "topic_b": "Anthropic 公司范围歧义",
             "days": 21
           }
         }
@@ -574,16 +584,16 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "OpenAI",
+            "query": "Claude 产品",
             "days": 21,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "compare_topics",
           "args": {
-            "topic_a": "OpenAI",
-            "topic_b": "Anthropic plus xAI",
+            "topic_a": "Claude 产品",
+            "topic_b": "Anthropic 公司范围歧义",
             "days": 21
           }
         }
@@ -597,12 +607,12 @@
     "difficulty": "medium",
     "sampling": {
       "days": 30,
-      "n_min": 7,
+      "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Anthropic"
+        "Claude 产品",
+        "Anthropic 公司"
       ],
       "sources": [],
       "languages": []
@@ -617,7 +627,7 @@
     "intent_label": "compare_topics",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "Compare two rare entities in recent window expecting insufficient data.",
+    "example_question": "比较两个预期数据不足的合成罕见实体。",
     "parameter_template": {
       "topic_a": "rare_entity_alpha",
       "topic_b": "rare_entity_beta",
@@ -640,7 +650,7 @@
           "args": {
             "query": "rare_entity_alpha",
             "days": 21,
-            "limit": 8
+            "limit": 10
           }
         },
         {
@@ -665,8 +675,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Anthropic"
+        "rare_entity_alpha",
+        "rare_entity_beta"
       ],
       "sources": [],
       "languages": []
@@ -681,19 +691,19 @@
     "intent_label": "compare_topics",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
-    "example_question": "Compare two adjacent AI subtopics with sparse overlap and summarize key differences.",
+    "example_question": "比较两个相邻但低频的 AI 治理子主题。",
     "parameter_template": {
-      "topic_a": "AI red teaming",
-      "topic_b": "model auditing",
-      "days": 10
+      "topic_a": "AI 红队测试",
+      "topic_b": "模型审计",
+      "days": 21
     },
     "acceptable_tool_paths": [
       [
         {
           "tool": "compare_topics",
           "args": {
-            "topic_a": "OpenAI",
-            "topic_b": "Anthropic",
+            "topic_a": "AI 红队测试",
+            "topic_b": "模型审计",
             "days": 21
           }
         }
@@ -702,7 +712,7 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "OpenAI",
+            "query": "AI 红队测试",
             "days": 21,
             "limit": 10
           }
@@ -710,8 +720,8 @@
         {
           "tool": "compare_topics",
           "args": {
-            "topic_a": "OpenAI",
-            "topic_b": "Anthropic",
+            "topic_a": "AI 红队测试",
+            "topic_b": "模型审计",
             "days": 21
           }
         }
@@ -724,13 +734,13 @@
     "should_clarify": false,
     "difficulty": "hard",
     "sampling": {
-      "days": 30,
-      "n_min": 2,
+      "days": 60,
+      "n_min": 5,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Anthropic"
+        "AI 红队测试",
+        "模型审计"
       ],
       "sources": [],
       "languages": []
@@ -745,18 +755,18 @@
     "intent_label": "compare_sources",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
-    "example_question": "Compare NVIDIA coverage and sentiment on HackerNews vs TechCrunch in last 14 days.",
+    "example_question": "比较 HackerNews 与 TechCrunch 对 NVIDIA AI 芯片供应的覆盖。",
     "parameter_template": {
-      "topic": "NVIDIA",
-      "days": 14
+      "topic": "NVIDIA AI 芯片供应",
+      "days": 21
     },
     "acceptable_tool_paths": [
       [
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "NVIDIA",
-            "days": 14
+            "topic": "NVIDIA AI 芯片供应",
+            "days": 21
           }
         }
       ],
@@ -764,16 +774,16 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "NVIDIA",
-            "days": 14,
+            "query": "NVIDIA AI 芯片供应",
+            "days": 21,
             "limit": 10
           }
         },
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "NVIDIA",
-            "days": 14
+            "topic": "NVIDIA AI 芯片供应",
+            "days": 21
           }
         }
       ]
@@ -785,12 +795,13 @@
     "should_clarify": false,
     "difficulty": "medium",
     "sampling": {
-      "days": 30,
-      "n_min": 9,
+      "days": 45,
+      "n_min": 12,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "NVIDIA"
+        "NVIDIA",
+        "AI 芯片供应"
       ],
       "sources": [
         "HackerNews",
@@ -806,11 +817,11 @@
     "task_id": "compare_sources.conflict",
     "skill": "compare_sources",
     "intent_label": "compare_sources",
-    "retrieval_mode": "evaluable",
+    "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
-    "example_question": "Compare sources while requesting conflicting source scope constraints.",
+    "example_question": "比较 NVIDIA 覆盖，但给出互相冲突的来源范围约束。",
     "parameter_template": {
-      "topic": "NVIDIA with conflicting source constraints",
+      "topic": "NVIDIA 覆盖与互相冲突的来源范围约束",
       "days": 14
     },
     "acceptable_tool_paths": [
@@ -818,7 +829,7 @@
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "NVIDIA with conflicting source constraints",
+            "topic": "NVIDIA 覆盖与互相冲突的来源范围约束",
             "days": 14
           }
         }
@@ -827,15 +838,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "NVIDIA with conflicting source constraints",
+            "query": "NVIDIA 覆盖与互相冲突的来源范围约束",
             "days": 14,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "NVIDIA with conflicting source constraints",
+            "topic": "NVIDIA 覆盖与互相冲突的来源范围约束",
             "days": 14
           }
         }
@@ -849,11 +860,12 @@
     "difficulty": "medium",
     "sampling": {
       "days": 30,
-      "n_min": 7,
+      "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "NVIDIA"
+        "NVIDIA",
+        "冲突来源约束"
       ],
       "sources": [
         "HackerNews",
@@ -871,9 +883,9 @@
     "intent_label": "compare_sources",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "Compare source coverage for a rare topic with likely empty result.",
+    "example_question": "比较一个预期为空的合成 GPU 初创公司融资主题的来源覆盖。",
     "parameter_template": {
-      "topic": "rare source compare keyword",
+      "topic": "zzqv 不存在的 GPU 初创公司融资",
       "days": 14
     },
     "acceptable_tool_paths": [
@@ -881,7 +893,7 @@
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "rare source compare keyword",
+            "topic": "zzqv 不存在的 GPU 初创公司融资",
             "days": 14
           }
         }
@@ -890,15 +902,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "rare source compare keyword",
+            "query": "zzqv 不存在的 GPU 初创公司融资",
             "days": 14,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "rare source compare keyword",
+            "topic": "zzqv 不存在的 GPU 初创公司融资",
             "days": 14
           }
         }
@@ -916,7 +928,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "NVIDIA"
+        "zzqv",
+        "不存在的 GPU 初创公司融资"
       ],
       "sources": [
         "HackerNews",
@@ -934,18 +947,18 @@
     "intent_label": "compare_sources",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
-    "example_question": "Compare source bias and sentiment for a low-frequency topic over a narrow window.",
+    "example_question": "比较 NVIDIA Blackwell AI 芯片供应的来源覆盖。",
     "parameter_template": {
-      "topic": "AI benchmark leakage",
-      "days": 10
+      "topic": "NVIDIA Blackwell AI 芯片供应",
+      "days": 21
     },
     "acceptable_tool_paths": [
       [
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "NVIDIA",
-            "days": 14
+            "topic": "NVIDIA Blackwell AI 芯片供应",
+            "days": 21
           }
         }
       ],
@@ -953,16 +966,16 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "NVIDIA",
-            "days": 14,
+            "query": "NVIDIA Blackwell AI 芯片供应",
+            "days": 21,
             "limit": 10
           }
         },
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "NVIDIA",
-            "days": 14
+            "topic": "NVIDIA Blackwell AI 芯片供应",
+            "days": 21
           }
         }
       ]
@@ -974,12 +987,14 @@
     "should_clarify": false,
     "difficulty": "hard",
     "sampling": {
-      "days": 30,
-      "n_min": 2,
+      "days": 60,
+      "n_min": 5,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "NVIDIA"
+        "NVIDIA",
+        "Blackwell",
+        "AI 芯片供应"
       ],
       "sources": [
         "HackerNews",
@@ -997,9 +1012,9 @@
     "intent_label": "build_timeline",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
-    "example_question": "Build OpenAI timeline for last 30 days, max 12 events.",
+    "example_question": "构建 OpenAI 模型与产品发布的时间线。",
     "parameter_template": {
-      "topic": "OpenAI",
+      "topic": "OpenAI 模型与产品发布",
       "days": 30,
       "limit": 12
     },
@@ -1008,7 +1023,7 @@
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "OpenAI",
+            "topic": "OpenAI 模型与产品发布",
             "days": 30,
             "limit": 12
           }
@@ -1018,16 +1033,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "OpenAI",
+            "query": "OpenAI 模型与产品发布",
             "days": 30,
-            "sort": "time_asc",
-            "limit": 12
+            "limit": 10
           }
         },
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "OpenAI",
+            "topic": "OpenAI 模型与产品发布",
             "days": 30,
             "limit": 12
           }
@@ -1041,12 +1055,14 @@
     "should_clarify": false,
     "difficulty": "easy",
     "sampling": {
-      "days": 45,
-      "n_min": 10,
+      "days": 60,
+      "n_min": 12,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI"
+        "OpenAI",
+        "模型发布",
+        "产品发布"
       ],
       "sources": [],
       "languages": []
@@ -1059,11 +1075,11 @@
     "task_id": "build_timeline.conflict",
     "skill": "build_timeline",
     "intent_label": "build_timeline",
-    "retrieval_mode": "evaluable",
+    "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
-    "example_question": "Build one timeline but ask to merge two unrelated entities without clear priority.",
+    "example_question": "要求构建一条时间线，但混合 OpenAI 与 Anthropic 两个目标，需要先澄清。",
     "parameter_template": {
-      "topic": "OpenAI and Anthropic mixed timeline",
+      "topic": "OpenAI 与 Anthropic 时间线需要澄清单一目标",
       "days": 30,
       "limit": 12
     },
@@ -1072,7 +1088,7 @@
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "OpenAI and Anthropic mixed timeline",
+            "topic": "OpenAI 与 Anthropic 时间线需要澄清单一目标",
             "days": 30,
             "limit": 12
           }
@@ -1082,15 +1098,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "OpenAI and Anthropic mixed timeline",
+            "query": "OpenAI 与 Anthropic 时间线需要澄清单一目标",
             "days": 30,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "OpenAI and Anthropic mixed timeline",
+            "topic": "OpenAI 与 Anthropic 时间线需要澄清单一目标",
             "days": 30,
             "limit": 12
           }
@@ -1105,11 +1121,13 @@
     "difficulty": "medium",
     "sampling": {
       "days": 45,
-      "n_min": 8,
+      "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI"
+        "OpenAI",
+        "Anthropic",
+        "时间线澄清"
       ],
       "sources": [],
       "languages": []
@@ -1124,10 +1142,10 @@
     "intent_label": "build_timeline",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "Build timeline for an ultra-low-frequency topic in a very short window expecting empty.",
+    "example_question": "为一个预期为空的合成事件主题构建时间线。",
     "parameter_template": {
-      "topic": "rare timeline keyword",
-      "days": 7,
+      "topic": "zzqv 不存在的时间线事件 2026",
+      "days": 14,
       "limit": 12
     },
     "acceptable_tool_paths": [
@@ -1135,8 +1153,8 @@
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "rare timeline keyword",
-            "days": 7,
+            "topic": "zzqv 不存在的时间线事件 2026",
+            "days": 14,
             "limit": 12
           }
         }
@@ -1145,16 +1163,16 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "rare timeline keyword",
-            "days": 7,
-            "limit": 8
+            "query": "zzqv 不存在的时间线事件 2026",
+            "days": 14,
+            "limit": 10
           }
         },
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "rare timeline keyword",
-            "days": 7,
+            "topic": "zzqv 不存在的时间线事件 2026",
+            "days": 14,
             "limit": 12
           }
         }
@@ -1167,12 +1185,13 @@
     "should_clarify": false,
     "difficulty": "easy",
     "sampling": {
-      "days": 45,
+      "days": 30,
       "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI"
+        "zzqv",
+        "不存在的时间线事件 2026"
       ],
       "sources": [],
       "languages": []
@@ -1187,10 +1206,10 @@
     "intent_label": "build_timeline",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
-    "example_question": "Build low-frequency topic timeline for last 14 days, expecting auto-expand.",
+    "example_question": "构建 AI 芯片出口管制与云访问限制的时间线。",
     "parameter_template": {
-      "topic": "low frequency topic",
-      "days": 14,
+      "topic": "AI 芯片出口管制与云访问限制",
+      "days": 45,
       "limit": 12
     },
     "acceptable_tool_paths": [
@@ -1198,8 +1217,8 @@
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "low frequency topic",
-            "days": 14,
+            "topic": "AI 芯片出口管制与云访问限制",
+            "days": 45,
             "limit": 12
           }
         }
@@ -1208,17 +1227,16 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "low frequency topic",
-            "days": 30,
-            "sort": "time_desc",
-            "limit": 12
+            "query": "AI 芯片出口管制与云访问限制",
+            "days": 45,
+            "limit": 10
           }
         },
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "low frequency topic",
-            "days": 14,
+            "topic": "AI 芯片出口管制与云访问限制",
+            "days": 45,
             "limit": 12
           }
         }
@@ -1236,9 +1254,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Anthropic",
-        "Google"
+        "AI 芯片出口管制",
+        "云访问限制"
       ],
       "sources": [],
       "languages": []
@@ -1253,9 +1270,9 @@
     "intent_label": "trend_analysis",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
-    "example_question": "Analyze Google momentum in recent 14 days vs previous 14 days.",
+    "example_question": "分析 Google Gemini 的近期趋势变化。",
     "parameter_template": {
-      "topic": "Google",
+      "topic": "Google Gemini",
       "window": 14
     },
     "acceptable_tool_paths": [
@@ -1263,7 +1280,7 @@
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "Google",
+            "topic": "Google Gemini",
             "window": 14
           }
         }
@@ -1272,15 +1289,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "Google",
-            "days": 28,
-            "limit": 8
+            "query": "Google Gemini",
+            "days": 14,
+            "limit": 10
           }
         },
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "Google",
+            "topic": "Google Gemini",
             "window": 14
           }
         }
@@ -1294,11 +1311,12 @@
     "difficulty": "easy",
     "sampling": {
       "days": 45,
-      "n_min": 10,
+      "n_min": 12,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "Google"
+        "Google",
+        "Gemini"
       ],
       "sources": [],
       "languages": []
@@ -1311,11 +1329,11 @@
     "task_id": "trend_analysis.conflict",
     "skill": "trend_analysis",
     "intent_label": "trend_analysis",
-    "retrieval_mode": "evaluable",
+    "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
-    "example_question": "Ask trend analysis to compare multiple topics in one single-topic request.",
+    "example_question": "要求同时分析 OpenAI 与 Anthropic 的趋势，需要先澄清单一主题。",
     "parameter_template": {
-      "topic": "OpenAI and Anthropic combined trend",
+      "topic": "OpenAI 与 Anthropic 组合趋势需要澄清单一主题",
       "window": 14
     },
     "acceptable_tool_paths": [
@@ -1323,7 +1341,7 @@
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "OpenAI and Anthropic combined trend",
+            "topic": "OpenAI 与 Anthropic 组合趋势需要澄清单一主题",
             "window": 14
           }
         }
@@ -1332,15 +1350,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "OpenAI and Anthropic combined trend",
+            "query": "OpenAI 与 Anthropic 组合趋势需要澄清单一主题",
             "days": 14,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "OpenAI and Anthropic combined trend",
+            "topic": "OpenAI 与 Anthropic 组合趋势需要澄清单一主题",
             "window": 14
           }
         }
@@ -1354,11 +1372,13 @@
     "difficulty": "medium",
     "sampling": {
       "days": 45,
-      "n_min": 8,
+      "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "Google"
+        "OpenAI",
+        "Anthropic",
+        "趋势澄清"
       ],
       "sources": [],
       "languages": []
@@ -1373,9 +1393,9 @@
     "intent_label": "trend_analysis",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "Analyze trend for rare keyword with no baseline and near-empty observations.",
+    "example_question": "分析一个预期没有证据支持的合成趋势主题。",
     "parameter_template": {
-      "topic": "ultra-rare trend keyword",
+      "topic": "zzqv 不存在的趋势主题 2026",
       "window": 7
     },
     "acceptable_tool_paths": [
@@ -1383,7 +1403,7 @@
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "ultra-rare trend keyword",
+            "topic": "zzqv 不存在的趋势主题 2026",
             "window": 7
           }
         }
@@ -1392,15 +1412,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "ultra-rare trend keyword",
+            "query": "zzqv 不存在的趋势主题 2026",
             "days": 7,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "ultra-rare trend keyword",
+            "topic": "zzqv 不存在的趋势主题 2026",
             "window": 7
           }
         }
@@ -1413,12 +1433,13 @@
     "should_clarify": false,
     "difficulty": "easy",
     "sampling": {
-      "days": 45,
+      "days": 30,
       "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "Google"
+        "zzqv",
+        "不存在的趋势主题 2026"
       ],
       "sources": [],
       "languages": []
@@ -1433,18 +1454,18 @@
     "intent_label": "trend_analysis",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
-    "example_question": "Analyze a new keyword trend for last 7 days compared with previous 7 days.",
+    "example_question": "分析 AI 基准污染的趋势变化。",
     "parameter_template": {
-      "topic": "newly emerged keyword",
-      "window": 7
+      "topic": "AI 基准污染",
+      "window": 14
     },
     "acceptable_tool_paths": [
       [
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "newly emerged keyword",
-            "window": 7
+            "topic": "AI 基准污染",
+            "window": 14
           }
         }
       ],
@@ -1452,16 +1473,16 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "newly emerged keyword",
+            "query": "AI 基准污染",
             "days": 14,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "newly emerged keyword",
-            "window": 7
+            "topic": "AI 基准污染",
+            "window": 14
           }
         }
       ]
@@ -1473,14 +1494,13 @@
     "should_clarify": false,
     "difficulty": "hard",
     "sampling": {
-      "days": 21,
+      "days": 60,
       "n_min": 6,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Google",
-        "Anthropic"
+        "AI 基准污染",
+        "评测污染"
       ],
       "sources": [],
       "languages": []
@@ -1495,11 +1515,11 @@
     "intent_label": "analyze_landscape",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
-    "example_question": "Analyze AI foundation-model landscape in last 30 days with default entities.",
+    "example_question": "分析 AI 基础模型提供商的竞争格局。",
     "parameter_template": {
-      "topic": "AI foundation model",
+      "topic": "AI 基础模型提供商",
       "days": 30,
-      "entities": "",
+      "entities": "OpenAI,Anthropic,Google,Microsoft,Meta",
       "limit_per_entity": 3
     },
     "acceptable_tool_paths": [
@@ -1507,9 +1527,9 @@
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "AI foundation model",
+            "topic": "AI 基础模型提供商",
             "days": 30,
-            "entities": "",
+            "entities": "OpenAI,Anthropic,Google,Microsoft,Meta",
             "limit_per_entity": 3
           }
         }
@@ -1518,17 +1538,17 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "AI foundation model",
+            "query": "AI 基础模型提供商",
             "days": 30,
-            "limit": 12
+            "limit": 10
           }
         },
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "AI foundation model",
+            "topic": "AI 基础模型提供商",
             "days": 30,
-            "entities": "",
+            "entities": "OpenAI,Anthropic,Google,Microsoft,Meta",
             "limit_per_entity": 3
           }
         }
@@ -1541,8 +1561,8 @@
     "should_clarify": false,
     "difficulty": "medium",
     "sampling": {
-      "days": 45,
-      "n_min": 14,
+      "days": 60,
+      "n_min": 12,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
@@ -1563,13 +1583,13 @@
     "task_id": "analyze_landscape.conflict",
     "skill": "analyze_landscape",
     "intent_label": "analyze_landscape",
-    "retrieval_mode": "evaluable",
+    "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
-    "example_question": "Analyze landscape but require contradictory entity scope instructions.",
+    "example_question": "分析 AI 基础模型提供商，但给出冲突的实体范围。",
     "parameter_template": {
-      "topic": "AI foundation model",
+      "topic": "AI 基础模型提供商与冲突实体范围",
       "days": 30,
-      "entities": "default and fixed mutually conflicting",
+      "entities": "默认实体与固定实体范围冲突",
       "limit_per_entity": 3
     },
     "acceptable_tool_paths": [
@@ -1577,9 +1597,9 @@
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "AI foundation model",
+            "topic": "AI 基础模型提供商与冲突实体范围",
             "days": 30,
-            "entities": "default and fixed mutually conflicting",
+            "entities": "默认实体与固定实体范围冲突",
             "limit_per_entity": 3
           }
         }
@@ -1588,17 +1608,17 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "AI foundation model",
+            "query": "AI 基础模型提供商与冲突实体范围",
             "days": 30,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "AI foundation model",
+            "topic": "AI 基础模型提供商与冲突实体范围",
             "days": 30,
-            "entities": "default and fixed mutually conflicting",
+            "entities": "默认实体与固定实体范围冲突",
             "limit_per_entity": 3
           }
         }
@@ -1612,7 +1632,7 @@
     "difficulty": "medium",
     "sampling": {
       "days": 45,
-      "n_min": 8,
+      "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
@@ -1635,9 +1655,9 @@
     "intent_label": "analyze_landscape",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "Analyze landscape for a niche theme with low or empty matched entities.",
+    "example_question": "分析一个预期没有证据的合成 AI 微领域。",
     "parameter_template": {
-      "topic": "niche micro domain",
+      "topic": "zzqv 不存在的 AI 微领域",
       "days": 30,
       "entities": "rare_entity_alpha,rare_entity_beta",
       "limit_per_entity": 3
@@ -1647,7 +1667,7 @@
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "niche micro domain",
+            "topic": "zzqv 不存在的 AI 微领域",
             "days": 30,
             "entities": "rare_entity_alpha,rare_entity_beta",
             "limit_per_entity": 3
@@ -1658,15 +1678,15 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "niche micro domain",
+            "query": "zzqv 不存在的 AI 微领域",
             "days": 30,
-            "limit": 8
+            "limit": 10
           }
         },
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "niche micro domain",
+            "topic": "zzqv 不存在的 AI 微领域",
             "days": 30,
             "entities": "rare_entity_alpha,rare_entity_beta",
             "limit_per_entity": 3
@@ -1681,16 +1701,15 @@
     "should_clarify": false,
     "difficulty": "medium",
     "sampling": {
-      "days": 45,
+      "days": 30,
       "n_min": 4,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Anthropic",
-        "Google",
-        "Microsoft",
-        "Meta"
+        "zzqv",
+        "不存在的 AI 微领域",
+        "rare_entity_alpha",
+        "rare_entity_beta"
       ],
       "sources": [],
       "languages": []
@@ -1705,11 +1724,11 @@
     "intent_label": "analyze_landscape",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
-    "example_question": "Analyze an emerging niche AI segment with limited recent coverage.",
+    "example_question": "分析 AI 编程助手平台的竞争格局。",
     "parameter_template": {
-      "topic": "agent safety sandbox",
-      "days": 14,
-      "entities": "",
+      "topic": "AI 编程助手平台",
+      "days": 30,
+      "entities": "GitHub Copilot,Cursor,Replit,Codeium,JetBrains",
       "limit_per_entity": 2
     },
     "acceptable_tool_paths": [
@@ -1717,10 +1736,10 @@
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "AI foundation model",
+            "topic": "AI 编程助手平台",
             "days": 30,
-            "entities": "",
-            "limit_per_entity": 3
+            "entities": "GitHub Copilot,Cursor,Replit,Codeium,JetBrains",
+            "limit_per_entity": 2
           }
         }
       ],
@@ -1728,18 +1747,18 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "AI foundation model",
+            "query": "AI 编程助手平台",
             "days": 30,
-            "limit": 12
+            "limit": 10
           }
         },
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "AI foundation model",
+            "topic": "AI 编程助手平台",
             "days": 30,
-            "entities": "",
-            "limit_per_entity": 3
+            "entities": "GitHub Copilot,Cursor,Replit,Codeium,JetBrains",
+            "limit_per_entity": 2
           }
         }
       ]
@@ -1751,16 +1770,16 @@
     "should_clarify": false,
     "difficulty": "hard",
     "sampling": {
-      "days": 45,
-      "n_min": 2,
+      "days": 60,
+      "n_min": 6,
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "OpenAI",
-        "Anthropic",
-        "Google",
-        "Microsoft",
-        "Meta"
+        "GitHub Copilot",
+        "Cursor",
+        "Replit",
+        "Codeium",
+        "JetBrains"
       ],
       "sources": [],
       "languages": []

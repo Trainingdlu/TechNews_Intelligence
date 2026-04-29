@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 import sys
 import types
+import uuid
 import warnings
+from contextlib import contextmanager
 from collections.abc import Iterator
 from pathlib import Path
 from shutil import rmtree
@@ -22,6 +25,7 @@ if project_root not in sys.path:
 warnings.filterwarnings("ignore", message=".*AgentStatePydantic has been moved.*")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+TMP_PATH_COMPAT_ROOT = PROJECT_ROOT / "tests" / ".tmp_pytest_compat"
 
 
 def _is_within(path: Path, root: Path) -> bool:
@@ -49,8 +53,13 @@ def _remove_tree(path: Path, *, root: Path) -> None:
 
 def _cleanup_transient_pytest_artifacts() -> None:
     known_dirs = [
+        TMP_PATH_COMPAT_ROOT,
+        PROJECT_ROOT / ".pytest_tmp",
+        PROJECT_ROOT / ".pytest_tmp_root",
         PROJECT_ROOT / ".pytest_tmp_technews",
         PROJECT_ROOT / ".pytest_tmp" / "technews",
+        PROJECT_ROOT / ".tmp_pytest_fingerprint",
+        PROJECT_ROOT / ".tmp_pytest_task_dataset_env",
         PROJECT_ROOT / ".tmp" / "pytest-technews",
         PROJECT_ROOT / "tests" / "pytest-tmp",
         PROJECT_ROOT / "tests" / ".pytest_cache",
@@ -84,6 +93,24 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:  # n
     _cleanup_transient_pytest_artifacts()
 
 
+def _sanitize_tmp_node_name(node_name: str) -> str:
+    candidate = re.sub(r"[^A-Za-z0-9_.-]+", "_", node_name).strip("_")
+    return candidate[:64] or "tmp_case"
+
+
+@pytest.fixture()
+def tmp_path(request: pytest.FixtureRequest) -> Iterator[Path]:
+    """Compatibility tmp_path fixture for restricted Windows sandboxes."""
+    TMP_PATH_COMPAT_ROOT.mkdir(parents=True, exist_ok=True)
+    case_name = _sanitize_tmp_node_name(request.node.name)
+    case_dir = TMP_PATH_COMPAT_ROOT / f"{case_name}_{uuid.uuid4().hex[:8]}"
+    case_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        yield case_dir
+    finally:
+        _remove_tree(case_dir, root=PROJECT_ROOT)
+
+
 @pytest.fixture()
 def agent_dependency_stubs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Provide lightweight stubs for DB-related optional dependencies."""
@@ -100,6 +127,14 @@ def agent_dependency_stubs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     db_mod.put_conn = MagicMock()
     db_mod.init_db_pool = MagicMock()
     db_mod.close_db_pool = MagicMock()
+
+    @contextmanager
+    def _unconfigured_db_context():
+        raise RuntimeError("services.db test stub is not configured for DB access")
+        yield  # pragma: no cover
+
+    db_mod.db_cursor = _unconfigured_db_context
+    db_mod.db_transaction = _unconfigured_db_context
     monkeypatch.setitem(sys.modules, "services.db", db_mod)
 
     psycopg2_mod = types.ModuleType("psycopg2")

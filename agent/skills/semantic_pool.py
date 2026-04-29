@@ -22,9 +22,10 @@ from typing import Any
 
 from services.db import get_conn, put_conn
 
+from .hybrid_retrieval import ANALYSIS_PROFILE, candidate_from_row, fetch_hybrid_rows, retrieval_diagnostics
+from .embeddings import get_query_embedding as _get_query_embedding
 from .helpers import _clamp_int
 from .recall_profile import resolve_recall_profile
-from .retrieval import _get_query_embedding
 
 # ---------------------------------------------------------------------------
 # Tuning knobs (overridable via environment variables)
@@ -219,6 +220,51 @@ def fetch_semantic_candidates(
 
     query_vec = _get_embedding_with_retry(query_clean)
     if query_vec is None:
+        print("[Warn] fetch_semantic_candidates: embedding unavailable; using lexical/exact hybrid channels.")
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        rows = fetch_hybrid_rows(
+            cur,
+            query=query_clean,
+            days=days,
+            limit=limit,
+            query_vec=query_vec,
+            profile=ANALYSIS_PROFILE,
+            sim_floor=sim_floor,
+        )
+        cur.close()
+        candidates = []
+        for row in rows:
+            item = candidate_from_row(row)
+            item["sim_score"] = float(item.get("semantic_score", item.get("score", 0.0)) or 0.0)
+            item["time_bonus"] = 0.0
+            item["points_bonus"] = 0.0
+            item["match_score"] = float(item.get("match_score", item.get("sim_score", 0.0)) or 0.0)
+            candidates.append(item)
+
+        meta = retrieval_diagnostics(
+            profile=ANALYSIS_PROFILE,
+            query_vec=query_vec,
+            candidate_count=len(candidates),
+            top_k=min(limit, len(candidates)),
+        )
+        print(
+            f"[hybrid_pool] query={query_clean!r}, days={days}, "
+            f"profile={meta['recall_profile']['profile']}, requested={limit}, returned={len(candidates)}"
+        )
+        return candidates
+    except Exception as exc:
+        print(f"[Warn] hybrid semantic pool failed; fallback to vector-only pool: {exc}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    finally:
+        put_conn(conn)
+
+    if query_vec is None:
         print("[Warn] fetch_semantic_candidates: embedding unavailable, returning empty.")
         return []
 
@@ -312,7 +358,7 @@ def fetch_semantic_url_pool(
 ) -> list[tuple[str, float]]:
     """Large-batch vector recall for aggregation skills (backward-compatible).
 
-    Returns ``(url, similarity)`` tuples sorted by descending final_score.
+    Returns ``(url, match_score)`` tuples sorted by descending final_score.
     Delegates to ``fetch_semantic_candidates()`` internally.
 
     Parameters
@@ -329,9 +375,9 @@ def fetch_semantic_url_pool(
     Returns
     -------
     list[tuple[str, float]]
-        ``(url, final_score)`` pairs, or an empty list on failure.
+        ``(url, match_score)`` pairs, or an empty list on failure.
     """
     candidates = fetch_semantic_candidates(
         query, days=days, limit=limit, sim_floor=sim_floor,
     )
-    return [(c["url"], c["final_score"]) for c in candidates]
+    return [(c["url"], float(c.get("match_score", c.get("sim_score", c.get("final_score", 0.0))) or 0.0)) for c in candidates]

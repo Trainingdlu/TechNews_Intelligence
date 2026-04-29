@@ -333,7 +333,13 @@ def build_news_pool_hash(input_news_pool: list[dict[str, Any]]) -> str:
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
-def _normalize_claim(raw: Any, *, case_id: str, pool_doc_ids: set[str]) -> dict[str, Any]:
+def _normalize_claim(
+    raw: Any,
+    *,
+    case_id: str,
+    pool_doc_ids: set[str],
+    require_evidence_quotes: bool,
+) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise ValueError(f"{case_id}: verifiable_claims item must be object.")
     claim = _as_non_empty_str(raw.get("claim"), f"{case_id}.claim")
@@ -343,9 +349,30 @@ def _normalize_claim(raw: Any, *, case_id: str, pool_doc_ids: set[str]) -> dict[
     evidence_doc_ids = _as_str_list(raw.get("evidence_doc_ids", []))
     if evidence_doc_ids and not set(evidence_doc_ids).issubset(pool_doc_ids):
         raise ValueError(f"{case_id}: claim evidence_doc_ids must be subset of input_news_pool doc_id.")
+    evidence_quotes_raw = raw.get("evidence_quotes")
+    if require_evidence_quotes and not evidence_quotes_raw:
+        raise ValueError(f"{case_id}: retrieval_evaluable claim requires evidence_quotes.")
+    if evidence_quotes_raw is None:
+        evidence_quotes_raw = []
+    if not isinstance(evidence_quotes_raw, list):
+        raise ValueError(f"{case_id}: claim evidence_quotes must be a list.")
+    evidence_quotes: list[dict[str, str]] = []
+    for idx, item in enumerate(evidence_quotes_raw, 1):
+        if not isinstance(item, dict):
+            raise ValueError(f"{case_id}: evidence_quotes[{idx}] must be object.")
+        quote = str(item.get("quote", "")).strip()
+        doc_id = str(item.get("doc_id", "")).strip()
+        if not quote:
+            raise ValueError(f"{case_id}: evidence_quotes[{idx}].quote must be non-empty.")
+        if require_evidence_quotes and not doc_id:
+            raise ValueError(f"{case_id}: evidence_quotes[{idx}].doc_id must be non-empty.")
+        if doc_id and doc_id not in pool_doc_ids:
+            raise ValueError(f"{case_id}: evidence_quotes[{idx}].doc_id must be subset of input_news_pool doc_id.")
+        evidence_quotes.append({"doc_id": doc_id, "quote": quote})
     return {
         "claim": claim,
         "evidence_doc_ids": evidence_doc_ids,
+        "evidence_quotes": evidence_quotes,
         "claim_type": claim_type,
     }
 
@@ -398,11 +425,20 @@ def normalize_case(
     if set(required_tools).intersection(forbidden_tools):
         raise ValueError(f"{case_id}: required_tools overlaps forbidden_tools.")
 
+    retrieval_evaluable = bool(raw_case.get("retrieval_evaluable", task_type["retrieval_mode"] == "evaluable"))
+
     claims_raw = raw_case.get("verifiable_claims", [])
     if not isinstance(claims_raw, list):
         raise ValueError(f"{case_id}: verifiable_claims must be a list.")
+    if retrieval_evaluable and not claims_raw:
+        raise ValueError(f"{case_id}: retrieval_evaluable case requires verifiable_claims.")
     verifiable_claims = [
-        _normalize_claim(item, case_id=case_id, pool_doc_ids=pool_doc_ids)
+        _normalize_claim(
+            item,
+            case_id=case_id,
+            pool_doc_ids=pool_doc_ids,
+            require_evidence_quotes=retrieval_evaluable,
+        )
         for item in claims_raw
     ]
     claim_evidence_doc_ids = _dedupe_keep_order(
@@ -414,7 +450,6 @@ def normalize_case(
         ]
     )
 
-    retrieval_evaluable = bool(raw_case.get("retrieval_evaluable", task_type["retrieval_mode"] == "evaluable"))
     retrieval_gold_doc_ids = _dedupe_keep_order(_as_str_list(raw_case.get("retrieval_gold_doc_ids", [])))
     retrieval_gold_urls = _dedupe_keep_order(_as_str_list(raw_case.get("retrieval_gold_urls", [])))
 
@@ -581,6 +616,8 @@ def validate_case(case: dict[str, Any], *, strict_skill: bool = True) -> None:
     claims = case.get("verifiable_claims")
     if not isinstance(claims, list):
         raise ValueError(f"{case_id}: verifiable_claims must be list.")
+    if retrieval_evaluable and not claims:
+        raise ValueError(f"{case_id}: retrieval_evaluable requires verifiable_claims.")
     for idx, item in enumerate(claims, 1):
         if not isinstance(item, dict):
             raise ValueError(f"{case_id}: verifiable_claims[{idx}] must be object.")
@@ -592,6 +629,31 @@ def validate_case(case: dict[str, Any], *, strict_skill: bool = True) -> None:
         if claim_doc_ids and not set(claim_doc_ids).issubset(doc_ids):
             raise ValueError(
                 f"{case_id}: verifiable_claims[{idx}].evidence_doc_ids must be subset of input_news_pool doc_id."
+            )
+        evidence_quotes = item.get("evidence_quotes", [])
+        if evidence_quotes is None:
+            evidence_quotes = []
+        if not isinstance(evidence_quotes, list):
+            raise ValueError(f"{case_id}: verifiable_claims[{idx}].evidence_quotes must be list.")
+        if retrieval_evaluable and not evidence_quotes:
+            raise ValueError(f"{case_id}: verifiable_claims[{idx}] requires evidence_quotes.")
+        for quote_idx, quote_row in enumerate(evidence_quotes, 1):
+            if not isinstance(quote_row, dict):
+                raise ValueError(
+                    f"{case_id}: verifiable_claims[{idx}].evidence_quotes[{quote_idx}] must be object."
+                )
+            quote_doc_id = str(quote_row.get("doc_id", "")).strip()
+            if retrieval_evaluable and not quote_doc_id:
+                raise ValueError(
+                    f"{case_id}: verifiable_claims[{idx}].evidence_quotes[{quote_idx}].doc_id must be non-empty."
+                )
+            if quote_doc_id and quote_doc_id not in doc_ids:
+                raise ValueError(
+                    f"{case_id}: verifiable_claims[{idx}].evidence_quotes[{quote_idx}].doc_id must be subset of input_news_pool doc_id."
+                )
+            _as_non_empty_str(
+                quote_row.get("quote"),
+                f"{case_id}.verifiable_claims[{idx}].evidence_quotes[{quote_idx}].quote",
             )
 
     difficulty = str(case.get("difficulty", "")).strip().lower()

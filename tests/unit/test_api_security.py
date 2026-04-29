@@ -7,6 +7,7 @@ import sys
 from unittest.mock import patch
 
 import pytest
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture()
@@ -101,3 +102,131 @@ def test_rate_limiter_filters_stale_timestamps(api_state) -> None:  # noqa: ANN0
         api_state._check_rate_limit("9.9.9.9")  # pylint: disable=protected-access
 
     assert api_state._request_log["9.9.9.9"] == [1012.0]  # pylint: disable=protected-access
+
+
+def _install_token_thread_memory(api_mod, monkeypatch: pytest.MonkeyPatch):  # noqa: ANN001
+    threads: dict[str, dict] = {
+        "thread-owned-by-a": {
+            "owner_token_id": 1,
+            "history": [],
+        }
+    }
+    append_calls: list[tuple[str, int, dict]] = []
+
+    def _load_history_for_token(thread_id, token_id, limit=None):  # noqa: ANN001
+        del limit
+        row = threads.get(str(thread_id))
+        if row is None or int(row["owner_token_id"]) != int(token_id):
+            raise api_mod.ConversationThreadNotFoundError(thread_id)
+        return list(row["history"])
+
+    def _append_message_for_token(thread_id, token_id, message, metadata=None):  # noqa: ANN001
+        del metadata
+        row = threads.get(str(thread_id))
+        if row is None or int(row["owner_token_id"]) != int(token_id):
+            raise api_mod.ConversationThreadNotFoundError(thread_id)
+        row["history"].append(message)
+        append_calls.append((str(thread_id), int(token_id), message))
+        return {"thread_id": thread_id}
+
+    monkeypatch.setattr(api_mod, "load_history_for_token", _load_history_for_token)
+    monkeypatch.setattr(api_mod, "append_message_for_token", _append_message_for_token)
+    return threads, append_calls
+
+
+def test_chat_returns_404_for_cross_token_thread(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    token_state = {
+        "id": 2,
+        "email": "token-b@example.com",
+        "quota": 10,
+        "used": 0,
+        "status": "active",
+    }
+    api_mod.app.dependency_overrides[api_mod._verify_token] = lambda: dict(token_state)  # pylint: disable=protected-access
+    monkeypatch.setattr(api_mod, "_check_rate_limit", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod, "_reserve_quota_or_403", lambda *_a, **_k: {"remaining": 4, "quota": 10, "used": 6})
+    monkeypatch.setattr(api_mod, "_maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod, "_refund_reserved_quota", lambda *_a, **_k: None)
+    _install_token_thread_memory(api_mod, monkeypatch)
+
+    client = TestClient(api_mod.app)
+    try:
+        response = client.post(
+            "/chat",
+            json={"message": "hello", "thread_id": "thread-owned-by-a"},
+            headers={"Authorization": "Bearer test"},
+        )
+    finally:
+        api_mod.app.dependency_overrides.clear()
+        client.close()
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "conversation_thread_not_found"}
+
+
+def test_chat_stream_returns_404_for_cross_token_thread(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    token_state = {
+        "id": 2,
+        "email": "token-b@example.com",
+        "quota": 10,
+        "used": 0,
+        "status": "active",
+    }
+    api_mod.app.dependency_overrides[api_mod._verify_token] = lambda: dict(token_state)  # pylint: disable=protected-access
+    monkeypatch.setattr(api_mod, "_check_rate_limit", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod, "_reserve_quota_or_403", lambda *_a, **_k: {"remaining": 4, "quota": 10, "used": 6})
+    monkeypatch.setattr(api_mod, "_maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod, "_refund_reserved_quota", lambda *_a, **_k: None)
+    _install_token_thread_memory(api_mod, monkeypatch)
+
+    client = TestClient(api_mod.app)
+    try:
+        response = client.post(
+            "/chat-stream",
+            json={"message": "hello", "thread_id": "thread-owned-by-a"},
+            headers={"Authorization": "Bearer test"},
+        )
+    finally:
+        api_mod.app.dependency_overrides.clear()
+        client.close()
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "conversation_thread_not_found"}
+
+
+def test_chat_allows_owner_thread_and_persists_turn(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    token_state = {
+        "id": 1,
+        "email": "token-a@example.com",
+        "quota": 10,
+        "used": 0,
+        "status": "active",
+    }
+    api_mod.app.dependency_overrides[api_mod._verify_token] = lambda: dict(token_state)  # pylint: disable=protected-access
+    monkeypatch.setattr(api_mod, "_check_rate_limit", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod, "_reserve_quota_or_403", lambda *_a, **_k: {"remaining": 4, "quota": 10, "used": 6})
+    monkeypatch.setattr(api_mod, "_maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod, "_refund_reserved_quota", lambda *_a, **_k: None)
+    _, append_calls = _install_token_thread_memory(api_mod, monkeypatch)
+    monkeypatch.setattr(
+        api_mod,
+        "generate_response_payload",
+        lambda *_a, **_k: {"kind": "answer", "text": "ok", "citation_urls": []},
+    )
+
+    client = TestClient(api_mod.app)
+    try:
+        response = client.post(
+            "/chat",
+            json={"message": "owner hello", "thread_id": "thread-owned-by-a"},
+            headers={"Authorization": "Bearer test"},
+        )
+    finally:
+        api_mod.app.dependency_overrides.clear()
+        client.close()
+
+    assert response.status_code == 200
+    assert response.json()["thread_id"] == "thread-owned-by-a"
+    assert len(append_calls) == 2
+    assert append_calls[0][1] == 1
+    assert append_calls[1][1] == 1

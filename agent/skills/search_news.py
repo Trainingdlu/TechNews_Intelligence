@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..core.skill_contracts import SkillEnvelope, build_error_envelope
+from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _json_text
 from .retrieval import lookup_candidates_by_query
 from .schemas import SearchNewsSkillInput
@@ -54,8 +54,14 @@ def _records_from_candidates(candidates: list[dict[str, Any]]) -> list[dict[str,
                 "url": str(item.get("url") or ""),
                 "summary": str(item.get("summary") or ""),
                 "sentiment": str(item.get("sentiment") or ""),
+                "source_type": str(item.get("source_type") or ""),
                 "created_at": pub_time.isoformat() if pub_time else "",
                 "score": float(item.get("score") or 0.0),
+                "match_score": float(item.get("match_score") or 0.0),
+                "text_score": float(item.get("text_score") or 0.0),
+                "semantic_score": float(item.get("semantic_score") or 0.0),
+                "exact_score": float(item.get("exact_score") or 0.0),
+                "final_score": float(item.get("final_score", item.get("score", 0.0)) or 0.0),
             }
         )
     return records
@@ -157,25 +163,30 @@ def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
 
     status = str(parsed.get("status", "error")).lower()
     rerank_meta = parsed.get("rerank", {})
+    if not isinstance(rerank_meta, dict):
+        rerank_meta = {}
     if status == "error":
-        return SkillEnvelope(
+        return build_error_envelope(
             tool="search_news",
-            status="error",
             request=request,
-            data=parsed,
-            evidence=[],
             error=str(parsed.get("error") or "search_news_failed"),
+            data=parsed,
             diagnostics={"query": request["query"], "rerank": rerank_meta},
         )
 
     if status == "empty":
-        return SkillEnvelope(
+        return build_empty_envelope(
             tool="search_news",
-            status="empty",
             request=request,
+            empty_reason="no_related_news",
             data=parsed,
-            evidence=[],
-            diagnostics={"query": request["query"], "rerank": rerank_meta},
+            diagnostics={
+                "query": request["query"],
+                "rerank": rerank_meta,
+                "retrieval_mode": rerank_meta.get("retrieval_mode"),
+                "candidate_count": int(rerank_meta.get("candidate_count") or 0),
+                "fallback": bool(rerank_meta.get("retrieval_fallback") or rerank_meta.get("fallback") or False),
+            },
         )
 
     records_raw = parsed.get("records")
@@ -190,6 +201,10 @@ def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
         diagnostics={
             "query": request["query"],
             "result_count": len(records),
+            "candidate_count": int(rerank_meta.get("candidate_count") or len(records)),
+            "evidence_count": len(evidence),
+            "retrieval_mode": rerank_meta.get("retrieval_mode"),
+            "fallback": bool(rerank_meta.get("retrieval_fallback") or rerank_meta.get("fallback") or False),
             "rerank": rerank_meta,
         },
     )

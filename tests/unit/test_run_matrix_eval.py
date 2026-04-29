@@ -3,26 +3,17 @@
 from __future__ import annotations
 
 import json
-import uuid
-from contextlib import contextmanager
 from pathlib import Path
-from shutil import rmtree
 
 import pytest
 
 import eval.run_matrix_eval as run_matrix_eval
 
 
-@contextmanager
-def _case_dir():
-    root = Path("tests/unit/.tmp_run_matrix_eval")
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / f"case_{uuid.uuid4().hex}"
+def _case_dir(tmp_path: Path) -> Path:
+    path = tmp_path / "run_matrix_eval_case"
     path.mkdir(parents=True, exist_ok=True)
-    try:
-        yield path
-    finally:
-        rmtree(path, ignore_errors=True)
+    return path
 
 
 def test_load_matrix_groups_reads_default_matrix() -> None:
@@ -43,24 +34,24 @@ def test_load_matrix_config_reads_baseline_and_default_args() -> None:
     assert config.default_runner_args == []
 
 
-def test_load_matrix_groups_rejects_duplicate_ids() -> None:
-    with _case_dir() as case_dir:
-        matrix_path = case_dir / "dup_matrix.json"
-        matrix_path.write_text(
-            json.dumps(
-                {
-                    "groups": [
-                        {"id": "G0", "description": "a", "env": {}},
-                        {"id": "G0", "description": "b", "env": {}},
-                    ]
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
+def test_load_matrix_groups_rejects_duplicate_ids(tmp_path: Path) -> None:
+    case_dir = _case_dir(tmp_path)
+    matrix_path = case_dir / "dup_matrix.json"
+    matrix_path.write_text(
+        json.dumps(
+            {
+                "groups": [
+                    {"id": "G0", "description": "a", "env": {}},
+                    {"id": "G0", "description": "b", "env": {}},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
-        with pytest.raises(ValueError, match="Duplicate matrix group id"):
-            run_matrix_eval.load_matrix_groups(matrix_path)
+    with pytest.raises(ValueError, match="Duplicate matrix group id"):
+        run_matrix_eval.load_matrix_groups(matrix_path)
 
 
 def test_resolve_forwarded_runner_args_defaults_and_conflict() -> None:
@@ -81,53 +72,53 @@ def test_resolve_forwarded_runner_args_defaults_and_conflict() -> None:
         run_matrix_eval.resolve_forwarded_runner_args(["--experiment-group", "G0"])
 
 
-def test_load_matrix_config_accepts_task_eval_runner() -> None:
-    with _case_dir() as case_dir:
-        matrix_path = case_dir / "task_eval_matrix.json"
-        matrix_path.write_text(
-            json.dumps(
-                {
-                    "runner": "task_eval",
-                    "groups": [
-                        {"id": "G0", "description": "base", "env": {}},
-                    ],
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        config = run_matrix_eval.load_matrix_config(matrix_path)
-        assert config.runner_script == "run_task_eval.py"
+def test_load_matrix_config_accepts_task_eval_runner(tmp_path: Path) -> None:
+    case_dir = _case_dir(tmp_path)
+    matrix_path = case_dir / "task_eval_matrix.json"
+    matrix_path.write_text(
+        json.dumps(
+            {
+                "runner": "task_eval",
+                "groups": [
+                    {"id": "G0", "description": "base", "env": {}},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    config = run_matrix_eval.load_matrix_config(matrix_path)
+    assert config.runner_script == "run_task_eval.py"
 
 
-def test_load_matrix_config_rejects_non_task_runner() -> None:
-    with _case_dir() as case_dir:
-        matrix_path = case_dir / "legacy_matrix.json"
-        matrix_path.write_text(
-            json.dumps(
-                {
-                    "runner": "legacy_runner",
-                    "groups": [{"id": "G0", "description": "legacy", "env": {}}],
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        with pytest.raises(ValueError, match="Matrix runner must be task_eval"):
-            run_matrix_eval.load_matrix_config(matrix_path)
+def test_load_matrix_config_rejects_non_task_runner(tmp_path: Path) -> None:
+    case_dir = _case_dir(tmp_path)
+    matrix_path = case_dir / "legacy_matrix.json"
+    matrix_path.write_text(
+        json.dumps(
+            {
+                "runner": "legacy_runner",
+                "groups": [{"id": "G0", "description": "legacy", "env": {}}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Matrix runner must be task_eval"):
+        run_matrix_eval.load_matrix_config(matrix_path)
 
 
-def test_build_runner_command_includes_output_only() -> None:
-    with _case_dir() as case_dir:
-        runner_path = Path("eval/run_task_eval.py").resolve()
-        output_path = case_dir / "g0.json"
-        cmd = run_matrix_eval.build_runner_command(
-            runner_path,
-            ["--runs-per-case", "1"],
-            output_path=output_path,
-        )
+def test_build_runner_command_includes_output_only(tmp_path: Path) -> None:
+    case_dir = _case_dir(tmp_path)
+    runner_path = Path("eval/run_task_eval.py").resolve()
+    output_path = case_dir / "g0.json"
+    cmd = run_matrix_eval.build_runner_command(
+        runner_path,
+        ["--runs-per-case", "1"],
+        output_path=output_path,
+    )
 
-        assert str(runner_path) in cmd
-        assert "--output" in cmd
-        assert str(output_path) in cmd
-        assert "--experiment-group" not in cmd
+    assert str(runner_path) in cmd
+    assert "--output" in cmd
+    assert str(output_path) in cmd
+    assert "--experiment-group" not in cmd

@@ -128,6 +128,54 @@ def test_append_message_raises_when_thread_not_found(monkeypatch: pytest.MonkeyP
         )
 
 
+def test_append_message_for_token_checks_thread_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
+    created_at = datetime(2026, 4, 12, 13, 0, 0, tzinfo=timezone.utc)
+    payload = {"role": "model", "parts": [{"text": "ack"}]}
+    cursor = _FakeCursor(
+        fetchone_values=[
+            (1,),
+            (
+                10,
+                "thread-001",
+                "model",
+                [{"text": "ack"}],
+                payload,
+                {"source": "web"},
+                created_at,
+            ),
+        ],
+    )
+    monkeypatch.setattr(conv_mod, "Json", lambda value: value)
+    monkeypatch.setattr(conv_mod, "db_transaction", _transaction_context(cursor))
+
+    out = conv_mod.append_message_for_token(
+        "thread-001",
+        7,
+        payload,
+        metadata={"source": "web"},
+    )
+
+    assert out["id"] == 10
+    assert "channel = 'web'" in cursor.calls[0][0]
+    assert "metadata->>'token_id' = %s" in cursor.calls[0][0]
+    assert cursor.calls[0][1] == ("thread-001", "7")
+    assert "INSERT INTO public.conversation_messages" in cursor.calls[1][0]
+    assert "UPDATE public.conversation_threads" in cursor.calls[2][0]
+
+
+def test_append_message_for_token_raises_when_thread_not_owned(monkeypatch: pytest.MonkeyPatch) -> None:
+    cursor = _FakeCursor(fetchone_values=[None])
+    monkeypatch.setattr(conv_mod, "Json", lambda value: value)
+    monkeypatch.setattr(conv_mod, "db_transaction", _transaction_context(cursor))
+
+    with pytest.raises(conv_mod.ConversationThreadNotFoundError):
+        conv_mod.append_message_for_token(
+            "thread-001",
+            99,
+            {"role": "user", "parts": [{"text": "hello"}]},
+        )
+
+
 def test_load_history_returns_lossless_payload_and_role_parts_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -174,6 +222,34 @@ def test_load_history_with_limit_preserves_chronological_order(
     ]
     assert "ORDER BY id DESC" in cursor.calls[0][0]
     assert cursor.calls[0][1] == ("thread-001", 2)
+
+
+def test_load_history_for_token_checks_thread_ownership(monkeypatch: pytest.MonkeyPatch) -> None:
+    cursor = _FakeCursor(
+        fetchone_values=[(1,)],
+        fetchall_value=[
+            ({"role": "user", "parts": [{"text": "hello"}]}, "user", [{"text": "hello"}]),
+            ({"role": "model", "parts": [{"text": "ack"}]}, "model", [{"text": "ack"}]),
+        ],
+    )
+    monkeypatch.setattr(conv_mod, "db_cursor", _cursor_context(cursor))
+
+    history = conv_mod.load_history_for_token("thread-001", 7)
+
+    assert len(history) == 2
+    assert "channel = 'web'" in cursor.calls[0][0]
+    assert "metadata->>'token_id' = %s" in cursor.calls[0][0]
+    assert cursor.calls[0][1] == ("thread-001", "7")
+    assert "ORDER BY id ASC" in cursor.calls[1][0]
+    assert cursor.calls[1][1] == ("thread-001",)
+
+
+def test_load_history_for_token_raises_when_thread_not_owned(monkeypatch: pytest.MonkeyPatch) -> None:
+    cursor = _FakeCursor(fetchone_values=[None])
+    monkeypatch.setattr(conv_mod, "db_cursor", _cursor_context(cursor))
+
+    with pytest.raises(conv_mod.ConversationThreadNotFoundError):
+        conv_mod.load_history_for_token("thread-001", 8)
 
 
 def test_list_recent_threads_maps_rows(monkeypatch: pytest.MonkeyPatch) -> None:

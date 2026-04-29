@@ -131,17 +131,35 @@ def _evidence_from_records(records: list[dict[str, Any]], max_items: int = 8) ->
         if not url or url in seen_urls:
             continue
         seen_urls.add(url)
-        title = row.get("title_cn") or row.get("title")
+        title = row.get("title_cn") or row.get("title") or row.get("headline")
+        source = row.get("source") or row.get("source_type")
         score_value = row.get("score")
         if score_value is None:
             score_value = row.get("points")
+        score_components = row.get("score_components")
+        if not isinstance(score_components, dict):
+            score_components = {}
+            for key in ("text_score", "semantic_score", "exact_score", "final_score", "rrf_score"):
+                if key in row:
+                    score_components[key] = _safe_float(row.get(key))
+        metadata = row.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+        for key in ("points", "sentiment"):
+            if key in row:
+                metadata.setdefault(key, row.get(key))
         evidence.append(
             {
                 "url": url,
                 "title": str(title).strip() if title else None,
-                "source": str(row.get("source") or "").strip() or None,
+                "source": str(source or "").strip() or None,
                 "created_at": str(row.get("created_at") or "").strip() or None,
                 "score": _safe_float(score_value),
+                "rank": int(row.get("rank")) if str(row.get("rank") or "").isdigit() else None,
+                "snippet": str(row.get("summary") or row.get("snippet") or "").strip() or None,
+                "match_score": _safe_float(row.get("match_score")),
+                "score_components": score_components,
+                "metadata": metadata,
             }
         )
         if len(evidence) >= max_items:

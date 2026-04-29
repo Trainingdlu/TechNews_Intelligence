@@ -15,10 +15,12 @@ from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 
+from services.llm_provider import build_agent_chat_model
+
 from .core.runtime_factories import build_default_hook_runner, build_default_registry
+from .graph_factory import build_react_graph
 from .prompts import SYSTEM_INSTRUCTION
 from .clarification import (
     ClarificationRequiredError,
@@ -396,74 +398,10 @@ def _build_react_prompt_kwargs() -> tuple[dict[str, str], str]:
     )
 
 
-def _get_model_provider() -> str:
-    """Normalize AGENT_MODEL_PROVIDER into supported provider keys."""
-    provider = os.getenv("AGENT_MODEL_PROVIDER", "gemini_api").strip().lower()
-    if provider in {"gemini", "gemini_api", "google_ai_studio", "developer_api"}:
-        return "gemini_api"
-    if provider in {"vertex", "vertex_ai", "gcp"}:
-        return "vertex"
-    raise ValueError(
-        "AGENT_MODEL_PROVIDER must be one of: "
-        "gemini_api (default), vertex."
-    )
-
-
 def _build_chat_model() -> Any:
     """Create the chat model client from environment configuration."""
     temperature = float(os.getenv("AGENT_TEMPERATURE", "0.1"))
-    provider = _get_model_provider()
-
-    if provider == "gemini_api":
-        api_key = os.getenv("GEMINI_API_KEY", "").strip()
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY is not set.")
-        return ChatGoogleGenerativeAI(
-            model=os.getenv("GEMINI_MODEL", "gemini-2.5-pro"),
-            google_api_key=api_key,
-            temperature=temperature,
-        )
-
-    project = os.getenv("VERTEX_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", "")).strip()
-    if not project:
-        raise ValueError(
-            "VERTEX_PROJECT is not set. "
-            "You can also use GOOGLE_CLOUD_PROJECT."
-        )
-
-    location = os.getenv(
-        "VERTEX_GENERATION_LOCATION",
-        os.getenv("VERTEX_LLM_LOCATION", os.getenv("VERTEX_LOCATION", os.getenv("GOOGLE_CLOUD_LOCATION", "global"))),
-    ).strip()
-    model_name = os.getenv(
-        "VERTEX_GENERATION_MODEL",
-        os.getenv(
-            "VERTEX_MODEL",
-        os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview"),
-        ),
-    ).strip()
-
-    credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
-    if credentials_path and not os.path.isfile(credentials_path):
-        raise ValueError(
-            "GOOGLE_APPLICATION_CREDENTIALS must point to an existing JSON file: "
-            f"{credentials_path}"
-        )
-
-    try:
-        from langchain_google_vertexai import ChatVertexAI
-    except ImportError as exc:
-        raise RuntimeError(
-            "Vertex provider requires 'langchain-google-vertexai'. "
-            "Install dependencies with: pip install -r requirements.txt"
-        ) from exc
-
-    return ChatVertexAI(
-        model=model_name,
-        project=project,
-        location=location,
-        temperature=temperature,
-    )
+    return build_agent_chat_model(temperature=temperature)
 
 
 def _get_react_agent():
@@ -473,13 +411,19 @@ def _get_react_agent():
         return _react_agent
 
     model = _build_chat_model()
+    registry = _get_registry()
 
     prompt_kwargs, prompt_key = _build_react_prompt_kwargs()
     try:
-        _react_agent = create_react_agent(
+        _react_agent = build_react_graph(
+            create_agent=create_react_agent,
             model=model,
             tools=LANGCHAIN_TOOLS,
-            **prompt_kwargs,
+            prompt_kwargs=prompt_kwargs,
+            input_schemas={
+                name: registry.input_schema(name)
+                for name in registry.list_skills()
+            },
         )
     except TypeError as exc:
         raise RuntimeError(
@@ -1031,6 +975,7 @@ def generate_response(
     user_message: str,
     progress_callback: Callable[[dict[str, str]], None] | None = None,
     request_id: str | None = None,
+    thread_id: str | None = None,
 ) -> str:
     """Public generation entrypoint with post-processing safety net.
 
@@ -1038,7 +983,7 @@ def generate_response(
     1. Strip generic analysis lead-in phrases
     2. Normalize citations and attach source section
     """
-    thread_id = _extract_thread_id(history)
+    thread_id = thread_id or _extract_thread_id(history)
     with _request_trace_context(
         user_message=user_message,
         thread_id=thread_id,
@@ -1097,9 +1042,10 @@ def generate_response_payload(
     user_message: str,
     progress_callback: Callable[[dict[str, str]], None] | None = None,
     request_id: str | None = None,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Structured response for transport layers (e.g., Telegram bot)."""
-    thread_id = _extract_thread_id(history)
+    thread_id = thread_id or _extract_thread_id(history)
     with _request_trace_context(
         user_message=user_message,
         thread_id=thread_id,
@@ -1170,12 +1116,13 @@ def generate_response_eval_payload(
     history: list[dict],
     user_message: str,
     request_id: str | None = None,
+    thread_id: str | None = None,
     case_id: str | None = None,
     experiment_group: str | None = None,
     include_trace_summary: bool = False,
 ) -> dict[str, Any]:
     """Structured response for eval with tool trace and URL evidence."""
-    thread_id = _extract_thread_id(history)
+    thread_id = thread_id or _extract_thread_id(history)
     with _request_trace_context(
         user_message=user_message,
         thread_id=thread_id,

@@ -13,8 +13,8 @@ from typing import Any
 
 from services.db import get_conn, put_conn
 
-from ..core.skill_contracts import SkillEnvelope, build_error_envelope
-from .helpers import _clamp_int, _evidence_from_text_output, _is_recent_timestamp
+from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from .helpers import _clamp_int, _evidence_from_records, _is_recent_timestamp
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .retrieval import _get_query_embedding
 from .schemas import AnalyzeLandscapeSkillInput
@@ -195,9 +195,9 @@ def _fetch_entity_url_pools(
     entity_url_map:
         Mapping from entity name to list of URLs.
     url_to_entity:
-        Mapping from URL to entity with highest similarity (arbitration).
+        Mapping from URL to entity with highest match_score (arbitration).
     """
-    # Collect (url, sim, entity) tuples
+    # Collect (url, match_score, entity) tuples
     url_best_sim: dict[str, float] = {}
     url_best_entity: dict[str, str] = {}
     entity_raw_pools: dict[str, list[tuple[str, float]]] = {}
@@ -207,14 +207,14 @@ def _fetch_entity_url_pools(
         pool = fetch_semantic_url_pool(query, days=days, limit=limit_per_entity)
         entity_raw_pools[entity] = pool
 
-        for url, sim in pool:
-            if url not in url_best_sim or sim > url_best_sim[url]:
-                url_best_sim[url] = sim
+        for url, match_score in pool:
+            if url not in url_best_sim or match_score > url_best_sim[url]:
+                url_best_sim[url] = match_score
                 url_best_entity[url] = entity
 
     # Build per-entity URL lists from arbitrated assignments
     entity_url_map: dict[str, list[str]] = {name: [] for name in entity_list}
-    for url, entity in url_best_entity.items():
+    for url, entity in sorted(url_best_entity.items(), key=lambda item: url_best_sim.get(item[0], 0.0), reverse=True):
         entity_url_map[entity].append(url)
 
     return entity_url_map, url_best_entity
@@ -385,17 +385,16 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
         top_rows: list[tuple] = []
         for name in entity_list:
             entity_urls = entity_url_map.get(name, [])
+            entity_rank = {url: rank for rank, url in enumerate(entity_urls, 1)}
             entity_articles = []
             for url in entity_urls:
                 art = article_by_url.get(url)
                 if art is not None:
                     headline, _, summary, source_type, points, sentiment, created_at = art
-                    entity_articles.append((name, source_type, headline, url, points, created_at))
-            # Sort by points desc, then created_at desc
-            entity_articles.sort(key=lambda x: (-(x[4] or 0), x[5] if x[5] else datetime.min), reverse=False)
-            entity_articles.sort(key=lambda x: -(x[4] or 0))
+                    entity_articles.append((name, source_type, headline, url, points, created_at, entity_rank.get(url, 10_000)))
+            entity_articles.sort(key=lambda x: (x[6], -(x[4] or 0)))
             for rank, art_tuple in enumerate(entity_articles[:limit_per_entity], 1):
-                top_rows.append(art_tuple + (rank,))
+                top_rows.append(art_tuple[:6] + (rank,))
 
         cur.close()
 
@@ -502,6 +501,312 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
             put_conn(conn)
 
 
+def _format_landscape_result(result: dict) -> str:
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    topic = data.get("topic") or "all"
+    days = data.get("days", 30)
+    if result.get("status") == "empty":
+        entities = data.get("entities") or []
+        return f"No landscape data in the last {days} days for entities: {', '.join(entities)}."
+    if result.get("status") == "error":
+        return str(result.get("error") or "analyze_landscape failed")
+
+    lines = [
+        f"Landscape snapshot: topic={topic} (last {days} days)",
+        f"Entities requested: {', '.join(data.get('entities', []) or [])}",
+    ]
+    coverage = data.get("coverage") if isinstance(data.get("coverage"), dict) else {}
+    lines.append(
+        f"Coverage: topic_articles={coverage.get('topic_articles', 0)}, "
+        f"matched_entity_articles={coverage.get('matched_entity_articles', 0)}, "
+        f"active_entities={coverage.get('active_entities', 0)}/{coverage.get('requested_entities', 0)}"
+    )
+    lines.append("Source mix:")
+    source_mix = data.get("source_mix") if isinstance(data.get("source_mix"), dict) else {}
+    if source_mix:
+        for source_type, item in sorted(source_mix.items(), key=lambda pair: (-pair[1].get("count", 0), pair[0])):
+            lines.append(f"  {source_type}: count={item.get('count', 0)}, share={float(item.get('share', 0.0)) * 100:.1f}%")
+    else:
+        lines.append("  no source records")
+
+    lines.append("Entity stats:")
+    entity_stats = data.get("entity_stats") if isinstance(data.get("entity_stats"), dict) else {}
+    for entity in data.get("entities", []) or []:
+        item = entity_stats.get(entity, {})
+        lines.append(
+            f"  {entity}: count={item.get('count', 0)}, share={float(item.get('share', 0.0)) * 100:.1f}%, "
+            f"avg_points={float(item.get('avg_points', 0.0)):.1f}, "
+            f"sentiment(P/N/Ng)={item.get('positive_count', 0)}/{item.get('neutral_count', 0)}/{item.get('negative_count', 0)}"
+        )
+
+    lines.append("Variable signals (embedding anchor classification):")
+    signal_counts = data.get("signal_counts") if isinstance(data.get("signal_counts"), dict) else {}
+    total = int(coverage.get("matched_entity_articles", 0) or 0)
+    for key, label in LANDSCAPE_SIGNAL_LABELS.items():
+        count = int(signal_counts.get(key, 0) or 0)
+        share = (float(count) / float(total)) if total else 0.0
+        lines.append(f"  {label}: count={count}, share={share * 100:.1f}%")
+
+    lines.append("Evidence URLs:")
+    for item in data.get("top_evidence", []) or []:
+        lines.append(
+            f"  [{item.get('entity')}] #{item.get('rank')} [{item.get('source')}] {item.get('title')} | "
+            f"points={item.get('metadata', {}).get('points')} | {str(item.get('created_at') or '')[:16].replace('T', ' ')} | "
+            f"{item.get('url')}"
+        )
+    lines.append(f"Confidence: {data.get('confidence')}")
+    reranked_output = data.get("reranked_output")
+    if reranked_output:
+        lines.append(str(reranked_output))
+    return "\n".join(lines)
+
+
+def _analyze_landscape_structured(
+    topic: str = "",
+    days: int = 30,
+    entities: str = "",
+    limit_per_entity: int = 3,
+) -> dict:
+    topic = (topic or "").strip()
+    topic_label = topic or "all"
+    print(
+        f"\n[Tool] analyze_landscape: topic={topic_label}, days={days}, "
+        f"entities={entities or 'default'}, limit_per_entity={limit_per_entity}"
+    )
+    days = _clamp_int(days, 7, 180)
+    limit_per_entity = _clamp_int(limit_per_entity, 1, 5)
+    entity_list = _normalize_landscape_entities(entities)
+    entity_url_map, url_to_entity = _fetch_entity_url_pools(
+        entity_list,
+        topic=topic,
+        days=days,
+    )
+    all_matched_urls: list[str] = []
+    seen_urls: set[str] = set()
+    for urls in entity_url_map.values():
+        for url in urls:
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
+            all_matched_urls.append(url)
+
+    base_data = {
+        "topic": topic_label,
+        "days": days,
+        "entities": entity_list,
+        "coverage": {"topic_articles": 0, "matched_entity_articles": 0, "active_entities": 0, "requested_entities": len(entity_list)},
+        "entity_stats": {},
+        "source_mix": {},
+        "signal_counts": {key: 0 for key in SIGNAL_ANCHOR_TEXTS.keys()},
+        "top_evidence": [],
+        "confidence": "Low",
+    }
+    if not all_matched_urls:
+        return {
+            "status": "empty",
+            "data": base_data,
+            "evidence": [],
+            "diagnostics": {
+                "topic": topic,
+                "candidate_count": 0,
+                "evidence_count": 0,
+                "retrieval_mode": "semantic_url_pool",
+                "fallback": False,
+                "empty_reason": "no_entity_matches",
+            },
+        }
+
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                COALESCE(v.title_cn, v.title) AS headline,
+                v.url,
+                COALESCE(v.summary, '') AS summary,
+                v.source_type,
+                v.points,
+                v.sentiment,
+                v.created_at
+            FROM view_dashboard_news v
+            WHERE v.url = ANY(%s)
+              AND v.created_at >= NOW() - %s::interval
+            """,
+            (all_matched_urls, f"{days} days"),
+        )
+        article_rows = cur.fetchall()
+        article_by_url: dict[str, tuple] = {str(row[1]): row for row in article_rows}
+        total_cnt = len(article_by_url)
+        source_counts: dict[str, int] = {}
+        entity_stats: dict[str, dict[str, Any]] = {}
+        top_evidence: list[dict[str, Any]] = []
+
+        for entity in entity_list:
+            urls = entity_url_map.get(entity, [])
+            entity_articles = []
+            points_sum = 0.0
+            pos_cnt = neu_cnt = neg_cnt = 0
+            per_entity_source: dict[str, int] = {}
+            for url in urls:
+                row = article_by_url.get(url)
+                if row is None:
+                    continue
+                headline, row_url, summary, source_type, points, sentiment, created_at = row
+                points_i = int(points or 0)
+                points_sum += points_i
+                if sentiment == "Positive":
+                    pos_cnt += 1
+                elif sentiment == "Neutral":
+                    neu_cnt += 1
+                elif sentiment == "Negative":
+                    neg_cnt += 1
+                source_counts[str(source_type)] = source_counts.get(str(source_type), 0) + 1
+                per_entity_source[str(source_type)] = per_entity_source.get(str(source_type), 0) + 1
+                entity_articles.append((headline, row_url, summary, source_type, points_i, sentiment, created_at))
+
+            count = len(entity_articles)
+            top_source = None
+            if per_entity_source:
+                top_source = max(per_entity_source.items(), key=lambda item: (item[1], item[0]))[0]
+            entity_stats[entity] = {
+                "count": count,
+                "share": (float(count) / float(total_cnt)) if total_cnt else 0.0,
+                "avg_points": round(points_sum / count, 1) if count else 0.0,
+                "positive_count": pos_cnt,
+                "neutral_count": neu_cnt,
+                "negative_count": neg_cnt,
+                "top_source": top_source,
+            }
+
+            for rank, item in enumerate(entity_articles[:limit_per_entity], 1):
+                headline, row_url, summary, source_type, points_i, sentiment, created_at = item
+                created_text = created_at.isoformat() if hasattr(created_at, "isoformat") else str(created_at or "")
+                top_evidence.append(
+                    {
+                        "rank": rank,
+                        "entity": entity,
+                        "source": str(source_type or ""),
+                        "title": str(headline or ""),
+                        "url": str(row_url or ""),
+                        "created_at": created_text,
+                        "score": float(points_i),
+                        "snippet": str(summary or "")[:240],
+                        "metadata": {"points": points_i, "sentiment": str(sentiment or "")},
+                    }
+                )
+
+        signal_counts: dict[str, int] = {key: 0 for key in SIGNAL_ANCHOR_TEXTS.keys()}
+        anchors = _get_signal_anchors()
+        if anchors:
+            cur.execute(
+                """
+                SELECT e.url, e.embedding
+                FROM news_embeddings e
+                WHERE e.url = ANY(%s)
+                """,
+                (all_matched_urls,),
+            )
+            emb_rows = cur.fetchall()
+            article_embeddings: dict[str, list[float]] = {}
+            for emb_url, emb_vec in emb_rows:
+                if isinstance(emb_vec, str):
+                    emb_vec = [float(x) for x in emb_vec.strip("[]").split(",") if x.strip()]
+                elif hasattr(emb_vec, "tolist"):
+                    emb_vec = emb_vec.tolist()
+                if isinstance(emb_vec, list):
+                    article_embeddings[str(emb_url)] = emb_vec
+            signal_counts = _classify_signal_by_embedding(article_embeddings, anchors)
+
+        if topic:
+            topic_articles = len(fetch_semantic_url_pool(topic, days=days, limit=500))
+        else:
+            cur.execute(
+                """
+                SELECT COUNT(*) AS topic_articles
+                FROM view_dashboard_news v
+                WHERE v.created_at >= NOW() - %s::interval
+                """,
+                (f"{days} days",),
+            )
+            topic_articles = int(cur.fetchone()[0] or 0)
+        cur.close()
+
+        source_mix = {
+            source_type: {"count": count, "share": (float(count) / float(total_cnt)) if total_cnt else 0.0}
+            for source_type, count in source_counts.items()
+        }
+        active_entities = sum(1 for stats in entity_stats.values() if stats.get("count", 0) > 0)
+        coverage = {
+            "topic_articles": topic_articles,
+            "matched_entity_articles": total_cnt,
+            "active_entities": active_entities,
+            "requested_entities": len(entity_list),
+        }
+        if active_entities >= min(4, len(entity_list)) and total_cnt >= 15 and len(top_evidence) >= 8:
+            confidence = "High"
+        elif active_entities >= 2 and total_cnt >= 4 and len(top_evidence) >= 2:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+
+        reranked_output = ""
+        rerank_meta = {}
+        try:
+            rerank_query = f"{topic_label} competitive landscape" if topic else "technology competitive landscape"
+            reranked, _, rerank_meta = retrieve_and_rerank(
+                rerank_query, days=days, top_k=5,
+            )
+            reranked_output = format_reranked_evidence(
+                reranked, header="Reranked Landscape Evidence",
+            )
+        except Exception as rerank_exc:
+            print(f"[Warn] analyze_landscape rerank failed (non-fatal): {rerank_exc}")
+
+        data = {
+            "topic": topic_label,
+            "days": days,
+            "entities": entity_list,
+            "coverage": coverage,
+            "entity_stats": entity_stats,
+            "source_mix": source_mix,
+            "signal_counts": signal_counts,
+            "top_evidence": top_evidence,
+            "confidence": confidence,
+            "reranked_output": reranked_output,
+        }
+        data["raw_output"] = _format_landscape_result({"status": "ok", "data": data})
+        return {
+            "status": "ok" if top_evidence else "empty",
+            "data": data,
+            "evidence": top_evidence,
+            "diagnostics": {
+                "topic": topic,
+                "candidate_count": len(all_matched_urls),
+                "evidence_count": len(top_evidence),
+                "retrieval_mode": "semantic_url_pool",
+                "fallback": False,
+                "confidence": confidence,
+                "rerank": rerank_meta,
+                **({"empty_reason": "no_evidence_rows"} if not top_evidence else {}),
+            },
+        }
+    except Exception as exc:
+        print(f"[Error] analyze_landscape structured failed: {exc}")
+        return {
+            "status": "error",
+            "error_code": "analyze_landscape_execution_failed",
+            "error": "analyze_landscape_execution_failed",
+            "data": base_data,
+            "evidence": [],
+            "diagnostics": {"exception_type": type(exc).__name__, "exception_message": str(exc), "topic": topic},
+        }
+    finally:
+        if conn is not None:
+            put_conn(conn)
+
+
 def analyze_ai_landscape(days: int = 30, entities: str = "", limit_per_entity: int = 3) -> str:
     """Analyze AI landscape. Alias for analyze_landscape(topic='AI')."""
     return analyze_landscape(topic="AI", days=days, entities=entities, limit_per_entity=limit_per_entity)
@@ -509,44 +814,40 @@ def analyze_ai_landscape(days: int = 30, entities: str = "", limit_per_entity: i
 
 def analyze_landscape_skill(payload: AnalyzeLandscapeSkillInput) -> SkillEnvelope:
     request = payload.model_dump(mode="python")
-    try:
-        raw_output = analyze_landscape(
-            topic=request.get("topic", ""),
-            days=int(request.get("days", 30)),
-            entities=request.get("entities", ""),
-            limit_per_entity=int(request.get("limit_per_entity", 3)),
-        )
-    except Exception as exc:
+    result = _analyze_landscape_structured(
+        topic=request.get("topic", ""),
+        days=int(request.get("days", 30)),
+        entities=request.get("entities", ""),
+        limit_per_entity=int(request.get("limit_per_entity", 3)),
+    )
+    status = str(result.get("status") or "error")
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    diagnostics = result.get("diagnostics") if isinstance(result.get("diagnostics"), dict) else {}
+    if status == "error":
         return build_error_envelope(
             tool="analyze_landscape",
             request=request,
-            error="analyze_landscape_execution_failed",
-            diagnostics={"exception_type": type(exc).__name__, "exception_message": str(exc)},
+            error=str(result.get("error_code") or "analyze_landscape_failed"),
+            data={**data, "raw_output": _format_landscape_result(result)},
+            diagnostics=diagnostics,
         )
-
-    if raw_output.startswith("No landscape data") or raw_output.startswith("analyze_landscape failed"):
-        is_error = "failed" in raw_output
-        return SkillEnvelope(
+    if status == "empty":
+        return build_empty_envelope(
             tool="analyze_landscape",
-            status="error" if is_error else "empty",
             request=request,
-            data={"raw_output": raw_output},
-            evidence=[],
-            error=raw_output if is_error else None,
-            diagnostics={"topic": request.get("topic", "")},
+            empty_reason=str(diagnostics.get("empty_reason") or "no_landscape_data"),
+            data={**data, "raw_output": _format_landscape_result(result)},
+            diagnostics=diagnostics,
         )
 
-    confidence = None
-    for line in raw_output.splitlines():
-        if line.strip().startswith("Confidence:"):
-            confidence = line.strip().split(":", 1)[1].strip()
-
-    evidence = _evidence_from_text_output(raw_output, max_items=12)
+    evidence = _evidence_from_records(result.get("evidence", []) or [], max_items=12)
+    data = dict(data)
+    data.setdefault("raw_output", _format_landscape_result(result))
     return SkillEnvelope(
         tool="analyze_landscape",
         status="ok",
         request=request,
-        data={"raw_output": raw_output, "confidence": confidence},
+        data=data,
         evidence=evidence,
-        diagnostics={"topic": request.get("topic", ""), "confidence": confidence},
+        diagnostics={**diagnostics, "evidence_count": len(evidence)},
     )

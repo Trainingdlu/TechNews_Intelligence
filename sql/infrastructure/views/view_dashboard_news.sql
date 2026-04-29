@@ -119,6 +119,8 @@ SELECT
     normalized.resolved_source_platform AS source_platform_resolved,
     normalized.resolved_signal_origin AS signal_origin_resolved,
     LOWER(SPLIT_PART(SPLIT_PART(normalized.url, '//', 2), '/', 1)) AS source_domain,
+    si.search_tsv,
+    si.updated_at AS search_index_updated_at,
 
     -- 3. Metric calculation: hours ago
     GREATEST(
@@ -137,4 +139,5 @@ SELECT
         ELSE normalized.url
     END AS discussion_link
 
-FROM normalized;
+FROM normalized
+LEFT JOIN public.news_search_index si ON si.url = normalized.url;

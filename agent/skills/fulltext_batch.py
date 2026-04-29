@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from ..core.skill_contracts import SkillEnvelope, build_error_envelope
+from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
 from .helpers import (
     _clamp_int,
     _extract_time_window_days,
@@ -101,6 +101,7 @@ def fulltext_batch(
             created_at = row.get("created_at")
             points = int(row.get("points") or 0)
             score = float(row.get("score") or 0.0)
+            match_score = _safe_float(row.get("match_score"))
             created_at_text = created_at.strftime("%Y-%m-%d %H:%M") if hasattr(created_at, "strftime") else ""
             prefix_lines.append(
                 f"{rank}. [{source_type}] {headline} | points={points} | "
@@ -116,6 +117,11 @@ def fulltext_batch(
                 "source_type": source_type,
                 "points": points,
                 "score": score,
+                "match_score": match_score,
+                "text_score": _safe_float(row.get("text_score")),
+                "semantic_score": _safe_float(row.get("semantic_score")),
+                "exact_score": _safe_float(row.get("exact_score")),
+                "final_score": _safe_float(row.get("final_score")),
                 "created_at": created_at.isoformat() if created_at else "",
                 "url": url,
             }
@@ -194,14 +200,29 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
 
     status = str(parsed.get("status", "ok")).lower()
     if status == "empty":
-        return SkillEnvelope(
+        rerank_meta = parsed.get("rerank", {})
+        if not isinstance(rerank_meta, dict):
+            rerank_meta = {}
+        return build_empty_envelope(
             tool="fulltext_batch",
-            status="empty",
             request=request,
+            empty_reason="no_candidate_articles",
             data=parsed,
-            evidence=[],
-            error=parsed.get("error"),
-            diagnostics={"rerank": parsed.get("rerank", {})},
+            diagnostics={
+                "rerank": rerank_meta,
+                "candidate_count": int(rerank_meta.get("candidate_count") or 0),
+                "selected_count": 0,
+                "article_count": 0,
+                "fallback": bool(rerank_meta.get("retrieval_fallback") or rerank_meta.get("fallback") or False),
+            },
+        )
+    if status == "error":
+        return build_error_envelope(
+            tool="fulltext_batch",
+            request=request,
+            error=str(parsed.get("error") or "fulltext_batch_failed"),
+            data=parsed,
+            diagnostics={"rerank": parsed.get("rerank", {}) if isinstance(parsed.get("rerank"), dict) else {}},
         )
 
     selected = parsed.get("selected", [])
@@ -219,6 +240,19 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
                     "source": item.get("source_type"),
                     "created_at": item.get("created_at"),
                     "score": _safe_float(item.get("score")),
+                    "rank": int(item.get("rank")) if str(item.get("rank") or "").isdigit() else None,
+                    "match_score": _safe_float(item.get("match_score")),
+                    "score_components": {
+                        "text_score": _safe_float(item.get("text_score")),
+                        "semantic_score": _safe_float(item.get("semantic_score")),
+                        "exact_score": _safe_float(item.get("exact_score")),
+                        "final_score": _safe_float(item.get("final_score")),
+                    },
+                    "metadata": {
+                        "selection_mode": item.get("selection_mode"),
+                        "points": item.get("points"),
+                        "rerank_mode": item.get("rerank_mode"),
+                    },
                 }
             )
 
@@ -228,7 +262,14 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
             if url and url not in seen_urls:
                 seen_urls.add(url)
                 evidence.append(
-                    {"url": url, "title": None, "source": None, "created_at": None, "score": None}
+                    {
+                        "url": url,
+                        "title": None,
+                        "source": None,
+                        "created_at": None,
+                        "score": None,
+                        "rank": int(article.get("index")) if str(article.get("index") or "").isdigit() else None,
+                    }
                 )
             if len(evidence) >= 12:
                 break
@@ -242,6 +283,14 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
         diagnostics={
             "selected_count": len(selected) if isinstance(selected, list) else 0,
             "article_count": len(articles) if isinstance(articles, list) else 0,
+            "candidate_count": len(selected) if isinstance(selected, list) else 0,
+            "evidence_count": len(evidence[:12]),
+            "retrieval_mode": (parsed.get("rerank") or {}).get("retrieval_mode") if isinstance(parsed.get("rerank"), dict) else None,
+            "fallback": bool(
+                ((parsed.get("rerank") or {}).get("retrieval_fallback") or (parsed.get("rerank") or {}).get("fallback") or False)
+                if isinstance(parsed.get("rerank"), dict)
+                else False
+            ),
             "rerank": parsed.get("rerank", {}),
         },
     )

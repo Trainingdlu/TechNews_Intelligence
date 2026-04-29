@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import os
 import time
 import uuid
 from contextlib import contextmanager
@@ -13,6 +12,8 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any, Iterator
+
+from services.llm_provider import agent_runtime_metadata
 
 from .skill_contracts import SkillEnvelope
 
@@ -437,19 +438,7 @@ def _new_request_id() -> str:
 
 
 def _build_runtime_metadata() -> dict[str, Any]:
-    provider = os.getenv("AGENT_MODEL_PROVIDER", "gemini_api").strip().lower() or "gemini_api"
-    if provider in {"vertex", "vertex_ai", "gcp"}:
-        model = os.getenv(
-            "VERTEX_GENERATION_MODEL",
-            os.getenv("VERTEX_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")),
-        ).strip()
-    else:
-        model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro").strip()
-    return {
-        "route": "react",
-        "provider": provider,
-        "model": model,
-    }
+    return agent_runtime_metadata()
 
 
 @contextmanager
@@ -485,6 +474,29 @@ def get_current_request_id() -> str | None:
 def get_current_thread_id() -> str | None:
     trace = get_current_request_trace()
     return trace.thread_id if trace else None
+
+
+def record_tool_policy_block(
+    *,
+    reason: str,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Record a pre-execution tool policy block in the current request trace."""
+    trace = get_current_request_trace()
+    if trace is None:
+        return
+    blocks = trace.runtime.setdefault("tool_policy_blocks", [])
+    if not isinstance(blocks, list):
+        blocks = []
+        trace.runtime["tool_policy_blocks"] = blocks
+    blocks.append(
+        summarize_payload(
+            {
+                "reason": str(reason or "").strip(),
+                "details": details if isinstance(details, dict) else {},
+            }
+        )
+    )
 
 
 def trace_tool_start(tool_name: str, payload: dict[str, Any]) -> int | None:

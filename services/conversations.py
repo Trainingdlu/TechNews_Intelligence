@@ -70,12 +70,55 @@ def append_message(
     metadata_value = _normalize_metadata(metadata)
 
     with db_transaction() as (_, cur):
+        _assert_thread_exists(cur, thread_key)
+
         cur.execute(
-            "SELECT 1 FROM public.conversation_threads WHERE thread_id = %s LIMIT 1",
-            (thread_key,),
+            """
+            INSERT INTO public.conversation_messages (
+                thread_id, role, parts, payload, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id, thread_id, role, parts, payload, metadata, created_at
+            """,
+            (
+                thread_key,
+                role,
+                Json(parts),
+                Json(payload),
+                Json(metadata_value),
+            ),
         )
-        if cur.fetchone() is None:
-            raise ConversationThreadNotFoundError(f"thread not found: {thread_key}")
+        row = cur.fetchone()
+        if row is None:
+            raise RuntimeError("failed to append conversation message")
+
+        cur.execute(
+            """
+            UPDATE public.conversation_threads
+            SET last_message_at = %s, updated_at = NOW()
+            WHERE thread_id = %s
+            """,
+            (row[6], thread_key),
+        )
+
+    return _message_row_to_dict(row)
+
+
+def append_message_for_token(
+    thread_id: str,
+    token_id: int | str,
+    message: dict[str, Any],
+    *,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Append one message only when thread belongs to the given web token."""
+    thread_key = _normalize_thread_id(thread_id, generate_if_missing=False)
+    token_key = _normalize_token_id(token_id)
+    role, parts, payload = _normalize_message(message)
+    metadata_value = _normalize_metadata(metadata)
+
+    with db_transaction() as (_, cur):
+        _assert_web_thread_token_owned(cur, thread_key, token_key)
 
         cur.execute(
             """
@@ -115,6 +158,47 @@ def load_history(thread_id: str, *, limit: int | None = None) -> list[dict[str, 
     limit_value = _normalize_optional_limit(limit, max_limit=MAX_HISTORY_LOAD_LIMIT)
 
     with db_cursor() as (_, cur):
+        if limit_value is None:
+            cur.execute(
+                """
+                SELECT payload, role, parts
+                FROM public.conversation_messages
+                WHERE thread_id = %s
+                ORDER BY id ASC
+                """,
+                (thread_key,),
+            )
+            rows = cur.fetchall()
+        else:
+            cur.execute(
+                """
+                SELECT payload, role, parts
+                FROM public.conversation_messages
+                WHERE thread_id = %s
+                ORDER BY id DESC
+                LIMIT %s
+                """,
+                (thread_key, limit_value),
+            )
+            rows = cur.fetchall()
+            rows.reverse()
+
+    return [_history_item_from_row(row) for row in rows]
+
+
+def load_history_for_token(
+    thread_id: str,
+    token_id: int | str,
+    *,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    """Load thread history only when thread belongs to the given web token."""
+    thread_key = _normalize_thread_id(thread_id, generate_if_missing=False)
+    token_key = _normalize_token_id(token_id)
+    limit_value = _normalize_optional_limit(limit, max_limit=MAX_HISTORY_LOAD_LIMIT)
+
+    with db_cursor() as (_, cur):
+        _assert_web_thread_token_owned(cur, thread_key, token_key)
         if limit_value is None:
             cur.execute(
                 """
@@ -249,6 +333,15 @@ def _normalize_channel(channel: str) -> str:
     return value
 
 
+def _normalize_token_id(token_id: int | str) -> str:
+    value = str(token_id).strip()
+    if not value:
+        raise ValueError("token_id cannot be empty")
+    if len(value) > 64:
+        raise ValueError("token_id is too long (max 64)")
+    return value
+
+
 def _normalize_subject(subject: str | None) -> str | None:
     if subject is None:
         return None
@@ -282,6 +375,31 @@ def _normalize_message(message: dict[str, Any]) -> tuple[str, list[Any], dict[st
         parts = copy.deepcopy(parts)
 
     return role, parts, payload
+
+
+def _assert_thread_exists(cur: Any, thread_id: str) -> None:
+    cur.execute(
+        "SELECT 1 FROM public.conversation_threads WHERE thread_id = %s LIMIT 1",
+        (thread_id,),
+    )
+    if cur.fetchone() is None:
+        raise ConversationThreadNotFoundError(f"thread not found: {thread_id}")
+
+
+def _assert_web_thread_token_owned(cur: Any, thread_id: str, token_id: str) -> None:
+    cur.execute(
+        """
+        SELECT 1
+        FROM public.conversation_threads
+        WHERE thread_id = %s
+          AND channel = 'web'
+          AND metadata->>'token_id' = %s
+        LIMIT 1
+        """,
+        (thread_id, token_id),
+    )
+    if cur.fetchone() is None:
+        raise ConversationThreadNotFoundError(f"thread not found: {thread_id}")
 
 
 def _normalize_optional_limit(value: int | None, *, max_limit: int) -> int | None:

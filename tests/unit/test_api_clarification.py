@@ -43,6 +43,31 @@ def api_client(
     refund_spy = MagicMock()
     monkeypatch.setattr(api_mod, "_refund_reserved_quota", refund_spy)
 
+    memory: dict[str, list[dict]] = {}
+
+    def _fake_create_thread(**_kwargs):  # noqa: ANN001
+        thread_id = f"thread-{len(memory) + 1}"
+        memory[thread_id] = []
+        return {"thread_id": thread_id}
+
+    def _fake_load_history_for_token(thread_id, token_id, limit=None):  # noqa: ANN001
+        del token_id
+        del limit
+        if thread_id not in memory:
+            raise api_mod.ConversationThreadNotFoundError(thread_id)
+        return list(memory[thread_id])
+
+    def _fake_append_message_for_token(thread_id, token_id, message, metadata=None):  # noqa: ANN001
+        del token_id
+        del metadata
+        memory.setdefault(thread_id, []).append(message)
+        return {"thread_id": thread_id, "payload": message}
+
+    monkeypatch.setattr(api_mod, "create_thread", _fake_create_thread)
+    monkeypatch.setattr(api_mod, "load_history_for_token", _fake_load_history_for_token)
+    monkeypatch.setattr(api_mod, "append_message_for_token", _fake_append_message_for_token)
+    api_mod._unit_test_memory = memory  # pylint: disable=protected-access
+
     client = TestClient(api_mod.app)
     try:
         yield client, api_mod, refund_spy
@@ -144,7 +169,8 @@ def test_chat_stream_carries_source_conflict_reason(api_client) -> None:  # noqa
 def test_chat_stream_emits_final_clarification_event(api_client) -> None:  # noqa: ANN001
     client, api_mod, refund_spy = api_client
 
-    def _fake_generate(_history, _message, progress_callback=None, request_id=None):  # noqa: ANN001
+    def _fake_generate(_history, _message, progress_callback=None, request_id=None, thread_id=None):  # noqa: ANN001
+        del thread_id
         if callable(progress_callback):
             progress_callback({"stage": "understanding"})
         return _clarification_payload()
@@ -171,7 +197,8 @@ def test_clarification_followup_retries_with_merged_message(api_client) -> None:
     client, api_mod, refund_spy = api_client
     seen_messages: list[str] = []
 
-    def _fake_generate(_history, message, progress_callback=None, request_id=None):  # noqa: ANN001
+    def _fake_generate(_history, message, progress_callback=None, request_id=None, thread_id=None):  # noqa: ANN001
+        del thread_id
         seen_messages.append(str(message))
         if len(seen_messages) == 1:
             return _clarification_payload()
@@ -190,6 +217,7 @@ def test_clarification_followup_retries_with_merged_message(api_client) -> None:
         headers={"Authorization": "Bearer test"},
     )
     assert first.status_code == 200
+    thread_id = first.json()["thread_id"]
     clarification = first.json()["clarification"]
 
     history = [
@@ -204,13 +232,14 @@ def test_clarification_followup_retries_with_merged_message(api_client) -> None:
     followup = "最近 30 天，只看 TechCrunch，聚焦 OpenAI，做趋势对比"
     second = client.post(
         "/chat",
-        json={"message": followup, "history": history},
+        json={"message": followup, "thread_id": thread_id},
         headers={"Authorization": "Bearer test"},
     )
 
     assert second.status_code == 200
     second_data = second.json()
     assert second_data["kind"] == "answer"
+    assert second_data["thread_id"] == thread_id
     assert second_data["reply"].startswith("分析结论")
     assert second_data["citation_urls"] == ["https://example.com/a"]
     assert len(seen_messages) == 2

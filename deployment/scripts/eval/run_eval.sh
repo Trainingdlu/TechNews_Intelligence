@@ -25,8 +25,12 @@ MATRIX_FILE="${MATRIX_FILE:-eval/config/matrix.json}"
 GROUPS="${GROUPS:-G0,G1,G2}"
 BASELINE_GROUP="${BASELINE_GROUP:-G0}"
 
-PROVIDER="${PROVIDER:-vertex}"
-MODEL="${MODEL:-gemini-3.1-pro-preview}"
+AGENT_PROVIDER="${AGENT_PROVIDER:-vertex}"
+AGENT_MODEL="${AGENT_MODEL:-gemini-3.1-pro-preview}"
+DATASET_PROVIDER="${DATASET_PROVIDER:-vertex}"
+DATASET_MODEL="${DATASET_MODEL:-gemini-3.1-pro-preview}"
+JUDGE_PROVIDER="${JUDGE_PROVIDER:-vertex}"
+JUDGE_MODEL="${JUDGE_MODEL:-gemini-3.1-pro-preview}"
 TEMPERATURE="${TEMPERATURE:-0.0}"
 SEED="${SEED:-42}"
 RUNS_PER_CASE="${RUNS_PER_CASE:-1}"
@@ -41,8 +45,6 @@ JUDGE_MAX_CASES_PER_GROUP="${JUDGE_MAX_CASES_PER_GROUP:-24}"
 JUDGE_SAMPLE_SEED="${JUDGE_SAMPLE_SEED:-42}"
 JUDGE_RUNS_PER_CASE="${JUDGE_RUNS_PER_CASE:-1}"
 JUDGE_SLEEP_SECONDS="${JUDGE_SLEEP_SECONDS:-20}"
-JUDGE_PROVIDER="${JUDGE_PROVIDER:-${PROVIDER}}"
-JUDGE_MODEL="${JUDGE_MODEL:-${MODEL}}"
 
 LLM_MAX_RETRIES="${LLM_MAX_RETRIES:-2}"
 LLM_BACKOFF_SEC="${LLM_BACKOFF_SEC:-2}"
@@ -54,6 +56,8 @@ POOLS_PER_GENERATION_CALL="${POOLS_PER_GENERATION_CALL:-2}"
 REGEN_POOLS_PER_GENERATION_CALL="${REGEN_POOLS_PER_GENERATION_CALL:-1}"
 RESUME_FROM_CHECKPOINT="${RESUME_FROM_CHECKPOINT:-1}"
 ENFORCE_SCENARIO_RETRIEVAL_MAP="${ENFORCE_SCENARIO_RETRIEVAL_MAP:-1}"
+ENABLE_TOPIC_PREFLIGHT="${ENABLE_TOPIC_PREFLIGHT:-1}"
+ALLOW_TOPIC_PREFLIGHT_WARNINGS="${ALLOW_TOPIC_PREFLIGHT_WARNINGS:-0}"
 
 AUDIT_MAX_REGEN_ROUNDS="${AUDIT_MAX_REGEN_ROUNDS:-3}"
 AUDIT_REGEN_MODE="${AUDIT_REGEN_MODE:-failed_only}"
@@ -230,8 +234,8 @@ PY
 COMMON_BUILD_ARGS=(
   --task-types "${TASK_FILE}"
   --no-enforce-coverage-policy
-  --provider "${PROVIDER}"
-  --model "${MODEL}"
+  --provider "${DATASET_PROVIDER}"
+  --model "${DATASET_MODEL}"
   --temperature "${TEMPERATURE}"
   --seed "${SEED}"
   --llm-max-retries "${LLM_MAX_RETRIES}"
@@ -254,15 +258,32 @@ echo "[Eval] dataset_version=${DATASET_VERSION}"
 echo "[Eval] task_file=${TASK_FILE}"
 echo "[Eval] matrix_file=${MATRIX_FILE}"
 echo "[Eval] groups=${GROUPS}"
-echo "[Eval] provider=${PROVIDER} model=${MODEL}"
+echo "[Eval] agent_provider=${AGENT_PROVIDER} agent_model=${AGENT_MODEL}"
+echo "[Eval] dataset_provider=${DATASET_PROVIDER} dataset_model=${DATASET_MODEL}"
+echo "[Eval] judge_provider=${JUDGE_PROVIDER} judge_model=${JUDGE_MODEL}"
 echo "[Eval] enable_judge=${ENABLE_JUDGE}"
+echo "[Eval] enable_topic_preflight=${ENABLE_TOPIC_PREFLIGHT}"
 
 step "postgres_up" compose up -d postgres
+
+if is_on "${ENABLE_TOPIC_PREFLIGHT}"; then
+  retry_step "topic_preflight" "${STEP_MAX_ATTEMPTS}" "${STEP_RETRY_BASE_SLEEP_SEC}" \
+    compose run --rm --no-deps \
+      -e PYTHONUNBUFFERED=1 \
+      -e EVAL_RECALL_PROFILE="${EVAL_RECALL_PROFILE}" \
+      -e ALLOW_TOPIC_PREFLIGHT_WARNINGS="${ALLOW_TOPIC_PREFLIGHT_WARNINGS}" \
+      -v "${REPO_ROOT}/eval:/app/eval" \
+      bot python -u -m eval.audit_task_topics \
+        --task-file "${TASK_FILE}" \
+        --strict
+fi
 
 FINGERPRINT_RAW="$(
   compose run --rm --no-deps \
     -e PYTHONUNBUFFERED=1 \
     -e EVAL_RECALL_PROFILE="${EVAL_RECALL_PROFILE}" \
+    -e TASK_EVAL_PROVIDER="${DATASET_PROVIDER}" \
+    -e TASK_EVAL_MODEL="${DATASET_MODEL}" \
     -v "${REPO_ROOT}/eval:/app/eval" \
     bot python -u -m eval.build_task_dataset \
       "${COMMON_BUILD_ARGS[@]}" \
@@ -318,6 +339,8 @@ run_build_dataset_with_chunk() {
     compose run --rm --no-deps \
       -e PYTHONUNBUFFERED=1 \
       -e EVAL_RECALL_PROFILE="${EVAL_RECALL_PROFILE}" \
+      -e TASK_EVAL_PROVIDER="${DATASET_PROVIDER}" \
+      -e TASK_EVAL_MODEL="${DATASET_MODEL}" \
       -v "${REPO_ROOT}/eval:/app/eval" \
       bot python -u -m eval.build_task_dataset \
         "${build_args[@]}"
@@ -366,10 +389,8 @@ retry_step "run_main_matrix" "${STEP_MAX_ATTEMPTS}" "${STEP_RETRY_BASE_SLEEP_SEC
   compose run --rm --no-deps \
     -e PYTHONUNBUFFERED=1 \
     -e EVAL_RECALL_PROFILE="${EVAL_RECALL_PROFILE}" \
-    -e AGENT_MODEL_PROVIDER="${PROVIDER}" \
-    -e GEMINI_MODEL="${MODEL}" \
-    -e VERTEX_GENERATION_MODEL="${MODEL}" \
-    -e VERTEX_MODEL="${MODEL}" \
+    -e AGENT_MODEL_PROVIDER="${AGENT_PROVIDER}" \
+    -e AGENT_MODEL="${AGENT_MODEL}" \
     -v "${REPO_ROOT}/eval:/app/eval" \
     bot python -u -m eval.run_matrix_eval \
       --matrix "${MATRIX_FILE}" \
@@ -474,10 +495,8 @@ if is_on "${ENABLE_JUDGE}"; then
     compose run --rm --no-deps \
       -e PYTHONUNBUFFERED=1 \
       -e EVAL_RECALL_PROFILE="${EVAL_RECALL_PROFILE}" \
-      -e AGENT_MODEL_PROVIDER="${PROVIDER}" \
-      -e GEMINI_MODEL="${MODEL}" \
-      -e VERTEX_GENERATION_MODEL="${MODEL}" \
-      -e VERTEX_MODEL="${MODEL}" \
+      -e AGENT_MODEL_PROVIDER="${AGENT_PROVIDER}" \
+      -e AGENT_MODEL="${AGENT_MODEL}" \
       -v "${REPO_ROOT}/eval:/app/eval" \
       bot python -u -m eval.run_matrix_eval \
         --matrix "${MATRIX_FILE}" \

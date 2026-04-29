@@ -26,6 +26,9 @@ eval/reports/*
 tests/reports/*
 !tests/reports/.gitkeep
 tests/_test_output.txt
+tests/unit/.tmp*/
+tests/unit/tmp*/
+tests/unit/tempfile_probe/
 tests/unit/.tmp_mcp_stdio/
 tests/pytest-cache-files-*/
 tests/unit/.tmp_pytest/
@@ -38,6 +41,9 @@ tmp*/
 .tmp/
 .tmp/pytest-technews/
 .pytest_tmp/
+.pytest_tmp*/
+.tmp_pytest*/
+.codex_pytest_tmp/
 .pytest_tmp_technews/
 tests/pytest-tmp/
 .pytest_cache/

@@ -7,7 +7,7 @@ from typing import Any
 
 from services.db import get_conn, put_conn
 
-from ..core.skill_contracts import SkillEnvelope, build_error_envelope
+from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _json_text
 from .query_news import query_news
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
@@ -212,11 +212,25 @@ def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
         return build_error_envelope(
             tool="trend_analysis",
             request=request,
-            error=str(parsed.get("error") or "trend_analysis_failed"),
-            diagnostics={"raw_output": parsed},
+            error="trend_analysis_failed",
+            diagnostics={"raw_output": parsed, "error_message": str(parsed.get("error") or "")},
         )
 
     data = parsed.get("data") if isinstance(parsed.get("data"), dict) else {}
+    if status == "empty":
+        return build_empty_envelope(
+            tool="trend_analysis",
+            request=request,
+            empty_reason="no_semantic_matches",
+            data=data,
+            diagnostics={
+                "window": request.get("window"),
+                "candidate_count": 0,
+                "evidence_count": 0,
+                "retrieval_mode": "semantic_url_pool",
+                "fallback": False,
+            },
+        )
 
     evidence_records: list[dict[str, Any]] = []
     if status == "ok" and str(request.get("topic", "")).strip():
@@ -244,5 +258,12 @@ def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
         request=request,
         data=data,
         evidence=evidence,
-        diagnostics={"evidence_backfill_count": len(evidence), "window": request.get("window")},
+        diagnostics={
+            "evidence_backfill_count": len(evidence),
+            "evidence_count": len(evidence),
+            "window": request.get("window"),
+            "candidate_count": int(data.get("recent_count", 0) or 0) + int(data.get("previous_count", 0) or 0),
+            "retrieval_mode": "semantic_url_pool",
+            "fallback": False,
+        },
     )

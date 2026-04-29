@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-import uuid
 
 import pytest
 
@@ -50,22 +49,17 @@ def _task_rows() -> list[dict]:
     ]
 
 
-def test_dataset_fingerprint_stable_and_seed_sensitive() -> None:
-    tmp_root = Path.cwd() / ".tmp_pytest_fingerprint"
-    tmp_root.mkdir(parents=True, exist_ok=True)
-    task_path = tmp_root / f"tasks_{uuid.uuid4().hex}.json"
+def test_dataset_fingerprint_stable_and_seed_sensitive(tmp_path: Path) -> None:
+    task_path = tmp_path / "tasks.json"
     task_path.write_text(json.dumps(_task_rows(), ensure_ascii=False), encoding="utf-8")
-    try:
-        fp_a, payload_a = mod.build_dataset_fingerprint(args=_args(task_path, seed=42), task_types=_task_rows())
-        fp_b, payload_b = mod.build_dataset_fingerprint(args=_args(task_path, seed=42), task_types=_task_rows())
-        fp_c, _ = mod.build_dataset_fingerprint(args=_args(task_path, seed=7), task_types=_task_rows())
 
-        assert fp_a == fp_b
-        assert payload_a == payload_b
-        assert fp_a != fp_c
-    finally:
-        if task_path.exists():
-            task_path.unlink()
+    fp_a, payload_a = mod.build_dataset_fingerprint(args=_args(task_path, seed=42), task_types=_task_rows())
+    fp_b, payload_b = mod.build_dataset_fingerprint(args=_args(task_path, seed=42), task_types=_task_rows())
+    fp_c, _ = mod.build_dataset_fingerprint(args=_args(task_path, seed=7), task_types=_task_rows())
+
+    assert fp_a == fp_b
+    assert payload_a == payload_b
+    assert fp_a != fp_c
 
 
 def test_validate_scenario_retrieval_map_rejects_mismatch() -> None:

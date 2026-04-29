@@ -25,15 +25,41 @@ def _fake_request(ip: str = "127.0.0.1"):
     return types.SimpleNamespace(client=types.SimpleNamespace(host=ip))
 
 
+def _stub_conversation_memory(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    memory: dict[str, list[dict]] = {}
+
+    def _create_thread(**_kwargs):  # noqa: ANN001
+        memory["thread-trace"] = []
+        return {"thread_id": "thread-trace"}
+
+    def _load_history_for_token(thread_id, token_id, limit=None):  # noqa: ANN001
+        del token_id
+        del limit
+        if thread_id not in memory:
+            raise api_mod.ConversationThreadNotFoundError(thread_id)
+        return list(memory[thread_id])
+
+    def _append_message_for_token(thread_id, token_id, message, metadata=None):  # noqa: ANN001
+        del token_id
+        del metadata
+        memory.setdefault(thread_id, []).append(message)
+        return {"thread_id": thread_id}
+
+    monkeypatch.setattr(api_mod, "create_thread", _create_thread)
+    monkeypatch.setattr(api_mod, "load_history_for_token", _load_history_for_token)
+    monkeypatch.setattr(api_mod, "append_message_for_token", _append_message_for_token)
+
+
 def test_chat_logs_and_forwards_trace_request_id(
     api_mod,  # noqa: ANN001
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, str] = {}
 
-    def _fake_generate_response_payload(_history, _message, progress_callback=None, request_id=None):
+    def _fake_generate_response_payload(_history, _message, progress_callback=None, request_id=None, thread_id=None):
         del progress_callback
         captured["request_id"] = str(request_id)
+        captured["thread_id"] = str(thread_id)
         return {"kind": "answer", "text": "reply-ok"}
 
     async def _fake_to_thread(func, *args, **kwargs):
@@ -41,6 +67,7 @@ def test_chat_logs_and_forwards_trace_request_id(
 
     monkeypatch.setattr(api_mod, "generate_response_payload", _fake_generate_response_payload)
     monkeypatch.setattr(api_mod.asyncio, "to_thread", _fake_to_thread)
+    _stub_conversation_memory(api_mod, monkeypatch)
     monkeypatch.setattr(api_mod, "_check_rate_limit", lambda _ip: None)
     monkeypatch.setattr(
         api_mod,
@@ -49,7 +76,7 @@ def test_chat_logs_and_forwards_trace_request_id(
     )
     monkeypatch.setattr(api_mod, "_maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
 
-    body = api_mod.ChatRequest(message="hello", history=[])
+    body = api_mod.ChatRequest(message="hello")
     token_info = {"id": 1, "email": "user@example.com"}
 
     with patch.object(api_mod.logger, "info") as info_log:
@@ -61,6 +88,7 @@ def test_chat_logs_and_forwards_trace_request_id(
     logged_request_id = str(info_log.call_args.args[2])
     assert logged_request_id
     assert captured["request_id"] == logged_request_id
+    assert captured["thread_id"] == response.thread_id
 
 
 def test_chat_stream_logs_and_forwards_trace_request_id(
@@ -69,11 +97,12 @@ def test_chat_stream_logs_and_forwards_trace_request_id(
 ) -> None:
     captured: dict[str, str] = {}
 
-    def _fake_generate_response_payload(_history, _message, progress_callback=None, request_id=None):
+    def _fake_generate_response_payload(_history, _message, progress_callback=None, request_id=None, thread_id=None):
         if callable(progress_callback):
             progress_callback({"stage": "understanding"})
             progress_callback({"stage": "finalizing"})
         captured["request_id"] = str(request_id)
+        captured["thread_id"] = str(thread_id)
         return {"kind": "answer", "text": "reply-stream"}
 
     async def _fake_to_thread(func, *args, **kwargs):
@@ -90,6 +119,7 @@ def test_chat_stream_logs_and_forwards_trace_request_id(
 
     monkeypatch.setattr(api_mod, "generate_response_payload", _fake_generate_response_payload)
     monkeypatch.setattr(api_mod.asyncio, "to_thread", _fake_to_thread)
+    _stub_conversation_memory(api_mod, monkeypatch)
     monkeypatch.setattr(api_mod, "_check_rate_limit", lambda _ip: None)
     monkeypatch.setattr(
         api_mod,
@@ -99,7 +129,7 @@ def test_chat_stream_logs_and_forwards_trace_request_id(
     monkeypatch.setattr(api_mod, "_maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
     monkeypatch.setattr(api_mod, "_refund_reserved_quota", lambda *_a, **_k: None)
 
-    body = api_mod.ChatRequest(message="stream hello", history=[])
+    body = api_mod.ChatRequest(message="stream hello")
     token_info = {"id": 1, "email": "user@example.com"}
 
     with patch.object(api_mod.logger, "info") as info_log:
@@ -112,3 +142,4 @@ def test_chat_stream_logs_and_forwards_trace_request_id(
     logged_request_id = str(info_log.call_args.args[2])
     assert logged_request_id
     assert captured["request_id"] == logged_request_id
+    assert captured["thread_id"] == "thread-trace"

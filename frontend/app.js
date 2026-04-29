@@ -7,6 +7,7 @@
 
     // == State ==
     let token = localStorage.getItem('agent_token') || '';
+    let threadId = localStorage.getItem('agent_thread_id') || '';
     let history = [];
     let isLoading = false;
     let remaining = null;
@@ -21,6 +22,7 @@
     const emailStatus = document.getElementById('email-status');
     const tokenForm = document.getElementById('token-form');
     const tokenInput = document.getElementById('token-input');
+    const chatContainer = document.querySelector('.chat-container');
     const messagesEl = document.getElementById('messages');
     const chatInput = document.getElementById('chat-input');
     const sendBtn = document.getElementById('send-btn');
@@ -29,8 +31,23 @@
     const quotaDisplay = document.getElementById('quota-display');
     const quotaOverlay = document.getElementById('quota-overlay');
     const inputBarInner = document.querySelector('.input-bar-inner');
-    const defaultChatPlaceholder = chatInput.placeholder || '输入你的问题...';
+    const defaultChatPlaceholder = chatInput.placeholder || '你想知道什么？';
     const exhaustedChatPlaceholder = '额度已耗尽，请求邮件已发送，通过后将通过邮件告知';
+
+    function renderEmptyChatState() {
+        messagesEl.innerHTML = `
+            <div class="welcome-msg">
+                <h1 class="welcome-title">TechNews Intelligence</h1>
+            </div>`;
+        chatInput.value = '';
+        chatInput.style.height = 'auto';
+        chatContainer.classList.add('chat-empty');
+        updateSendBtn();
+    }
+
+    function markChatStarted() {
+        chatContainer.classList.remove('chat-empty');
+    }
 
     function _splitTrailingUrlSuffix(rawUrl) {
         let url = String(rawUrl || '').trim();
@@ -178,8 +195,13 @@
         if (!t) return;
         const tokenSubmitBtn = tokenForm.querySelector('button[type=\"submit\"]');
         await playButtonPress(tokenSubmitBtn);
+        const previousToken = token;
         token = t;
         localStorage.setItem('agent_token', token);
+        if (previousToken !== token) {
+            threadId = '';
+            localStorage.removeItem('agent_thread_id');
+        }
         showChat();
         fetchQuota();
     });
@@ -233,7 +255,9 @@
 
     function handleInvalidToken() {
         token = '';
+        threadId = '';
         localStorage.removeItem('agent_token');
+        localStorage.removeItem('agent_thread_id');
         history = [];
         setQuotaInputLocked(false);
         showAuth();
@@ -259,6 +283,19 @@
 
     function updateSendBtn() {
         sendBtn.disabled = chatInput.disabled || !chatInput.value.trim() || isLoading;
+    }
+
+    function buildChatRequest(text) {
+        const payload = { message: text };
+        if (threadId) payload.thread_id = threadId;
+        return payload;
+    }
+
+    function rememberThreadId(data) {
+        const nextThreadId = String((data && data.thread_id) || '').trim();
+        if (!nextThreadId) return;
+        threadId = nextThreadId;
+        localStorage.setItem('agent_thread_id', threadId);
     }
 
     function applyChatSuccess(text, data) {
@@ -300,6 +337,7 @@
     }
 
     function applyChatPayload(text, data) {
+        rememberThreadId(data);
         const kind = String((data && data.kind) || 'answer').toLowerCase();
         if (kind === 'clarification_required') {
             applyChatClarification(text, data || {});
@@ -412,6 +450,7 @@
 
         const welcome = messagesEl.querySelector('.welcome-msg');
         if (welcome) welcome.remove();
+        markChatStarted();
 
         appendMessage('user', text);
         chatInput.value = '';
@@ -423,14 +462,14 @@
         try {
             streamRes = await apiFetch('/chat-stream', {
                 method: 'POST',
-                body: JSON.stringify({ message: text, history }),
+                body: JSON.stringify(buildChatRequest(text)),
             });
 
             // Compatibility fallback: older backend may not have /chat-stream yet.
             if (streamRes.status === 404 || streamRes.status === 405) {
                 streamRes = await apiFetch('/chat', {
                     method: 'POST',
-                    body: JSON.stringify({ message: text, history }),
+                    body: JSON.stringify(buildChatRequest(text)),
                 });
             }
 
@@ -463,7 +502,7 @@
                 try {
                     const nonStreamRes = await apiFetch('/chat', {
                         method: 'POST',
-                        body: JSON.stringify({ message: text, history }),
+                        body: JSON.stringify(buildChatRequest(text)),
                     });
                     if (await handleChatHttpError(nonStreamRes)) return;
                     const nonStreamData = await nonStreamRes.json();
@@ -575,13 +614,6 @@
         const msg = document.createElement('div');
         msg.className = 'msg ' + role;
 
-        const avatar = document.createElement('div');
-        avatar.className = 'msg-avatar';
-        const icon = document.createElement('span');
-        icon.className = 'material-symbols-outlined';
-        icon.textContent = role === 'agent' ? 'smart_toy' : 'person';
-        avatar.appendChild(icon);
-
         const content = document.createElement('div');
         content.className = 'msg-content';
         if (role === 'agent') {
@@ -591,7 +623,6 @@
             content.textContent = text;
         }
 
-        msg.appendChild(avatar);
         msg.appendChild(content);
         messagesEl.appendChild(msg);
 
@@ -637,22 +668,19 @@
 
     // == Clear / Logout ==
     clearBtn.addEventListener('click', () => {
+        threadId = '';
+        localStorage.removeItem('agent_thread_id');
         history = [];
-        messagesEl.innerHTML = '';
-        // Re-add welcome
-        messagesEl.innerHTML = `
-            <div class="welcome-msg">
-                <span class="material-symbols-outlined welcome-icon">waving_hand</span>
-                <p>你好！我是 TechNews 智能分析助手。</p>
-                <p class="welcome-hint">试试问我："最近AI领域有什么大事？"</p>
-            </div>`;
+        renderEmptyChatState();
     });
 
     logoutBtn.addEventListener('click', () => {
         token = '';
+        threadId = '';
         localStorage.removeItem('agent_token');
+        localStorage.removeItem('agent_thread_id');
         history = [];
-        messagesEl.innerHTML = '';
+        renderEmptyChatState();
         setQuotaInputLocked(false);
         showAuth();
     });

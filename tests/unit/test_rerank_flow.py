@@ -280,6 +280,61 @@ def test_lookup_candidates_by_query_rerank_off_keeps_recall_order() -> None:
     assert meta["candidate_count"] == 2
     assert meta["top_k"] == 2
     assert meta["fallback"] is False
+    assert meta["retrieval_mode"] == "postgres_rrf_hybrid_query"
+    assert meta["fusion"] == "rrf"
+    assert meta["points_boost"] is False
+    assert "lexical" in meta["channels_used"]
+
+
+def test_lookup_candidates_by_query_accepts_extended_hybrid_columns_without_reordering() -> None:
+    rows = [
+        (
+            "Headline A",
+            "https://a.com",
+            "Summary A",
+            "Neutral",
+            "TechCrunch",
+            datetime(2026, 4, 10, 10, 0, 0),
+            10,
+            2.0,   # score/final_score (排序字段)
+            0.2,   # text_score
+            0.3,   # semantic_score
+            0.1,   # exact_score
+            0.3,   # match_score
+        ),
+        (
+            "Headline B",
+            "https://b.com",
+            "Summary B",
+            "Positive",
+            "HackerNews",
+            datetime(2026, 4, 9, 10, 0, 0),
+            8,
+            1.5,   # score/final_score
+            4.0,   # text_score
+            0.9,   # semantic_score
+            3.0,   # exact_score
+            0.9,   # match_score (更高，但不影响查询排序)
+        ),
+    ]
+    fake_conn = _FakeConn(rows)
+
+    with (
+        patch.object(retrieval_mod, "get_conn", lambda: fake_conn),
+        patch.object(retrieval_mod, "put_conn", lambda _conn: None),
+        patch.object(retrieval_mod, "_get_query_embedding", lambda _q: None),
+    ):
+        candidates, meta = retrieval_mod.lookup_candidates_by_query(
+            query="OpenAI",
+            days=14,
+            limit=2,
+            rerank_mode="none",
+        )
+
+    assert [item["url"] for item in candidates] == ["https://a.com", "https://b.com"]
+    assert candidates[0]["score"] == 2.0
+    assert candidates[1]["score"] == 1.5
+    assert meta["retrieval_mode"] == "postgres_rrf_hybrid_query"
 
 
 def test_lookup_candidates_by_query_empty_query_returns_structured_meta() -> None:
@@ -336,6 +391,7 @@ def test_lookup_candidates_by_query_rerank_on_uses_reranker_order(monkeypatch) -
     assert meta["candidate_count"] == 2
     assert meta["top_k"] == 2
     assert meta["fallback"] is False
+    assert meta["retrieval_mode"] == "postgres_rrf_hybrid_query"
 
 
 def test_lookup_candidates_by_query_rerank_failure_fallbacks_to_recall_order(monkeypatch) -> None:

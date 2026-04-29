@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-import uuid
 
 import pytest
 
@@ -12,6 +11,9 @@ from eval.task_eval_schema import (
     normalize_case,
     validate_case,
 )
+
+def _expected_tool_paths(query: str = "OpenAI") -> list[list[dict]]:
+    return [[{"tool": "query_news", "args": {"query": query}}]]
 
 
 def _task_type() -> dict:
@@ -23,7 +25,7 @@ def _task_type() -> dict:
         "scenario": "normal",
         "example_question": "q",
         "parameter_template": {"query": "OpenAI"},
-        "acceptable_tool_paths": [[{"tool": "query_news", "args": {"query": "OpenAI"}}]],
+        "acceptable_tool_paths": _expected_tool_paths(),
         "required_tools": ["query_news"],
         "forbidden_tools": [],
         "should_clarify": False,
@@ -54,37 +56,49 @@ def _pool() -> list[dict]:
     ]
 
 
-def test_load_task_types_accepts_valid_file() -> None:
-    tmp_root = Path.cwd() / ".tmp_pytest_task_eval_schema"
-    tmp_root.mkdir(parents=True, exist_ok=True)
-    path = tmp_root / f"tasks_{uuid.uuid4().hex}.json"
+def _claim(doc_id: str = "doc_1", quote: str = "s1", *, include_quotes: bool = True) -> dict:
+    claim = {
+        "claim": "A happened",
+        "evidence_doc_ids": [doc_id],
+        "claim_type": "fact",
+    }
+    if include_quotes:
+        claim["evidence_quotes"] = [{"doc_id": doc_id, "quote": quote}]
+    return claim
+
+
+def _case(**overrides) -> dict:
+    raw_case = {
+        "expected_question": "请总结 OpenAI 相关新闻",
+        "expected_answer": "这是基于新闻池的中文参考答案。",
+        "expected_tool_paths": _expected_tool_paths(),
+        "retrieval_evaluable": True,
+        "retrieval_gold_doc_ids": ["doc_1"],
+        "verifiable_claims": [_claim()],
+    }
+    raw_case.update(overrides)
+    return raw_case
+
+
+def _case_dir(tmp_path: Path) -> Path:
+    path = tmp_path / "task_eval_schema_case"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_load_task_types_accepts_valid_file(tmp_path: Path) -> None:
+    temp_dir = _case_dir(tmp_path)
+    path = temp_dir / "tasks.json"
     path.write_text(json.dumps([_task_type()]), encoding="utf-8")
-    try:
-        rows = load_task_types(path, strict_skill=False, enforce_coverage_policy=False)
-        assert len(rows) == 1
-        assert rows[0]["task_id"] == "query_news.filter.precise.normal"
-    finally:
-        if path.exists():
-            path.unlink()
+    rows = load_task_types(path, strict_skill=False, enforce_coverage_policy=False)
+    assert len(rows) == 1
+    assert rows[0]["task_id"] == "query_news.filter.precise.normal"
 
 
 def test_normalize_case_enforces_retrieval_gold_subset() -> None:
     task = _task_type()
     case = normalize_case(
-        {
-            "expected_question": "请总结 OpenAI 相关新闻",
-            "expected_answer": "这是基于新闻池的中文参考答案。",
-            "expected_tool_paths": [[{"tool": "query_news", "args": {"query": "OpenAI"}}]],
-            "retrieval_evaluable": True,
-            "retrieval_gold_doc_ids": ["doc_1"],
-            "verifiable_claims": [
-                {
-                    "claim": "A happened",
-                    "evidence_doc_ids": ["doc_1"],
-                    "claim_type": "fact",
-                }
-            ],
-        },
+        _case(),
         task_type=task,
         case_id="case-1",
         pool_id="pool-1",
@@ -99,14 +113,11 @@ def test_normalize_case_rejects_invalid_gold_ids() -> None:
     task = _task_type()
     with pytest.raises(ValueError, match="retrieval_gold_doc_ids must be subset"):
         normalize_case(
-            {
-                "expected_question": "请给出问题",
-                "expected_answer": "这是中文答案。",
-                "expected_tool_paths": [[{"tool": "query_news", "args": {"query": "OpenAI"}}]],
-                "retrieval_evaluable": True,
-                "retrieval_gold_doc_ids": ["doc_x"],
-                "verifiable_claims": [],
-            },
+            _case(
+                expected_question="请给出问题",
+                expected_answer="这是中文答案。",
+                retrieval_gold_doc_ids=["doc_x"],
+            ),
             task_type=task,
             case_id="case-2",
             pool_id="pool-2",
@@ -117,15 +128,10 @@ def test_normalize_case_rejects_invalid_gold_ids() -> None:
 def test_normalize_case_backfills_gold_doc_ids_from_urls() -> None:
     task = _task_type()
     case = normalize_case(
-        {
-            "expected_question": "请总结 OpenAI 相关新闻",
-            "expected_answer": "这是基于新闻池的中文参考答案。",
-            "expected_tool_paths": [[{"tool": "query_news", "args": {"query": "OpenAI"}}]],
-            "retrieval_evaluable": True,
-            "retrieval_gold_doc_ids": [],
-            "retrieval_gold_urls": ["https://a.example.com"],
-            "verifiable_claims": [],
-        },
+        _case(
+            retrieval_gold_doc_ids=[],
+            retrieval_gold_urls=["https://a.example.com"],
+        ),
         task_type=task,
         case_id="case-backfill-url",
         pool_id="pool-backfill-url",
@@ -138,21 +144,11 @@ def test_normalize_case_backfills_gold_doc_ids_from_urls() -> None:
 def test_normalize_case_backfills_gold_doc_ids_from_claim_evidence() -> None:
     task = _task_type()
     case = normalize_case(
-        {
-            "expected_question": "请总结 OpenAI 相关新闻",
-            "expected_answer": "这是基于新闻池的中文参考答案。",
-            "expected_tool_paths": [[{"tool": "query_news", "args": {"query": "OpenAI"}}]],
-            "retrieval_evaluable": True,
-            "retrieval_gold_doc_ids": [],
-            "retrieval_gold_urls": [],
-            "verifiable_claims": [
-                {
-                    "claim": "A happened",
-                    "evidence_doc_ids": ["doc_2"],
-                    "claim_type": "fact",
-                }
-            ],
-        },
+        _case(
+            retrieval_gold_doc_ids=[],
+            retrieval_gold_urls=[],
+            verifiable_claims=[_claim("doc_2", "s2")],
+        ),
         task_type=task,
         case_id="case-backfill-claim",
         pool_id="pool-backfill-claim",
@@ -162,18 +158,27 @@ def test_normalize_case_backfills_gold_doc_ids_from_claim_evidence() -> None:
     assert case["retrieval_gold_urls"] == ["https://b.example.com"]
 
 
+def test_retrieval_evaluable_case_requires_evidence_quotes() -> None:
+    task = _task_type()
+    with pytest.raises(ValueError, match="requires evidence_quotes"):
+        normalize_case(
+            _case(verifiable_claims=[_claim(include_quotes=False)]),
+            task_type=task,
+            case_id="case-missing-quotes",
+            pool_id="pool-missing-quotes",
+            input_news_pool=_pool(),
+        )
+
+
 def test_normalize_case_rejects_non_chinese_expected_question() -> None:
     task = _task_type()
     with pytest.raises(ValueError, match="expected_question must contain Chinese text"):
         normalize_case(
-            {
-                "expected_question": "What is new about OpenAI?",
-                "expected_answer": "这是中文答案。",
-                "expected_tool_paths": [[{"tool": "query_news", "args": {"query": "OpenAI"}}]],
-                "retrieval_evaluable": True,
-                "retrieval_gold_doc_ids": ["doc_1"],
-                "verifiable_claims": [],
-            },
+            _case(
+                expected_question="What is new about OpenAI?",
+                expected_answer="这是中文答案。",
+                verifiable_claims=[],
+            ),
             task_type=task,
             case_id="case-3",
             pool_id="pool-3",
@@ -185,14 +190,11 @@ def test_normalize_case_rejects_path_drift_from_task_acceptable() -> None:
     task = _task_type()
     with pytest.raises(ValueError, match="expected_tool_paths must be subset of task acceptable_tool_paths"):
         normalize_case(
-            {
-                "expected_question": "请总结 OpenAI 相关新闻",
-                "expected_answer": "这是中文答案。",
-                "expected_tool_paths": [[{"tool": "query_news", "args": {"query": "Anthropic"}}]],
-                "retrieval_evaluable": True,
-                "retrieval_gold_doc_ids": ["doc_1"],
-                "verifiable_claims": [],
-            },
+            _case(
+                expected_answer="这是中文答案。",
+                expected_tool_paths=_expected_tool_paths("Anthropic"),
+                verifiable_claims=[],
+            ),
             task_type=task,
             case_id="case-4",
             pool_id="pool-4",

@@ -2,6 +2,7 @@
 
 -- 0. Extensions
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- 1. Create Table
 CREATE TABLE IF NOT EXISTS public.tech_news (
@@ -83,6 +84,88 @@ CREATE TABLE IF NOT EXISTS public.news_embeddings (
     embedding vector(1024),
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT idx_unique_embedding_url UNIQUE (url)
+);
+
+-- 4b. Search Index (derived from tech_news)
+CREATE TABLE IF NOT EXISTS public.news_search_index (
+    url TEXT PRIMARY KEY
+        REFERENCES public.tech_news(url)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    search_tsv tsvector NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 4c. Entity Registry and Alias Tables
+CREATE TABLE IF NOT EXISTS public.entity_registry (
+    entity_id BIGSERIAL PRIMARY KEY,
+    canonical_name TEXT NOT NULL,
+    entity_type VARCHAR(50) NOT NULL DEFAULT 'unknown',
+    wikidata_id VARCHAR(64),
+    source VARCHAR(50) NOT NULL DEFAULT 'manual',
+    confidence NUMERIC(4, 3) NOT NULL DEFAULT 1.000,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT entity_registry_canonical_unique UNIQUE (canonical_name)
+);
+
+CREATE TABLE IF NOT EXISTS public.entity_alias (
+    alias_id BIGSERIAL PRIMARY KEY,
+    entity_id BIGINT NOT NULL
+        REFERENCES public.entity_registry(entity_id)
+        ON DELETE CASCADE,
+    alias TEXT NOT NULL,
+    language VARCHAR(20) NOT NULL DEFAULT 'unknown',
+    alias_type VARCHAR(50) NOT NULL DEFAULT 'manual',
+    weight NUMERIC(6, 3) NOT NULL DEFAULT 1.000,
+    is_exact BOOLEAN NOT NULL DEFAULT TRUE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.entity_alias_candidate (
+    candidate_id BIGSERIAL PRIMARY KEY,
+    alias TEXT NOT NULL,
+    suggested_entity_id BIGINT
+        REFERENCES public.entity_registry(entity_id)
+        ON DELETE SET NULL,
+    canonical_name TEXT,
+    entity_type VARCHAR(50) NOT NULL DEFAULT 'unknown',
+    source VARCHAR(50) NOT NULL DEFAULT 'corpus',
+    confidence NUMERIC(4, 3) NOT NULL DEFAULT 0.000,
+    evidence_count INTEGER NOT NULL DEFAULT 0,
+    evidence_urls JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    reason TEXT,
+    aliases_to_add JSONB NOT NULL DEFAULT '[]'::jsonb,
+    reviewed_at TIMESTAMPTZ,
+    promoted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT entity_alias_candidate_status_chk
+        CHECK (status IN ('pending', 'auto_approved', 'approved', 'rejected'))
+);
+
+ALTER TABLE public.entity_alias_candidate
+    ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+ALTER TABLE public.entity_alias_candidate
+    ADD COLUMN IF NOT EXISTS promoted_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS public.news_entity_mentions (
+    url TEXT NOT NULL
+        REFERENCES public.tech_news(url)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE,
+    entity_id BIGINT NOT NULL
+        REFERENCES public.entity_registry(entity_id)
+        ON DELETE CASCADE,
+    alias TEXT,
+    field VARCHAR(32) NOT NULL DEFAULT 'unknown',
+    confidence NUMERIC(4, 3) NOT NULL DEFAULT 0.000,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (url, entity_id, field)
 );
 
 -- 5. System logs
@@ -242,6 +325,28 @@ CREATE INDEX IF NOT EXISTS idx_agent_tool_events_request ON public.agent_tool_ev
 CREATE INDEX IF NOT EXISTS idx_agent_tool_events_status ON public.agent_tool_events(status, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tool_events_request_event_unique
     ON public.agent_tool_events(request_id, event_index);
+CREATE INDEX IF NOT EXISTS idx_news_search_tsv ON public.news_search_index
+    USING GIN (search_tsv);
+CREATE INDEX IF NOT EXISTS idx_entity_registry_active_type
+    ON public.entity_registry(is_active, entity_type);
+CREATE INDEX IF NOT EXISTS idx_entity_alias_entity
+    ON public.entity_alias(entity_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_alias_entity_lower_alias
+    ON public.entity_alias(entity_id, LOWER(alias));
+CREATE INDEX IF NOT EXISTS idx_entity_alias_lower_alias
+    ON public.entity_alias(LOWER(alias));
+CREATE INDEX IF NOT EXISTS idx_entity_alias_trgm
+    ON public.entity_alias USING GIN (alias gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_entity_alias_candidate_status
+    ON public.entity_alias_candidate(status, confidence DESC, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entity_alias_candidate_source_lower_alias
+    ON public.entity_alias_candidate(source, LOWER(alias));
+CREATE INDEX IF NOT EXISTS idx_news_entity_mentions_entity
+    ON public.news_entity_mentions(entity_id, confidence DESC);
+CREATE INDEX IF NOT EXISTS idx_tech_news_title_trgm
+    ON public.tech_news USING GIN (title gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_tech_news_title_cn_trgm
+    ON public.tech_news USING GIN (title_cn gin_trgm_ops);
 
 -- NOTE: This index is safe to create on an empty table, but should be rebuilt
 -- after the initial data backfill to ensure optimal clustering quality.
@@ -259,15 +364,68 @@ BEGIN
 END;
 $$ language 'plpgsql';
 
+CREATE OR REPLACE FUNCTION public.build_news_search_tsv(
+    p_title TEXT,
+    p_title_cn TEXT,
+    p_summary TEXT
+)
+RETURNS tsvector AS $$
+    SELECT
+        setweight(to_tsvector('english', COALESCE(p_title, '')), 'A')
+        || setweight(to_tsvector('simple', COALESCE(p_title_cn, '')), 'A')
+        || setweight(to_tsvector('english', COALESCE(p_summary, '')), 'B')
+        || setweight(to_tsvector('simple', COALESCE(p_summary, '')), 'B');
+$$ LANGUAGE sql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION public.refresh_news_search_index()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.news_search_index (url, search_tsv, updated_at)
+    VALUES (
+        NEW.url,
+        public.build_news_search_tsv(NEW.title, NEW.title_cn, NEW.summary),
+        NOW()
+    )
+    ON CONFLICT (url) DO UPDATE
+    SET search_tsv = EXCLUDED.search_tsv,
+        updated_at = EXCLUDED.updated_at;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 DROP TRIGGER IF EXISTS update_tech_news_modtime ON public.tech_news;
 CREATE TRIGGER update_tech_news_modtime
     BEFORE UPDATE ON public.tech_news
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_column();
 
+DROP TRIGGER IF EXISTS refresh_news_search_index_on_write ON public.tech_news;
+CREATE TRIGGER refresh_news_search_index_on_write
+    AFTER INSERT OR UPDATE OF title, title_cn, summary, url ON public.tech_news
+    FOR EACH ROW
+    EXECUTE FUNCTION public.refresh_news_search_index();
+
 DROP TRIGGER IF EXISTS update_source_registry_modtime ON public.source_registry;
 CREATE TRIGGER update_source_registry_modtime
     BEFORE UPDATE ON public.source_registry
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();
+
+DROP TRIGGER IF EXISTS update_entity_registry_modtime ON public.entity_registry;
+CREATE TRIGGER update_entity_registry_modtime
+    BEFORE UPDATE ON public.entity_registry
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();
+
+DROP TRIGGER IF EXISTS update_entity_alias_modtime ON public.entity_alias;
+CREATE TRIGGER update_entity_alias_modtime
+    BEFORE UPDATE ON public.entity_alias
+    FOR EACH ROW
+    EXECUTE FUNCTION update_modified_column();
+
+DROP TRIGGER IF EXISTS update_entity_alias_candidate_modtime ON public.entity_alias_candidate;
+CREATE TRIGGER update_entity_alias_candidate_modtime
+    BEFORE UPDATE ON public.entity_alias_candidate
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_column();
 
@@ -276,6 +434,16 @@ CREATE TRIGGER update_conversation_threads_modtime
     BEFORE UPDATE ON public.conversation_threads
     FOR EACH ROW
     EXECUTE FUNCTION update_modified_column();
+
+INSERT INTO public.news_search_index (url, search_tsv, updated_at)
+SELECT
+    url,
+    public.build_news_search_tsv(title, title_cn, summary),
+    NOW()
+FROM public.tech_news
+ON CONFLICT (url) DO UPDATE
+SET search_tsv = EXCLUDED.search_tsv,
+    updated_at = EXCLUDED.updated_at;
 
 -- Seed default legacy sources into registry (idempotent)
 INSERT INTO public.source_registry (

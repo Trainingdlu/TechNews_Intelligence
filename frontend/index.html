@@ -12,7 +12,7 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
         rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=20260409c">
+    <link rel="stylesheet" href="style.css?v=20260429b">
 </head>
 
 <body class="agent-page">
@@ -102,15 +102,12 @@
 
     <!-- ===== Chat View ===== -->
     <main id="chat-view" class="view">
-        <div class="chat-container">
+        <div class="chat-container chat-empty">
             <!-- Chat Header -->
             <div class="chat-header">
                 <div class="chat-header-left">
-                    <span class="material-symbols-outlined header-icon">smart_toy</span>
-                    <div>
-                        <h2 class="chat-title">TechNews Intelligence</h2>
-                        <span id="quota-display" class="quota-badge">剩余 --/-- 次</span>
-                    </div>
+                    <h2 class="chat-title">TechNews Intelligence</h2>
+                    <span id="quota-display" class="quota-badge">剩余 --/-- 次</span>
                 </div>
                 <div class="chat-header-actions">
                     <a class="icon-btn icon-link-btn" href="subscribe.html" title="日报订阅">
@@ -128,9 +125,7 @@
             <!-- Messages -->
             <div id="messages" class="messages">
                 <div class="welcome-msg">
-                    <span class="material-symbols-outlined welcome-icon">waving_hand</span>
-                    <p>你好！我是 TechNews 智能分析助手。</p>
-                    <p class="welcome-hint">试试问我："最近AI领域有什么大事？"</p>
+                    <h1 class="welcome-title">TechNews Intelligence</h1>
                 </div>
             </div>
 
@@ -146,7 +141,7 @@
             <!-- Input Bar -->
             <div class="input-bar">
                 <div class="input-bar-inner">
-                    <textarea id="chat-input" placeholder="输入你的问题" rows="1"></textarea>
+                    <textarea id="chat-input" placeholder="你想知道什么？" rows="1"></textarea>
                     <button id="send-btn" class="send-btn" disabled>
                         <span class="material-symbols-outlined">arrow_upward</span>
                     </button>
@@ -156,7 +151,7 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="app.js?v=20260414a"></script>
+    <script src="app.js?v=20260429b"></script>
 </body>
 
 </html>

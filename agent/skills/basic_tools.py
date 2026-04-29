@@ -12,9 +12,20 @@ def get_db_stats_skill(input: GetDbStatsInput) -> SkillEnvelope:
     req = input.model_dump()
     try:
         text = get_db_stats()
-        return SkillEnvelope(tool="get_db_stats", status="ok", request=req, data={"raw_output": text})
+        return SkillEnvelope(
+            tool="get_db_stats",
+            status="ok",
+            request=req,
+            data={"raw_output": text},
+            diagnostics={"evidence_count": 0},
+        )
     except Exception as e:
-        return build_error_envelope("get_db_stats", req, f"get_db_stats failed: {e}")
+        return build_error_envelope(
+            "get_db_stats",
+            req,
+            "get_db_stats_failed",
+            diagnostics={"exception_type": type(e).__name__, "exception_message": str(e)},
+        )
 
 
 def list_topics_skill(input: ListTopicsInput) -> SkillEnvelope:
@@ -22,9 +33,20 @@ def list_topics_skill(input: ListTopicsInput) -> SkillEnvelope:
     req = input.model_dump()
     try:
         text = list_topics()
-        return SkillEnvelope(tool="list_topics", status="ok", request=req, data={"raw_output": text})
+        return SkillEnvelope(
+            tool="list_topics",
+            status="ok",
+            request=req,
+            data={"raw_output": text},
+            diagnostics={"evidence_count": 0},
+        )
     except Exception as e:
-        return build_error_envelope("list_topics", req, f"list_topics failed: {e}")
+        return build_error_envelope(
+            "list_topics",
+            req,
+            "list_topics_failed",
+            diagnostics={"exception_type": type(e).__name__, "exception_message": str(e)},
+        )
 
 
 def read_news_content_skill(input: ReadNewsContentInput) -> SkillEnvelope:
@@ -32,6 +54,18 @@ def read_news_content_skill(input: ReadNewsContentInput) -> SkillEnvelope:
     req = input.model_dump()
     try:
         text = read_news_content(str(input.url))
-        return SkillEnvelope(tool="read_news_content", status="ok", request=req, data={"raw_output": text, "url": input.url})
+        return SkillEnvelope(
+            tool="read_news_content",
+            status="ok",
+            request=req,
+            data={"raw_output": text, "url": input.url},
+            evidence=[{"url": str(input.url), "title": None, "source": None, "created_at": None, "score": None, "rank": 1}],
+            diagnostics={"evidence_count": 1},
+        )
     except Exception as e:
-        return build_error_envelope("read_news_content", req, f"read_news_content failed: {e}")
+        return build_error_envelope(
+            "read_news_content",
+            req,
+            "read_news_content_failed",
+            diagnostics={"exception_type": type(e).__name__, "exception_message": str(e)},
+        )

@@ -16,6 +16,7 @@ from agent.skills.semantic_pool import (
     _embedding_cache,
     _evict_stale_cache,
     _get_embedding_with_retry,
+    fetch_semantic_url_pool,
 )
 
 
@@ -81,3 +82,18 @@ def test_get_embedding_with_retry_retries_on_failure(monkeypatch) -> None:
     assert result == fake_vec
     assert call_count["n"] == 2
     _embedding_cache.clear()
+
+
+def test_fetch_semantic_url_pool_returns_match_score(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "agent.skills.semantic_pool.fetch_semantic_candidates",
+        lambda *_a, **_k: [
+            {"url": "https://a.example.com", "final_score": 2.1, "match_score": 0.52},
+            {"url": "https://b.example.com", "final_score": 1.7, "match_score": 0.91},
+        ],
+    )
+    pool = fetch_semantic_url_pool("OpenAI", days=14, limit=2)
+    assert pool == [
+        ("https://a.example.com", 0.52),
+        ("https://b.example.com", 0.91),
+    ]

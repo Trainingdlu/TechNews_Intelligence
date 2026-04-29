@@ -168,5 +168,17 @@ class ToolHookRunner:
                     reason="no_evidence_urls_in_skill_output",
                     diagnostics={"tool": tool_name, "status": output.status},
                 )
+        if output.status == "empty" and "empty_reason" not in output.diagnostics:
+            return HookDecision(
+                action="warn",
+                reason="missing_empty_reason_in_skill_output",
+                diagnostics={"tool": tool_name, "status": output.status},
+            )
+        if output.status == "error" and not (output.error_code or output.diagnostics.get("error_code")):
+            return HookDecision(
+                action="warn",
+                reason="missing_error_code_in_skill_output",
+                diagnostics={"tool": tool_name, "status": output.status},
+            )
 
         return HookDecision(action="allow")

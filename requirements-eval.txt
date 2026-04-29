@@ -6,3 +6,4 @@ langsmith>=0.7.30,<0.8
 # LLM-as-judge evaluation
 datasets>=2.18,<4
 rapidfuzz
+hdbscan>=0.8.33

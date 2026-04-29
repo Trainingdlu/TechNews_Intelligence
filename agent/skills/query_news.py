@@ -7,7 +7,7 @@ from typing import Any
 
 from services.db import get_conn, put_conn
 
-from ..core.skill_contracts import SkillEnvelope, build_error_envelope
+from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _json_text, _source_to_db_label
 from .schemas import QueryNewsSkillInput
 
@@ -173,6 +173,22 @@ def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
     records_raw = parsed.get("records")
     records = records_raw if isinstance(records_raw, list) else []
     evidence = _evidence_from_records(records, max_items=int(request.get("limit", 8)))
+    diagnostics = {
+        "source": request.get("source", "all"),
+        "sort": request.get("sort", "time_desc"),
+        "retrieval_mode": "postgres_filter",
+        "candidate_count": len(records),
+        "evidence_count": len(evidence),
+        "fallback": False,
+    }
+    if status == "empty":
+        return build_empty_envelope(
+            tool="query_news",
+            request=request,
+            empty_reason="no_matching_records",
+            data={"count": int(parsed.get("count", len(records))), "records": records},
+            diagnostics=diagnostics,
+        )
 
     return SkillEnvelope(
         tool="query_news",
@@ -180,5 +196,5 @@ def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
         request=request,
         data={"count": int(parsed.get("count", len(records))), "records": records},
         evidence=evidence,
-        diagnostics={"source": request.get("source", "all"), "sort": request.get("sort", "time_desc")},
+        diagnostics=diagnostics,
     )

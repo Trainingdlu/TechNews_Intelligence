@@ -25,10 +25,19 @@ from psycopg2.extras import Json
 
 from agent import AgentGenerationError, generate_response_payload
 from agent.clarification import (
+    build_clarification_history_item,
     resolve_user_message_with_followup_context,
     resolve_user_message_with_history_clarification,
 )
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
+from services.conversations import (
+    ConversationThreadNotFoundError,
+    append_message,
+    append_message_for_token,
+    create_thread,
+    load_history,
+    load_history_for_token,
+)
 from services.mail import (
     send_token_email,
     send_quota_exhausted_to_admin,
@@ -241,7 +250,7 @@ class AccessRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    history: list[dict] = []
+    thread_id: str | None = None
 
 
 class ClarificationResponsePayload(BaseModel):
@@ -254,6 +263,7 @@ class ClarificationResponsePayload(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+    thread_id: str
     kind: str = "answer"
     clarification: ClarificationResponsePayload | None = None
     citation_urls: list[str] = Field(default_factory=list)
@@ -314,6 +324,92 @@ def _remaining_after_refund(reservation: dict) -> int:
     if quota > 0:
         remaining = min(remaining, quota)
     return max(remaining, 0)
+
+
+def _agent_memory_load_limit() -> int:
+    try:
+        return max(1, int(os.getenv("AGENT_MEMORY_LOAD_LIMIT", "80")))
+    except Exception:
+        return 80
+
+
+def _normalize_request_thread_id(thread_id: str | None) -> str | None:
+    value = str(thread_id or "").strip()
+    return value or None
+
+
+def _load_thread_history_or_404(thread_id: str, *, token_id: int) -> list[dict]:
+    try:
+        return load_history_for_token(
+            thread_id,
+            token_id,
+            limit=_agent_memory_load_limit(),
+        )
+    except ConversationThreadNotFoundError:
+        raise HTTPException(status_code=404, detail="conversation_thread_not_found") from None
+
+
+def _create_thread_for_request(body: ChatRequest, token_info: dict) -> str:
+    subject = str(body.message or "").strip()[:80] or None
+    metadata = {
+        "channel": "web",
+        "email": str(token_info.get("email", "") or ""),
+        "token_id": token_info.get("id"),
+    }
+    row = create_thread(channel="web", subject=subject, metadata=metadata)
+    thread_id = str(row.get("thread_id", "")).strip()
+    if not thread_id:
+        raise RuntimeError("conversation thread creation returned empty thread_id")
+    return thread_id
+
+
+def _user_history_item(message: str) -> dict:
+    return {"role": "user", "parts": [{"text": str(message or "")}]}
+
+
+def _model_history_item_from_payload(payload: dict) -> dict:
+    kind = str(payload.get("kind", "answer")).strip().lower()
+    if kind == "clarification_required":
+        clarification_payload = payload.get("clarification", {})
+        if isinstance(clarification_payload, dict):
+            return build_clarification_history_item(clarification_payload)
+    return {
+        "role": "model",
+        "kind": "answer",
+        "parts": [{"text": str(payload.get("text", "") or "")}],
+        "citation_urls": [
+            str(url).strip()
+            for url in payload.get("citation_urls", [])
+            if str(url).strip()
+        ] if isinstance(payload.get("citation_urls", []), list) else [],
+    }
+
+
+def _persist_conversation_turn(
+    *,
+    thread_id: str,
+    token_id: int,
+    user_message: str,
+    effective_message: str,
+    payload: dict,
+    request_id: str,
+) -> None:
+    metadata = {
+        "request_id": request_id,
+        "effective_message": effective_message,
+    }
+    append_message_for_token(
+        thread_id,
+        token_id,
+        _user_history_item(user_message),
+        metadata=metadata,
+    )
+    append_message_for_token(
+        thread_id,
+        token_id,
+        _model_history_item_from_payload(payload),
+        metadata=metadata,
+    )
 
 
 def _normalize_sources(sources: list[str] | None) -> list[str]:
@@ -756,8 +852,10 @@ async def chat(
 ):
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
-    reservation = _reserve_quota_or_403(token_info)
     request_id = uuid.uuid4().hex
+    thread_id = _normalize_request_thread_id(body.thread_id)
+    history = _load_thread_history_or_404(thread_id, token_id=int(token_info["id"])) if thread_id else []
+    reservation = _reserve_quota_or_403(token_info)
 
     logger.info(
         "[%s] 对话: request_id=%s message=%s...",
@@ -765,32 +863,43 @@ async def chat(
         request_id,
         body.message[:50],
     )
-    effective_message, pending = resolve_user_message_with_history_clarification(body.history, body.message)
-    if pending is not None:
-        logger.info(
-            "[%s] clarification follow-up detected: request_id=%s reason=%s",
-            token_info["email"],
-            request_id,
-            pending.reason,
-        )
-    else:
-        effective_message, followup_profile = resolve_user_message_with_followup_context(
-            body.history,
-            effective_message,
-        )
-        if bool(followup_profile.get("augmented")):
+    try:
+        if thread_id is None:
+            thread_id = _create_thread_for_request(body, token_info)
+        effective_message, pending = resolve_user_message_with_history_clarification(history, body.message)
+        if pending is not None:
             logger.info(
-                "[%s] follow-up context augmented: request_id=%s score=%.3f decision=%s",
+                "[%s] clarification follow-up detected: request_id=%s reason=%s",
                 token_info["email"],
                 request_id,
-                float(followup_profile.get("score", 0.0)),
-                str(followup_profile.get("decision", "fresh")),
+                pending.reason,
             )
-    try:
+        else:
+            effective_message, followup_profile = resolve_user_message_with_followup_context(
+                history,
+                effective_message,
+            )
+            if bool(followup_profile.get("augmented")):
+                logger.info(
+                    "[%s] follow-up context augmented: request_id=%s score=%.3f decision=%s",
+                    token_info["email"],
+                    request_id,
+                    float(followup_profile.get("score", 0.0)),
+                    str(followup_profile.get("decision", "fresh")),
+                )
         payload = await asyncio.to_thread(
             generate_response_payload,
-            body.history,
+            history,
             effective_message,
+            request_id=request_id,
+            thread_id=thread_id,
+        )
+        _persist_conversation_turn(
+            thread_id=thread_id,
+            token_id=int(token_info["id"]),
+            user_message=body.message,
+            effective_message=effective_message,
+            payload=payload,
             request_id=request_id,
         )
     except HTTPException:
@@ -825,6 +934,7 @@ async def chat(
         question = str(payload.get("text", "")).strip()
         return ChatResponse(
             reply=question,
+            thread_id=thread_id,
             kind="clarification_required",
             clarification=clarification_payload if isinstance(clarification_payload, dict) else None,
             citation_urls=[],
@@ -839,6 +949,7 @@ async def chat(
     _maybe_send_quota_exhausted_notifications(token_info, reservation)
     return ChatResponse(
         reply=reply,
+        thread_id=thread_id,
         kind="answer",
         citation_urls=[str(url).strip() for url in citation_urls if str(url).strip()],
         remaining=max(int(reservation["remaining"]), 0),
@@ -855,8 +966,10 @@ async def chat_stream(
     """SSE chat endpoint: emits status updates then final payload."""
     client_ip = request.client.host if request.client else "unknown"
     _check_rate_limit(client_ip)
-    reservation = _reserve_quota_or_403(token_info)
     request_id = uuid.uuid4().hex
+    thread_id = _normalize_request_thread_id(body.thread_id)
+    history = _load_thread_history_or_404(thread_id, token_id=int(token_info["id"])) if thread_id else []
+    reservation = _reserve_quota_or_403(token_info)
 
     logger.info(
         "[%s] 对话(流式): request_id=%s message=%s...",
@@ -864,27 +977,33 @@ async def chat_stream(
         request_id,
         body.message[:50],
     )
-    effective_message, pending = resolve_user_message_with_history_clarification(body.history, body.message)
-    if pending is not None:
-        logger.info(
-            "[%s] clarification follow-up detected(stream): request_id=%s reason=%s",
-            token_info["email"],
-            request_id,
-            pending.reason,
-        )
-    else:
-        effective_message, followup_profile = resolve_user_message_with_followup_context(
-            body.history,
-            effective_message,
-        )
-        if bool(followup_profile.get("augmented")):
+    try:
+        if thread_id is None:
+            thread_id = _create_thread_for_request(body, token_info)
+        effective_message, pending = resolve_user_message_with_history_clarification(history, body.message)
+        if pending is not None:
             logger.info(
-                "[%s] follow-up context augmented(stream): request_id=%s score=%.3f decision=%s",
+                "[%s] clarification follow-up detected(stream): request_id=%s reason=%s",
                 token_info["email"],
                 request_id,
-                float(followup_profile.get("score", 0.0)),
-                str(followup_profile.get("decision", "fresh")),
+                pending.reason,
             )
+        else:
+            effective_message, followup_profile = resolve_user_message_with_followup_context(
+                history,
+                effective_message,
+            )
+            if bool(followup_profile.get("augmented")):
+                logger.info(
+                    "[%s] follow-up context augmented(stream): request_id=%s score=%.3f decision=%s",
+                    token_info["email"],
+                    request_id,
+                    float(followup_profile.get("score", 0.0)),
+                    str(followup_profile.get("decision", "fresh")),
+                )
+    except Exception:
+        _refund_reserved_quota(token_info)
+        raise
 
     async def event_generator():
         loop = asyncio.get_running_loop()
@@ -912,9 +1031,18 @@ async def chat_stream(
         def worker():
             try:
                 result_holder["payload"] = generate_response_payload(
-                    body.history,
+                    history,
                     effective_message,
                     progress_callback=progress_callback,
+                    request_id=request_id,
+                    thread_id=thread_id,
+                )
+                _persist_conversation_turn(
+                    thread_id=thread_id,
+                    token_id=int(token_info["id"]),
+                    user_message=body.message,
+                    effective_message=effective_message,
+                    payload=result_holder["payload"],
                     request_id=request_id,
                 )
             except Exception as exc:
@@ -972,6 +1100,7 @@ async def chat_stream(
                 yield _sse_event("final", {
                     "kind": "clarification_required",
                     "reply": question,
+                    "thread_id": thread_id,
                     "clarification": clarification_payload if isinstance(clarification_payload, dict) else None,
                     "citation_urls": [],
                     "remaining": _remaining_after_refund(reservation),
@@ -988,6 +1117,7 @@ async def chat_stream(
             yield _sse_event("final", {
                 "kind": "answer",
                 "reply": reply,
+                "thread_id": thread_id,
                 "citation_urls": [str(url).strip() for url in citation_urls if str(url).strip()],
                 "remaining": max(int(reservation["remaining"]), 0),
                 "quota": int(reservation["quota"]),
@@ -1010,4 +1140,3 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
-

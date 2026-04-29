@@ -1,8 +1,7 @@
 """LLM-as-a-Judge evaluator for generation quality metrics.
 
-Provides Faithfulness and Answer Relevancy scoring using the same
-LLM infrastructure as the agent (Vertex/Gemini), avoiding external
-dependencies like RAGAS.
+Provides Faithfulness and Answer Relevancy scoring using the shared
+LLM infrastructure as the agent and dataset builder.
 
 Implements CoT prompting for transparent, auditable reasoning.
 """
@@ -16,12 +15,14 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from services.llm_provider import DEFAULT_VERTEX_MODEL, build_chat_model as build_shared_chat_model
+
 
 # ---------------------------------------------------------------------------
 # LLM builder (reused from build_task_dataset.py pattern)
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_MODEL = DEFAULT_VERTEX_MODEL
 DEFAULT_PROVIDER = "vertex"
 
 
@@ -33,39 +34,13 @@ def _build_judge_model(
     """Build a chat model for judge evaluation."""
     provider = str(provider or os.getenv("TASK_EVAL_PROVIDER", DEFAULT_PROVIDER)).strip().lower()
     model = str(model or os.getenv("TASK_EVAL_MODEL", DEFAULT_MODEL)).strip()
-
-    if provider in {"gemini_api", "gemini", "google_ai_studio", "developer_api"}:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-
-        api_key = str(os.getenv("GEMINI_API_KEY", "")).strip()
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY is required for provider=gemini_api.")
-        return ChatGoogleGenerativeAI(
-            model=model,
-            google_api_key=api_key,
-            temperature=temperature,
-        )
-
-    if provider in {"vertex", "vertex_ai", "gcp"}:
-        from langchain_google_vertexai import ChatVertexAI
-
-        project = str(os.getenv("VERTEX_PROJECT", os.getenv("GOOGLE_CLOUD_PROJECT", ""))).strip()
-        if not project:
-            raise ValueError("VERTEX_PROJECT or GOOGLE_CLOUD_PROJECT is required for provider=vertex.")
-        location = str(
-            os.getenv(
-                "VERTEX_GENERATION_LOCATION",
-                os.getenv("VERTEX_LOCATION", os.getenv("GOOGLE_CLOUD_LOCATION", "global")),
-            )
-        ).strip()
-        return ChatVertexAI(
-            model=model,
-            project=project,
-            location=location,
-            temperature=temperature,
-        )
-
-    raise ValueError(f"Unsupported provider: {provider}")
+    return build_shared_chat_model(
+        provider=provider,
+        model_name=model,
+        temperature=temperature,
+        default_provider=DEFAULT_PROVIDER,
+        default_model=DEFAULT_MODEL,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +73,7 @@ RELEVANCY_SYSTEM = (
     "Think step by step:\n"
     "1) Identify the user's core question and intent.\n"
     "2) Check if the answer addresses that specific question.\n"
-    "3) Evaluate completeness â€?does it cover the key aspects?\n"
+    "3) Evaluate completeness - does it cover the key aspects?\n"
     "4) Assign a score from 1 to 5.\n\n"
     "Scoring rubric:\n"
     "- 5: Directly and completely answers the question with relevant details.\n"
@@ -174,7 +149,7 @@ class LLMJudge:
     Parameters
     ----------
     provider:
-        LLM provider (vertex, gemini_api, etc.).
+        LLM provider (vertex, gemini_api, deepseek, etc.).
     model:
         Model name.
     temperature:
