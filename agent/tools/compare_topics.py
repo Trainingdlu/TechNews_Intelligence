@@ -1,13 +1,13 @@
-"""Compare-topics skill implementation and structured adapter."""
+﻿"""Compare-topics tool implementation and structured adapter."""
 
 from __future__ import annotations
 
 from services.db import get_conn, put_conn
 
-from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from .helpers import _clamp_int, _evidence_from_records
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
-from .schemas import CompareTopicsSkillInput
+from .schemas import CompareTopicsToolInput
 from .semantic_pool import fetch_semantic_url_pool
 
 
@@ -630,7 +630,7 @@ def compare_topics(topic_a: str, topic_b: str, days: int = 14) -> str:
             put_conn(conn)
 
 
-def compare_topics_skill(payload: CompareTopicsSkillInput) -> SkillEnvelope:
+def compare_topics_tool(payload: CompareTopicsToolInput) -> ToolEnvelope:
     request = payload.model_dump(mode="python")
     result = _compare_topics_structured(
         topic_a=request["topic_a"],
@@ -641,7 +641,7 @@ def compare_topics_skill(payload: CompareTopicsSkillInput) -> SkillEnvelope:
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
     diagnostics = result.get("diagnostics") if isinstance(result.get("diagnostics"), dict) else {}
     if status == "error":
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="compare_topics",
             request=request,
             error=str(result.get("error_code") or "compare_topics_failed"),
@@ -649,7 +649,7 @@ def compare_topics_skill(payload: CompareTopicsSkillInput) -> SkillEnvelope:
             diagnostics=diagnostics,
         )
     if status == "empty":
-        return build_empty_envelope(
+        return build_tool_empty_envelope(
             tool="compare_topics",
             request=request,
             empty_reason=str(diagnostics.get("empty_reason") or "no_topic_comparison_data"),
@@ -660,7 +660,7 @@ def compare_topics_skill(payload: CompareTopicsSkillInput) -> SkillEnvelope:
     evidence = _evidence_from_records(result.get("evidence", []) or [], max_items=6)
     data = dict(data)
     data.setdefault("raw_output", _format_compare_topics_result(result))
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool="compare_topics",
         status="ok",
         request=request,
@@ -668,3 +668,5 @@ def compare_topics_skill(payload: CompareTopicsSkillInput) -> SkillEnvelope:
         evidence=evidence,
         diagnostics={**diagnostics, "evidence_count": len(evidence)},
     )
+
+

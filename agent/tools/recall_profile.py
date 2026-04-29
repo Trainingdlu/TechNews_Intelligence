@@ -1,7 +1,7 @@
-"""Recall-profile resolution for retrieval-related skills.
+"""Recall-profile resolution for retrieval-related tools.
 
 Centralizes all recall knobs so query retrieval, semantic pools, and
-macro-skill aggregation follow one consistent profile.
+macro-tool aggregation follow one consistent profile.
 """
 
 from __future__ import annotations
@@ -148,13 +148,13 @@ def resolve_recall_profile() -> RecallProfile:
         fallback=defaults.query_cand_max,
     )
     macro_pool_limit = _to_int(
-        _read_env("EVAL_RECALL_MACRO_POOL_LIMIT", "MACRO_SKILL_POOL_LIMIT"),
+        _read_env("EVAL_RECALL_MACRO_POOL_LIMIT", "MACRO_TOOL_POOL_LIMIT"),
         min_value=20,
         max_value=1000,
         fallback=defaults.macro_pool_limit,
     )
     pre_rerank_limit = _to_int(
-        _read_env("EVAL_RECALL_PRE_RERANK_LIMIT", "MACRO_SKILL_PRE_RERANK_LIMIT"),
+        _read_env("EVAL_RECALL_PRE_RERANK_LIMIT", "MACRO_TOOL_PRE_RERANK_LIMIT"),
         min_value=5,
         max_value=300,
         fallback=defaults.pre_rerank_limit,

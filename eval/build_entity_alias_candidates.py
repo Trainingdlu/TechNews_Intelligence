@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from services.db import db_cursor, db_transaction  # noqa: E402
-from agent.skills.entity_automation import (  # noqa: E402
+from agent.tools.entity_automation import (  # noqa: E402
     EntityDecision,
     adjudicate_alias_with_deepseek,
     decision_to_candidate_row,

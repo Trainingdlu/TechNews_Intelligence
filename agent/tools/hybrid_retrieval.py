@@ -1,7 +1,7 @@
 """Postgres-only hybrid retrieval primitives.
 
 This module implements the shared SQL pipeline used by query-oriented and
-analysis-oriented skills:
+analysis-oriented tools:
 
     FTS rank + pgvector rank + exact alias fallback + RRF fusion.
 """

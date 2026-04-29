@@ -1,4 +1,4 @@
-"""Unified semantic-recall → time-decay → rerank pipeline for macro-analysis skills.
+"""Unified semantic-recall → time-decay → rerank pipeline for macro-analysis tools.
 
 Provides a single entry-point ``retrieve_and_rerank()`` that combines:
 1. ``fetch_semantic_candidates()`` — vector recall with dynamic time-decay.
@@ -29,7 +29,7 @@ def retrieve_and_rerank(
     rerank_mode: str = RERANK_MODE_LLM,
     sim_floor: float | None = None,
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, Any]]:
-    """Full retrieval-and-rerank pipeline for macro-analysis skills.
+    """Full retrieval-and-rerank pipeline for macro-analysis tools.
 
     Parameters
     ----------
@@ -37,7 +37,7 @@ def retrieve_and_rerank(
         Natural-language query for semantic matching.
     days:
         Time window in days.  Also used as the decay constant for time
-        scoring.  Each skill should pass its own business-appropriate
+        scoring.  Each tool should pass its own business-appropriate
         default (e.g. 14 for compare_topics, 30 for build_timeline).
     pool_limit:
         Maximum candidates from the semantic pool.
@@ -97,7 +97,7 @@ def retrieve_and_rerank(
         pre_rerank_candidates,
         mode=rerank_mode,
         top_k=top_k,
-        env_keys=("MACRO_SKILL_RERANK_MODE", "NEWS_RERANK_MODE"),
+        env_keys=("MACRO_TOOL_RERANK_MODE", "NEWS_RERANK_MODE"),
     )
 
     pipeline_ms = round((time.time() - t0) * 1000, 1)
@@ -122,7 +122,7 @@ def format_reranked_evidence(
 ) -> str:
     """Format reranked candidates into a human-readable evidence block.
 
-    Used by macro-analysis skills to inject reranked context into the
+    Used by macro-analysis tools to inject reranked context into the
     text output sent to the LLM.
     """
     if not candidates:

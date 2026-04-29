@@ -1,4 +1,4 @@
-"""Stateless helper utilities used by skill handlers."""
+﻿"""Stateless helper utilities used by tool handlers."""
 
 from __future__ import annotations
 
@@ -66,7 +66,6 @@ def _extract_time_window_days(text: str, default: int = 14, maximum: int = 180) 
     elif unit in {"月", "month", "months"}:
         value *= 30
     return _clamp_int(value, 1, maximum)
-
 
 def _json_text(payload: dict[str, Any]) -> str:
     return json.dumps(payload, ensure_ascii=False)
@@ -213,3 +212,4 @@ def _evidence_from_text_output(text: str, max_items: int = 8) -> list[dict[str, 
             if len(evidence) >= max_items:
                 return evidence
     return evidence
+

@@ -1,4 +1,4 @@
-"""Shared runtime factories for skill registry and tool hooks.
+﻿"""Shared runtime factories for tool registry and tool hooks.
 
 This module is the canonical home of the runtime component factories used by
 the unified ReAct agent path.
@@ -6,24 +6,26 @@ the unified ReAct agent path.
 
 from __future__ import annotations
 
-from .skill_registry import SkillRegistry
-from .tool_hooks import ToolHookRunner
-from .skill_catalog import iter_skill_definitions
+from .tool_registry import ToolRegistry
+from .tool_runtime import ToolRuntime
+from .tool_runtime_hooks import ToolRuntimeHooks
+from .tool_catalog import iter_tool_definitions
 
 
-_DEFAULT_REGISTRY: SkillRegistry | None = None
-_DEFAULT_HOOK_RUNNER: ToolHookRunner | None = None
+_DEFAULT_REGISTRY: ToolRegistry | None = None
+_DEFAULT_TOOL_RUNTIME_HOOKS: ToolRuntimeHooks | None = None
+_DEFAULT_TOOL_RUNTIME: ToolRuntime | None = None
 
 
-def build_default_registry() -> SkillRegistry:
-    """Build the default in-process skill registry."""
+def build_default_registry() -> ToolRegistry:
+    """Build the default in-process tool registry."""
 
     global _DEFAULT_REGISTRY
     if _DEFAULT_REGISTRY is not None:
         return _DEFAULT_REGISTRY
 
-    registry = SkillRegistry()
-    for definition in iter_skill_definitions():
+    registry = ToolRegistry()
+    for definition in iter_tool_definitions():
         registry.register(
             name=definition.name,
             input_model=definition.input_model,
@@ -34,11 +36,25 @@ def build_default_registry() -> SkillRegistry:
     return registry
 
 
-def build_default_hook_runner() -> ToolHookRunner:
+def build_default_tool_runtime_hooks() -> ToolRuntimeHooks:
     """Build the default shared hook runner."""
 
-    global _DEFAULT_HOOK_RUNNER
-    if _DEFAULT_HOOK_RUNNER is not None:
-        return _DEFAULT_HOOK_RUNNER
-    _DEFAULT_HOOK_RUNNER = ToolHookRunner()
-    return _DEFAULT_HOOK_RUNNER
+    global _DEFAULT_TOOL_RUNTIME_HOOKS
+    if _DEFAULT_TOOL_RUNTIME_HOOKS is not None:
+        return _DEFAULT_TOOL_RUNTIME_HOOKS
+    _DEFAULT_TOOL_RUNTIME_HOOKS = ToolRuntimeHooks()
+    return _DEFAULT_TOOL_RUNTIME_HOOKS
+
+
+def build_default_tool_runtime() -> ToolRuntime:
+    """Build the default framework-independent tool runtime."""
+
+    global _DEFAULT_TOOL_RUNTIME
+    if _DEFAULT_TOOL_RUNTIME is not None:
+        return _DEFAULT_TOOL_RUNTIME
+    _DEFAULT_TOOL_RUNTIME = ToolRuntime(
+        registry=build_default_registry(),
+        hooks=build_default_tool_runtime_hooks(),
+    )
+    return _DEFAULT_TOOL_RUNTIME
+

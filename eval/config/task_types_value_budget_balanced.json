@@ -1,7 +1,7 @@
 [
     {
         "task_id":  "query_news.coverage.conflict",
-        "skill":  "query_news",
+        "tool":  "query_news",
         "intent_label":  "query_news",
         "retrieval_mode":  "evaluable",
         "scenario":  "conflict",
@@ -79,7 +79,7 @@
     },
     {
         "task_id":  "query_news.filter.precise.normal",
-        "skill":  "query_news",
+        "tool":  "query_news",
         "intent_label":  "query_news",
         "retrieval_mode":  "evaluable",
         "scenario":  "normal",
@@ -156,7 +156,7 @@
     },
     {
         "task_id":  "query_news.filter.precise.empty",
-        "skill":  "query_news",
+        "tool":  "query_news",
         "intent_label":  "query_news",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "empty",
@@ -236,7 +236,7 @@
     },
     {
         "task_id":  "search_news.coverage.conflict",
-        "skill":  "search_news",
+        "tool":  "search_news",
         "intent_label":  "search_news",
         "retrieval_mode":  "evaluable",
         "scenario":  "conflict",
@@ -305,7 +305,7 @@
     },
     {
         "task_id":  "search_news.semantic.crosslingual.normal",
-        "skill":  "search_news",
+        "tool":  "search_news",
         "intent_label":  "search_news",
         "retrieval_mode":  "evaluable",
         "scenario":  "normal",
@@ -374,7 +374,7 @@
     },
     {
         "task_id":  "search_news.coverage.empty",
-        "skill":  "search_news",
+        "tool":  "search_news",
         "intent_label":  "search_news",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "empty",
@@ -443,7 +443,7 @@
     },
     {
         "task_id":  "fulltext_batch.query_autoselect.boundary",
-        "skill":  "fulltext_batch",
+        "tool":  "fulltext_batch",
         "intent_label":  "fulltext_batch",
         "retrieval_mode":  "evaluable",
         "scenario":  "boundary",
@@ -509,7 +509,7 @@
     },
     {
         "task_id":  "fulltext_batch.coverage.conflict",
-        "skill":  "fulltext_batch",
+        "tool":  "fulltext_batch",
         "intent_label":  "fulltext_batch",
         "retrieval_mode":  "evaluable",
         "scenario":  "conflict",
@@ -576,7 +576,7 @@
     },
     {
         "task_id":  "fulltext_batch.coverage.normal",
-        "skill":  "fulltext_batch",
+        "tool":  "fulltext_batch",
         "intent_label":  "fulltext_batch",
         "retrieval_mode":  "evaluable",
         "scenario":  "normal",
@@ -643,7 +643,7 @@
     },
     {
         "task_id":  "build_timeline.auto_expand.boundary",
-        "skill":  "build_timeline",
+        "tool":  "build_timeline",
         "intent_label":  "build_timeline",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "boundary",
@@ -715,7 +715,7 @@
     },
     {
         "task_id":  "trend_analysis.no_baseline.boundary",
-        "skill":  "trend_analysis",
+        "tool":  "trend_analysis",
         "intent_label":  "trend_analysis",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "boundary",
@@ -783,7 +783,7 @@
     },
     {
         "task_id":  "compare_topics.ab.symmetric.normal",
-        "skill":  "compare_topics",
+        "tool":  "compare_topics",
         "intent_label":  "compare_topics",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "normal",
@@ -854,7 +854,7 @@
     },
     {
         "task_id":  "compare_sources.coverage.sentiment.normal",
-        "skill":  "compare_sources",
+        "tool":  "compare_sources",
         "intent_label":  "compare_sources",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "normal",
@@ -921,7 +921,7 @@
     },
     {
         "task_id":  "read_news_content.url_missing.empty",
-        "skill":  "read_news_content",
+        "tool":  "read_news_content",
         "intent_label":  "read_news_content",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "empty",
@@ -985,7 +985,7 @@
     },
     {
         "task_id":  "analyze_landscape.default_entities.normal",
-        "skill":  "analyze_landscape",
+        "tool":  "analyze_landscape",
         "intent_label":  "analyze_landscape",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "normal",

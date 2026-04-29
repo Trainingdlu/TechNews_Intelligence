@@ -8,7 +8,7 @@ from eval.task_eval_schema import load_task_types
 
 def _task(
     *,
-    skill: str = "search_news",
+    tool: str = "search_news",
     scenario: str = "normal",
     retrieval_mode: str = "evaluable",
     should_clarify: bool = False,
@@ -18,15 +18,15 @@ def _task(
 ) -> dict:
     params = params or {"query": "Anthropic Claude model and product updates", "days": 21}
     return {
-        "task_id": f"{skill}.{scenario}",
-        "skill": skill,
-        "intent_label": skill,
+        "task_id": f"{tool}.{scenario}",
+        "tool": tool,
+        "intent_label": tool,
         "retrieval_mode": retrieval_mode,
         "scenario": scenario,
         "example_question": "q",
         "parameter_template": params,
-        "acceptable_tool_paths": [[{"tool": skill, "args": dict(params)}]],
-        "required_tools": [skill],
+        "acceptable_tool_paths": [[{"tool": tool, "args": dict(params)}]],
+        "required_tools": [tool],
         "forbidden_tools": [],
         "should_clarify": should_clarify,
         "difficulty": "medium",
@@ -83,7 +83,7 @@ def _sample_meta(candidates: list[dict], **overrides) -> dict:
 def test_actual_task_topics_static_audit_passes() -> None:
     tasks = load_task_types(
         Path("eval/config/tasks_180.json"),
-        strict_skill=False,
+        strict_tool=False,
         enforce_coverage_policy=False,
     )
 
@@ -137,7 +137,7 @@ def test_runtime_audit_rejects_candidate_shortfall() -> None:
 
 def test_runtime_audit_rejects_compare_sources_missing_source() -> None:
     task = _task(
-        skill="compare_sources",
+        tool="compare_sources",
         params={"topic": "NVIDIA AI chip supply", "days": 21},
         keywords=["NVIDIA", "AI chip supply"],
         sources=["HackerNews", "TechCrunch"],
@@ -153,7 +153,7 @@ def test_runtime_audit_rejects_compare_sources_missing_source() -> None:
 
 def test_runtime_audit_rejects_compare_topics_missing_side() -> None:
     task = _task(
-        skill="compare_topics",
+        tool="compare_topics",
         params={"topic_a": "OpenAI", "topic_b": "Anthropic", "days": 21},
         keywords=["OpenAI", "Anthropic"],
     )
@@ -168,7 +168,7 @@ def test_runtime_audit_rejects_compare_topics_missing_side() -> None:
 
 def test_runtime_audit_rejects_timeline_without_time_spread() -> None:
     task = _task(
-        skill="build_timeline",
+        tool="build_timeline",
         params={"topic": "OpenAI model and product releases", "days": 30, "limit": 12},
         keywords=["OpenAI", "model releases"],
     )

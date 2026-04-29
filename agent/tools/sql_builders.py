@@ -2,7 +2,7 @@
 
 This module previously housed hardcoded topic-expansion dictionaries and
 ILIKE-based clause builders.  All production callers have been migrated to
-the semantic vector pool (:mod:`agent.skills.semantic_pool`).
+the semantic vector pool (:mod:`agent.tools.semantic_pool`).
 
 The module is retained temporarily so that existing test imports do not
 break at import time.  No production code should import from here.

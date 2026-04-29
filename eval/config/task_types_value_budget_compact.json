@@ -1,7 +1,7 @@
 [
     {
         "task_id":  "query_news.coverage.conflict",
-        "skill":  "query_news",
+        "tool":  "query_news",
         "intent_label":  "query_news",
         "retrieval_mode":  "evaluable",
         "scenario":  "conflict",
@@ -79,7 +79,7 @@
     },
     {
         "task_id":  "query_news.filter.precise.normal",
-        "skill":  "query_news",
+        "tool":  "query_news",
         "intent_label":  "query_news",
         "retrieval_mode":  "evaluable",
         "scenario":  "normal",
@@ -156,7 +156,7 @@
     },
     {
         "task_id":  "search_news.coverage.conflict",
-        "skill":  "search_news",
+        "tool":  "search_news",
         "intent_label":  "search_news",
         "retrieval_mode":  "evaluable",
         "scenario":  "conflict",
@@ -225,7 +225,7 @@
     },
     {
         "task_id":  "search_news.semantic.crosslingual.normal",
-        "skill":  "search_news",
+        "tool":  "search_news",
         "intent_label":  "search_news",
         "retrieval_mode":  "evaluable",
         "scenario":  "normal",
@@ -294,7 +294,7 @@
     },
     {
         "task_id":  "fulltext_batch.query_autoselect.boundary",
-        "skill":  "fulltext_batch",
+        "tool":  "fulltext_batch",
         "intent_label":  "fulltext_batch",
         "retrieval_mode":  "evaluable",
         "scenario":  "boundary",
@@ -360,7 +360,7 @@
     },
     {
         "task_id":  "fulltext_batch.coverage.conflict",
-        "skill":  "fulltext_batch",
+        "tool":  "fulltext_batch",
         "intent_label":  "fulltext_batch",
         "retrieval_mode":  "evaluable",
         "scenario":  "conflict",
@@ -427,7 +427,7 @@
     },
     {
         "task_id":  "fulltext_batch.coverage.normal",
-        "skill":  "fulltext_batch",
+        "tool":  "fulltext_batch",
         "intent_label":  "fulltext_batch",
         "retrieval_mode":  "evaluable",
         "scenario":  "normal",
@@ -494,7 +494,7 @@
     },
     {
         "task_id":  "trend_analysis.no_baseline.boundary",
-        "skill":  "trend_analysis",
+        "tool":  "trend_analysis",
         "intent_label":  "trend_analysis",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "boundary",
@@ -562,7 +562,7 @@
     },
     {
         "task_id":  "read_news_content.url_missing.empty",
-        "skill":  "read_news_content",
+        "tool":  "read_news_content",
         "intent_label":  "read_news_content",
         "retrieval_mode":  "non_retrieval",
         "scenario":  "empty",

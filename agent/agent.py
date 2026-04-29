@@ -1,8 +1,7 @@
-"""Agent runtime 鈥?ReAct-native architecture with Skill infrastructure.
+﻿"""Agent runtime 閳?ReAct-native architecture with tool infrastructure.
 
 Single runtime: LangGraph ReAct agent with full tool autonomy.
-Tool wrappers execute through SkillRegistry + ToolHookRunner for
-structured validation, pre/post guards, and evidence tracking.
+LangChain tools are adapters over the framework-independent ToolRuntime.
 """
 
 from __future__ import annotations
@@ -14,12 +13,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.tools import tool
 from langgraph.prebuilt import create_react_agent
 
 from services.llm_provider import build_agent_chat_model
 
-from .core.runtime_factories import build_default_hook_runner, build_default_registry
+from .core.runtime_factories import build_default_registry
 from .graph_factory import build_react_graph
 from .prompts import SYSTEM_INSTRUCTION
 from .clarification import (
@@ -42,10 +40,7 @@ from .core.metrics import (
     reset_route_metrics,
 )
 from .core.run_context import (
-    add_evidence_urls as _accumulate_evidence,
-    add_tool_call as _accumulate_tool_call,
     agent_run_context,
-    emit_progress as _emit_progress,
     get_evidence_urls as _get_accumulated_evidence,
     get_tool_calls as _get_accumulated_tool_calls,
     set_request_metadata as _set_request_metadata,
@@ -58,19 +53,15 @@ from .core.trace import (
     get_last_trace_summary as _get_last_trace_summary,
     request_trace_context as _request_trace_context,
     set_request_token_usage as _set_request_token_usage,
-    trace_tool_finish_error as _trace_tool_finish_error,
-    trace_tool_finish_with_envelope as _trace_tool_finish_with_envelope,
-    trace_tool_start as _trace_tool_start,
 )
-from .core.skill_contracts import SkillEnvelope
-from .skills.news_ops import lookup_url_titles
+from .tool_adapters.langchain import LANGCHAIN_TOOLS
+from .tools.news_ops import lookup_url_titles
 
 
 # ---------------------------------------------------------------------------
-# Skill infrastructure (lazy-initialized singletons)
+# tool infrastructure (lazy-initialized singletons)
 # ---------------------------------------------------------------------------
 _registry = None
-_hook_runner = None
 
 
 def _get_registry():
@@ -80,276 +71,6 @@ def _get_registry():
     return _registry
 
 
-def _get_hook_runner():
-    global _hook_runner
-    if _hook_runner is None:
-        _hook_runner = build_default_hook_runner()
-    return _hook_runner
-
-
-# ---------------------------------------------------------------------------
-# Unified skill dispatch (SkillRegistry + ToolHookRunner)
-# ---------------------------------------------------------------------------
-def _envelope_to_tool_text(envelope: SkillEnvelope) -> str:
-    """Convert SkillEnvelope to text for the ReAct LLM.
-
-    For tools that returned raw text in their data, we pass that through.
-    For structured data, we format a summary the LLM can reason over.
-    """
-    if envelope.status == "error":
-        return f"[Error] {envelope.error or 'skill execution failed'}"
-
-    if envelope.status == "empty":
-        return "No matching records found."
-
-    # If the skill stored raw_output text, use it directly (preserves URLs)
-    data = envelope.data
-    if isinstance(data, dict):
-        raw = data.get("raw_output")
-        if isinstance(raw, str) and raw.strip():
-            return raw
-
-        # For query_news / trend_analysis with structured data, format records
-        records = data.get("records")
-        if isinstance(records, list) and records:
-            lines = []
-            for idx, item in enumerate(records[:15], 1):
-                title = item.get("title_cn") or item.get("title") or "(untitled)"
-                url = item.get("url", "")
-                source = item.get("source") or item.get("source_type") or ""
-                points = item.get("points", 0)
-                created = str(item.get("created_at", ""))[:16].replace("T", " ")
-                summary = str(item.get("summary", ""))[:220]
-                lines.append(
-                    f"{idx}. [{source}] {title}\n"
-                    f"   time={created}, points={points}\n"
-                    f"   url={url}\n"
-                    f"   summary={summary}"
-                )
-            return "\n".join(lines)
-
-        # Trend analysis data
-        if "topic" in data and "recent_count" in data:
-            topic = data.get("topic", "")
-            recent = data.get("recent_count", 0)
-            prev = data.get("previous_count", 0)
-            delta = data.get("count_delta", 0)
-            daily = data.get("daily", [])
-            lines = [
-                f"Trend for topic: {topic}",
-                f"Recent count: {recent}, Previous count: {prev}, Delta: {delta:+d}",
-            ]
-            if daily:
-                lines.append("Daily breakdown:")
-                for d in daily[:14]:
-                    lines.append(f"  {d.get('day', '')}: count={d.get('count', 0)}")
-            return "\n".join(lines)
-
-    return str(data) if data else "No data returned."
-
-
-def _execute_skill(skill_name: str, payload: dict[str, Any]) -> str:
-    """Unified skill dispatch: Registry 鈫?Hooks 鈫?Execute 鈫?Evidence collect.
-
-    Returns the text representation for the ReAct LLM to consume.
-    """
-    trace_event_index = _trace_tool_start(skill_name, payload)
-    hooks = _get_hook_runner()
-
-    try:
-        # Pre-hook guard
-        pre = hooks.pre_tool_use(skill_name, payload)
-        if pre.action == "deny":
-            blocked_reason = pre.reason or "pre-hook denied"
-            _trace_tool_finish_error(
-                trace_event_index,
-                error_code="tool_pre_hook_denied",
-                error_message=blocked_reason,
-                error=RuntimeError(blocked_reason),
-            )
-            return f"[Blocked] {blocked_reason}"
-        effective_payload = pre.updated_payload if pre.updated_payload is not None else payload
-
-        # Execute via registry
-        registry = _get_registry()
-        if skill_name in {"search_news", "query_news", "trend_analysis", "fulltext_batch"}:
-            _emit_progress("retrieving", skill_name)
-        elif skill_name in {"compare_sources", "compare_topics", "build_timeline", "analyze_landscape"}:
-            _emit_progress("analyzing", skill_name)
-        else:
-            _emit_progress("retrieving", skill_name)
-        envelope = registry.execute(skill_name, effective_payload)
-        _accumulate_tool_call(skill_name)
-
-        # Post-hook guard
-        post = hooks.post_tool_use(skill_name, effective_payload, envelope)
-        if post.action == "deny":
-            blocked_reason = post.reason or "post-hook denied"
-            _trace_tool_finish_with_envelope(
-                trace_event_index,
-                envelope,
-                status_override="blocked",
-                error_code="tool_post_hook_denied",
-                error_message=blocked_reason,
-            )
-            return f"[Blocked] {blocked_reason}"
-
-        # Collect structured evidence URLs
-        evidence_urls = [
-            str(e.url).strip()
-            for e in (envelope.evidence or [])
-            if str(e.url or "").strip()
-        ]
-        _accumulate_evidence(evidence_urls)
-        _trace_tool_finish_with_envelope(trace_event_index, envelope)
-
-        # Convert to text for LLM
-        return _envelope_to_tool_text(envelope)
-    except Exception as exc:
-        _trace_tool_finish_error(
-            trace_event_index,
-            error_code=f"tool_{type(exc).__name__.lower()}",
-            error_message=str(exc),
-            error=exc,
-        )
-        raise
-
-
-# ---------------------------------------------------------------------------
-# LangChain tool wrappers (LLM-facing interface unchanged)
-# ---------------------------------------------------------------------------
-@tool("search_news")
-def search_news_tool(query: str, days: int = 21) -> str:
-    """Search related news with hybrid retrieval (semantic + keyword).
-
-    Best for exploratory queries. Returns up to 5 results ranked by relevance.
-    If no results, try broader query or larger days window.
-    """
-    return _execute_skill("search_news", {"query": query, "days": days})
-
-
-@tool("read_news_content")
-def read_news_content_tool(url: str) -> str:
-    """Read full article content by URL. Only works for URLs from other tools."""
-    return _execute_skill("read_news_content", {"url": url})
-
-
-@tool("get_db_stats")
-def get_db_stats_tool() -> str:
-    """Get database freshness stats and total article count."""
-    return _execute_skill("get_db_stats", {})
-
-
-@tool("list_topics")
-def list_topics_tool() -> str:
-    """Get daily article volume distribution for recent 21 days."""
-    return _execute_skill("list_topics", {})
-
-
-@tool("query_news")
-def query_news_tool(
-    query: str = "",
-    source: str = "all",
-    days: int = 21,
-    category: str = "",
-    sentiment: str = "",
-    sort: str = "time_desc",
-    limit: int = 8,
-) -> str:
-    """Query news with structured filters 鈥?the primary retrieval tool.
-
-    Supports filtering by source ('all'/'HackerNews'/'TechCrunch'), time window,
-    sentiment, and sorting by time or heat (points). If no results, try broader
-    query or larger time window.
-    """
-    return _execute_skill("query_news", {
-        "query": query,
-        "source": source,
-        "days": days,
-        "category": category,
-        "sentiment": sentiment,
-        "sort": sort,
-        "limit": limit,
-    })
-
-
-@tool("trend_analysis")
-def trend_analysis_tool(topic: str, window: int = 7) -> str:
-    """Analyze topic momentum: compare article count and points in recent
-    N days vs previous N days. Includes daily breakdown."""
-    return _execute_skill("trend_analysis", {"topic": topic, "window": window})
-
-
-@tool("compare_sources")
-def compare_sources_tool(topic: str, days: int = 14) -> str:
-    """Compare HackerNews vs TechCrunch coverage and sentiment for a topic."""
-    return _execute_skill("compare_sources", {"topic": topic, "days": days})
-
-
-@tool("compare_topics")
-def compare_topics_tool(topic_a: str, topic_b: str, days: int = 14) -> str:
-    """Compare two entities side-by-side (e.g., OpenAI vs Anthropic) with
-    DB-backed metrics, momentum, source mix, and evidence URLs."""
-    return _execute_skill("compare_topics", {
-        "topic_a": topic_a,
-        "topic_b": topic_b,
-        "days": days,
-    })
-
-
-@tool("build_timeline")
-def build_timeline_tool(topic: str, days: int = 30, limit: int = 12) -> str:
-    """Build chronological event timeline for a topic/company/product.
-    Auto-retries with wider window if no data found initially."""
-    return _execute_skill("build_timeline", {
-        "topic": topic,
-        "days": days,
-        "limit": limit,
-    })
-
-
-@tool("analyze_landscape")
-def analyze_landscape_tool(
-    topic: str = "",
-    days: int = 30,
-    entities: str = "",
-    limit_per_entity: int = 3,
-) -> str:
-    """Analyze competitive landscape with entity-level stats and evidence.
-
-    Use for landscape/structure/role questions. Set topic='AI' for AI landscape.
-    If confidence is Low, try wider time window or more entities.
-    """
-    return _execute_skill("analyze_landscape", {
-        "topic": topic,
-        "days": days,
-        "entities": entities,
-        "limit_per_entity": limit_per_entity,
-    })
-
-
-@tool("fulltext_batch")
-def fulltext_batch_tool(urls: str, max_chars_per_article: int = 4000) -> str:
-    """Batch read full article text. Accepts URLs or keyword query for auto-selection."""
-    return _execute_skill("fulltext_batch", {
-        "urls": urls,
-        "max_chars_per_article": max_chars_per_article,
-    })
-
-
-LANGCHAIN_TOOLS = [
-    search_news_tool,
-    read_news_content_tool,
-    get_db_stats_tool,
-    list_topics_tool,
-    query_news_tool,
-    trend_analysis_tool,
-    compare_sources_tool,
-    compare_topics_tool,
-    build_timeline_tool,
-    analyze_landscape_tool,
-    fulltext_batch_tool,
-]
 
 
 # ---------------------------------------------------------------------------
@@ -422,7 +143,7 @@ def _get_react_agent():
             prompt_kwargs=prompt_kwargs,
             input_schemas={
                 name: registry.input_schema(name)
-                for name in registry.list_skills()
+                for name in registry.list_tools()
             },
         )
     except TypeError as exc:
@@ -500,7 +221,7 @@ _GENERIC_ANALYSIS_LEADIN_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(
-        r"^(?:让我们|我来|先来).{0,80}(?:分析|解读|总结).{0,40}$",
+        r"^(?:让我|我来|先来).{0,80}(?:分析|解读|总结).{0,40}$",
         re.IGNORECASE,
     ),
     re.compile(
@@ -684,7 +405,7 @@ def _build_hitl_soft_followup(
     """Generate a dynamic HITL follow-up question via the current model."""
     fallback = (
         "为提高本次结论可信度，请补充一个约束后我再继续："
-        "时间范围、信息来源范围、或分析维度。你希望先收敛哪一项？"
+        "时间范围、信息来源范围，或分析维度。你希望先收敛哪一项？"
     )
     context_preview = {
         "reason": str(risk_reason or "").strip(),
@@ -730,7 +451,7 @@ def _generate_react(
     invoke_metadata: dict[str, Any] | None = None,
     invoke_tags: list[str] | None = None,
 ) -> tuple[str, list[str]]:
-    """Run the ReAct agent loop with Skill infrastructure."""
+    """Run the ReAct agent loop with tool infrastructure."""
     agent = _get_react_agent()
     messages = _history_to_messages(history)
     messages.append(HumanMessage(content=user_message))
@@ -756,11 +477,11 @@ def _generate_react(
         raise RuntimeError("ReAct agent returned empty response.")
 
     # Collect evidence from two sources:
-    # 1. Structured evidence from SkillEnvelope (accumulated during tool calls)
+    # 1. Structured evidence from ToolEnvelope (accumulated during tool calls)
     valid_urls: list[str] = list(_get_accumulated_evidence())
     seen_urls = set(valid_urls)
 
-    # 2. URLs parsed from ToolMessage content (fallback for non-skill tools)
+    # 2. URLs parsed from ToolMessage content (fallback for non-tool tools)
     if isinstance(result, dict) and "messages" in result:
         from langchain_core.messages import ToolMessage
         from .core.evidence import extract_urls
@@ -1230,3 +951,4 @@ class _SessionChat:
 def create_agent_chat():
     """Create a stateful chat session wrapper for CLI usage."""
     return _SessionChat()
+

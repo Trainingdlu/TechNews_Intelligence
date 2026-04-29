@@ -1,11 +1,11 @@
-"""Fulltext-batch skill implementation and structured adapter."""
+﻿"""Fulltext-batch tool implementation and structured adapter."""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from .helpers import (
     _clamp_int,
     _extract_time_window_days,
@@ -17,7 +17,7 @@ from .helpers import (
 from .news_ops import read_news_content
 from .rerank import resolve_rerank_mode
 from .retrieval import lookup_candidates_by_query
-from .schemas import FulltextBatchSkillInput
+from .schemas import FulltextBatchToolInput
 
 
 def fulltext_batch(
@@ -168,7 +168,7 @@ def fulltext_batch(
     return "\n\n".join(chunks)
 
 
-def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
+def fulltext_batch_tool(payload: FulltextBatchToolInput) -> ToolEnvelope:
     request = payload.model_dump(mode="python")
     try:
         raw_output = fulltext_batch(
@@ -177,7 +177,7 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
             response_format="json",
         )
     except Exception as exc:
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="fulltext_batch",
             request=request,
             error="fulltext_batch_execution_failed",
@@ -187,7 +187,7 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
     try:
         parsed = json.loads(raw_output)
     except Exception as exc:
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="fulltext_batch",
             request=request,
             error="fulltext_batch_json_parse_failed",
@@ -203,7 +203,7 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
         rerank_meta = parsed.get("rerank", {})
         if not isinstance(rerank_meta, dict):
             rerank_meta = {}
-        return build_empty_envelope(
+        return build_tool_empty_envelope(
             tool="fulltext_batch",
             request=request,
             empty_reason="no_candidate_articles",
@@ -217,7 +217,7 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
             },
         )
     if status == "error":
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="fulltext_batch",
             request=request,
             error=str(parsed.get("error") or "fulltext_batch_failed"),
@@ -274,7 +274,7 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
             if len(evidence) >= 12:
                 break
 
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool="fulltext_batch",
         status="ok",
         request=request,
@@ -294,3 +294,5 @@ def fulltext_batch_skill(payload: FulltextBatchSkillInput) -> SkillEnvelope:
             "rerank": parsed.get("rerank", {}),
         },
     )
+
+

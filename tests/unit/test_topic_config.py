@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from agent.skills.semantic_pool import (
+from agent.tools.semantic_pool import (
     _cache_get,
     _cache_set,
     _embedding_cache,
@@ -50,7 +50,7 @@ def test_get_embedding_with_retry_returns_on_first_success() -> None:
     _embedding_cache.clear()
     fake_vec = [0.5] * 10
     with patch(
-        "agent.skills.semantic_pool._get_query_embedding",
+        "agent.tools.semantic_pool._get_query_embedding",
         return_value=fake_vec,
     ) as mock_embed:
         result = _get_embedding_with_retry("hello")
@@ -73,11 +73,11 @@ def test_get_embedding_with_retry_retries_on_failure(monkeypatch) -> None:
         return fake_vec
 
     with patch(
-        "agent.skills.semantic_pool._get_query_embedding",
+        "agent.tools.semantic_pool._get_query_embedding",
         side_effect=_mock_embed,
     ):
         # Reduce delay to speed up test
-        with patch("agent.skills.semantic_pool._DEFAULT_RETRY_DELAY", 0.01):
+        with patch("agent.tools.semantic_pool._DEFAULT_RETRY_DELAY", 0.01):
             result = _get_embedding_with_retry("hello")
     assert result == fake_vec
     assert call_count["n"] == 2
@@ -86,7 +86,7 @@ def test_get_embedding_with_retry_retries_on_failure(monkeypatch) -> None:
 
 def test_fetch_semantic_url_pool_returns_match_score(monkeypatch) -> None:
     monkeypatch.setattr(
-        "agent.skills.semantic_pool.fetch_semantic_candidates",
+        "agent.tools.semantic_pool.fetch_semantic_candidates",
         lambda *_a, **_k: [
             {"url": "https://a.example.com", "final_score": 2.1, "match_score": 0.52},
             {"url": "https://b.example.com", "final_score": 1.7, "match_score": 0.91},

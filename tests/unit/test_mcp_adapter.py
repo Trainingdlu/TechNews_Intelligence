@@ -8,8 +8,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from agent.core.skill_catalog import iter_skill_definitions
-from agent.core.skill_contracts import SkillEnvelope
+from agent.core.tool_catalog import iter_tool_definitions
+from agent.core.tool_contracts import ToolEnvelope
 from agent.mcp.client import MCPClient, StdioMCPServer, qualify_tool_name
 from agent.mcp.server import InProcessMCPServer, build_newsdb_server
 
@@ -18,8 +18,8 @@ class _SimpleInput(BaseModel):
     topic: str = Field(min_length=1)
 
 
-def _simple_handler(payload: _SimpleInput) -> SkillEnvelope:
-    return SkillEnvelope(
+def _simple_handler(payload: _SimpleInput) -> ToolEnvelope:
+    return ToolEnvelope(
         tool="custom_tool",
         status="ok",
         request=payload.model_dump(mode="python"),
@@ -50,12 +50,12 @@ def test_mcp_client_unknown_tool_returns_error() -> None:
     assert envelope.error == "mcp_unknown_namespaced_tool"
 
 
-def test_newsdb_server_registration_matches_skill_catalog() -> None:
+def test_newsdb_server_registration_matches_tool_catalog() -> None:
     server = build_newsdb_server("newsdb")
     listed = {row["name"] for row in server.list_tools()}
     expected = {
         definition.mcp_name or definition.name
-        for definition in iter_skill_definitions()
+        for definition in iter_tool_definitions()
         if definition.expose_in_mcp
     }
     assert listed == expected

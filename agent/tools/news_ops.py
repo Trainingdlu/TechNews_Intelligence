@@ -1,4 +1,4 @@
-"""Shared DB-backed primitives used by the runtime outside structured skills."""
+"""Shared DB-backed primitives used by the runtime outside structured tools."""
 
 from __future__ import annotations
 

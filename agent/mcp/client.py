@@ -1,4 +1,4 @@
-"""MCP client with namespaced tool routing (in-process + stdio backends)."""
+﻿"""MCP client with namespaced tool routing (in-process + stdio backends)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError
 
-from ..core.skill_contracts import SkillEnvelope, build_error_envelope
+from ..core.tool_contracts import ToolEnvelope, build_tool_error_envelope
 from .server import InProcessMCPServer, build_newsdb_server
 
 
@@ -39,7 +39,7 @@ class _MCPServerBackend(Protocol):
     def list_tools(self) -> list[dict[str, Any]]:
         ...
 
-    def call_tool(self, tool_name: str, payload: dict[str, Any] | None = None) -> SkillEnvelope:
+    def call_tool(self, tool_name: str, payload: dict[str, Any] | None = None) -> ToolEnvelope:
         ...
 
 
@@ -239,7 +239,7 @@ class StdioMCPServer:
             )
         return rows
 
-    def call_tool(self, tool_name: str, payload: dict[str, Any] | None = None) -> SkillEnvelope:
+    def call_tool(self, tool_name: str, payload: dict[str, Any] | None = None) -> ToolEnvelope:
         request_payload = payload or {}
         normalized_tool = str(tool_name).strip()
         try:
@@ -248,7 +248,7 @@ class StdioMCPServer:
                 {"name": normalized_tool, "arguments": request_payload},
             )
         except Exception as exc:  # noqa: BLE001
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=normalized_tool or str(tool_name),
                 request=request_payload,
                 error="mcp_client_transport_error",
@@ -273,7 +273,7 @@ class StdioMCPServer:
                             envelope_payload = None
 
         if envelope_payload is None:
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=normalized_tool or str(tool_name),
                 request=request_payload,
                 error="mcp_client_protocol_error",
@@ -281,9 +281,9 @@ class StdioMCPServer:
             )
 
         try:
-            envelope = SkillEnvelope.model_validate(envelope_payload)
+            envelope = ToolEnvelope.model_validate(envelope_payload)
         except ValidationError as exc:
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=normalized_tool or str(tool_name),
                 request=request_payload,
                 error="mcp_client_protocol_error",
@@ -348,11 +348,11 @@ class MCPClient:
     def list_tools(self) -> list[MCPToolRoute]:
         return [self._routes[k] for k in sorted(self._routes.keys())]
 
-    def call_tool(self, qualified_name: str, payload: dict[str, Any] | None = None) -> SkillEnvelope:
+    def call_tool(self, qualified_name: str, payload: dict[str, Any] | None = None) -> ToolEnvelope:
         request_payload = payload or {}
         route = self._routes.get(qualified_name)
         if route is None:
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=qualified_name,
                 request=request_payload,
                 error="mcp_unknown_namespaced_tool",
@@ -361,7 +361,7 @@ class MCPClient:
 
         server = self._servers.get(route.server_name)
         if server is None:
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=qualified_name,
                 request=request_payload,
                 error="mcp_server_unavailable",
@@ -371,7 +371,7 @@ class MCPClient:
         try:
             envelope = server.call_tool(route.tool_name, request_payload)
         except Exception as exc:  # noqa: BLE001
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=qualified_name,
                 request=request_payload,
                 error="mcp_server_call_failed",
@@ -436,3 +436,4 @@ def build_default_mcp_client() -> MCPClient:
 
     _DEFAULT_CLIENT = client
     return client
+

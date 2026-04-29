@@ -1,13 +1,13 @@
-"""Build-timeline skill implementation and structured adapter."""
+﻿"""Build-timeline tool implementation and structured adapter."""
 
 from __future__ import annotations
 
 from services.db import get_conn, put_conn
 
-from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from .helpers import _clamp_int, _evidence_from_records
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
-from .schemas import BuildTimelineSkillInput
+from .schemas import BuildTimelineToolInput
 from .semantic_pool import fetch_semantic_url_pool
 
 
@@ -189,7 +189,7 @@ def build_timeline(topic: str, days: int = 30, limit: int = 12) -> str:
     return _format_timeline_result(_build_timeline_structured(topic, days=days, limit=limit))
 
 
-def build_timeline_skill(payload: BuildTimelineSkillInput) -> SkillEnvelope:
+def build_timeline_tool(payload: BuildTimelineToolInput) -> ToolEnvelope:
     request = payload.model_dump(mode="python")
     result = _build_timeline_structured(
         topic=request["topic"],
@@ -200,7 +200,7 @@ def build_timeline_skill(payload: BuildTimelineSkillInput) -> SkillEnvelope:
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
     diagnostics = result.get("diagnostics") if isinstance(result.get("diagnostics"), dict) else {}
     if status == "error":
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="build_timeline",
             request=request,
             error=str(result.get("error_code") or "build_timeline_failed"),
@@ -208,7 +208,7 @@ def build_timeline_skill(payload: BuildTimelineSkillInput) -> SkillEnvelope:
             diagnostics=diagnostics,
         )
     if status == "empty":
-        return build_empty_envelope(
+        return build_tool_empty_envelope(
             tool="build_timeline",
             request=request,
             empty_reason=str(diagnostics.get("empty_reason") or "no_timeline_data"),
@@ -219,7 +219,7 @@ def build_timeline_skill(payload: BuildTimelineSkillInput) -> SkillEnvelope:
     evidence = _evidence_from_records(result.get("evidence", []) or [], max_items=12)
     data = dict(data)
     data.setdefault("raw_output", _format_timeline_result(result))
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool="build_timeline",
         status="ok",
         request=request,
@@ -227,3 +227,5 @@ def build_timeline_skill(payload: BuildTimelineSkillInput) -> SkillEnvelope:
         evidence=evidence,
         diagnostics={**diagnostics, "evidence_count": len(evidence)},
     )
+
+

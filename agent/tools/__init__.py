@@ -1,4 +1,4 @@
-"""Skill-layer package."""
+"""tool-layer package."""
 
 from .semantic_pool import fetch_semantic_url_pool
 

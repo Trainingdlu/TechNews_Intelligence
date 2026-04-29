@@ -1,7 +1,7 @@
 [
   {
     "task_id": "search_news.normal",
-    "skill": "search_news",
+    "tool": "search_news",
     "intent_label": "search_news",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
@@ -64,7 +64,7 @@
   },
   {
     "task_id": "search_news.conflict",
-    "skill": "search_news",
+    "tool": "search_news",
     "intent_label": "search_news",
     "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
@@ -126,7 +126,7 @@
   },
   {
     "task_id": "search_news.empty",
-    "skill": "search_news",
+    "tool": "search_news",
     "intent_label": "search_news",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
@@ -187,7 +187,7 @@
   },
   {
     "task_id": "search_news.boundary",
-    "skill": "search_news",
+    "tool": "search_news",
     "intent_label": "search_news",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
@@ -249,7 +249,7 @@
   },
   {
     "task_id": "fulltext_batch.normal",
-    "skill": "fulltext_batch",
+    "tool": "fulltext_batch",
     "intent_label": "fulltext_batch",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
@@ -311,7 +311,7 @@
   },
   {
     "task_id": "fulltext_batch.conflict",
-    "skill": "fulltext_batch",
+    "tool": "fulltext_batch",
     "intent_label": "fulltext_batch",
     "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
@@ -373,7 +373,7 @@
   },
   {
     "task_id": "fulltext_batch.empty",
-    "skill": "fulltext_batch",
+    "tool": "fulltext_batch",
     "intent_label": "fulltext_batch",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
@@ -433,7 +433,7 @@
   },
   {
     "task_id": "fulltext_batch.boundary",
-    "skill": "fulltext_batch",
+    "tool": "fulltext_batch",
     "intent_label": "fulltext_batch",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
@@ -495,7 +495,7 @@
   },
   {
     "task_id": "compare_topics.normal",
-    "skill": "compare_topics",
+    "tool": "compare_topics",
     "intent_label": "compare_topics",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
@@ -559,7 +559,7 @@
   },
   {
     "task_id": "compare_topics.conflict",
-    "skill": "compare_topics",
+    "tool": "compare_topics",
     "intent_label": "compare_topics",
     "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
@@ -623,7 +623,7 @@
   },
   {
     "task_id": "compare_topics.empty",
-    "skill": "compare_topics",
+    "tool": "compare_topics",
     "intent_label": "compare_topics",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
@@ -687,7 +687,7 @@
   },
   {
     "task_id": "compare_topics.boundary",
-    "skill": "compare_topics",
+    "tool": "compare_topics",
     "intent_label": "compare_topics",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
@@ -751,7 +751,7 @@
   },
   {
     "task_id": "compare_sources.normal",
-    "skill": "compare_sources",
+    "tool": "compare_sources",
     "intent_label": "compare_sources",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
@@ -815,7 +815,7 @@
   },
   {
     "task_id": "compare_sources.conflict",
-    "skill": "compare_sources",
+    "tool": "compare_sources",
     "intent_label": "compare_sources",
     "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
@@ -879,7 +879,7 @@
   },
   {
     "task_id": "compare_sources.empty",
-    "skill": "compare_sources",
+    "tool": "compare_sources",
     "intent_label": "compare_sources",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
@@ -943,7 +943,7 @@
   },
   {
     "task_id": "compare_sources.boundary",
-    "skill": "compare_sources",
+    "tool": "compare_sources",
     "intent_label": "compare_sources",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
@@ -1008,7 +1008,7 @@
   },
   {
     "task_id": "build_timeline.normal",
-    "skill": "build_timeline",
+    "tool": "build_timeline",
     "intent_label": "build_timeline",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
@@ -1073,7 +1073,7 @@
   },
   {
     "task_id": "build_timeline.conflict",
-    "skill": "build_timeline",
+    "tool": "build_timeline",
     "intent_label": "build_timeline",
     "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
@@ -1138,7 +1138,7 @@
   },
   {
     "task_id": "build_timeline.empty",
-    "skill": "build_timeline",
+    "tool": "build_timeline",
     "intent_label": "build_timeline",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
@@ -1202,7 +1202,7 @@
   },
   {
     "task_id": "build_timeline.boundary",
-    "skill": "build_timeline",
+    "tool": "build_timeline",
     "intent_label": "build_timeline",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
@@ -1266,7 +1266,7 @@
   },
   {
     "task_id": "trend_analysis.normal",
-    "skill": "trend_analysis",
+    "tool": "trend_analysis",
     "intent_label": "trend_analysis",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
@@ -1327,7 +1327,7 @@
   },
   {
     "task_id": "trend_analysis.conflict",
-    "skill": "trend_analysis",
+    "tool": "trend_analysis",
     "intent_label": "trend_analysis",
     "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
@@ -1389,7 +1389,7 @@
   },
   {
     "task_id": "trend_analysis.empty",
-    "skill": "trend_analysis",
+    "tool": "trend_analysis",
     "intent_label": "trend_analysis",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
@@ -1450,7 +1450,7 @@
   },
   {
     "task_id": "trend_analysis.boundary",
-    "skill": "trend_analysis",
+    "tool": "trend_analysis",
     "intent_label": "trend_analysis",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
@@ -1511,7 +1511,7 @@
   },
   {
     "task_id": "analyze_landscape.normal",
-    "skill": "analyze_landscape",
+    "tool": "analyze_landscape",
     "intent_label": "analyze_landscape",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
@@ -1581,7 +1581,7 @@
   },
   {
     "task_id": "analyze_landscape.conflict",
-    "skill": "analyze_landscape",
+    "tool": "analyze_landscape",
     "intent_label": "analyze_landscape",
     "retrieval_mode": "non_retrieval",
     "scenario": "conflict",
@@ -1651,7 +1651,7 @@
   },
   {
     "task_id": "analyze_landscape.empty",
-    "skill": "analyze_landscape",
+    "tool": "analyze_landscape",
     "intent_label": "analyze_landscape",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
@@ -1720,7 +1720,7 @@
   },
   {
     "task_id": "analyze_landscape.boundary",
-    "skill": "analyze_landscape",
+    "tool": "analyze_landscape",
     "intent_label": "analyze_landscape",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",

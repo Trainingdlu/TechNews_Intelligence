@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agent.skills import analyze_landscape as landscape_mod
-from agent.skills import compare_topics as compare_mod
+from agent.tools import analyze_landscape as landscape_mod
+from agent.tools import compare_topics as compare_mod
 
 
 def test_compare_topics_intersection_arbitration_uses_higher_match_score(monkeypatch) -> None:

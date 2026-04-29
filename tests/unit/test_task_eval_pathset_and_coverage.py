@@ -1,24 +1,24 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from agent.core.skill_catalog import iter_skill_definitions
+from agent.core.tool_catalog import iter_tool_definitions
 from eval.task_eval_schema import SCENARIO_COVERAGE_POLICY
 from eval.task_eval_scoring import score_case
 
 
-def test_task_types_cover_all_current_skills() -> None:
+def test_task_types_cover_all_current_tools() -> None:
     task_types = json.loads(
         Path("eval/config/tasks_180.json").read_text(encoding="utf-8-sig")
     )
-    task_skills = {
-        str(item.get("skill", "")).strip()
+    task_tools = {
+        str(item.get("tool", "")).strip()
         for item in task_types
-        if isinstance(item, dict) and str(item.get("skill", "")).strip()
+        if isinstance(item, dict) and str(item.get("tool", "")).strip()
     }
-    all_skills = {row.name for row in iter_skill_definitions()}
-    unknown = sorted(task_skills - all_skills)
+    all_tools = {row.name for row in iter_tool_definitions()}
+    unknown = sorted(task_tools - all_tools)
     assert unknown == []
 
 
@@ -26,18 +26,18 @@ def test_task_types_match_risk_based_scenario_policy() -> None:
     task_types = json.loads(
         Path("eval/config/tasks_180.json").read_text(encoding="utf-8-sig")
     )
-    by_skill: dict[str, set[str]] = {}
+    by_tool: dict[str, set[str]] = {}
     for item in task_types:
         if not isinstance(item, dict):
             continue
-        skill = str(item.get("skill", "")).strip()
+        tool = str(item.get("tool", "")).strip()
         scenario = str(item.get("scenario", "")).strip().lower()
-        if not skill or not scenario:
+        if not tool or not scenario:
             continue
-        by_skill.setdefault(skill, set()).add(scenario)
+        by_tool.setdefault(tool, set()).add(scenario)
 
-    for skill, covered in by_skill.items():
-        required = SCENARIO_COVERAGE_POLICY.get(skill)
+    for tool, covered in by_tool.items():
+        required = SCENARIO_COVERAGE_POLICY.get(tool)
         if not required:
             continue
         assert required.issubset(covered)
@@ -111,3 +111,5 @@ def test_path_set_best_match_uses_alternative_path() -> None:
     layers = score_case(case, [run])
     assert layers["tool"]["acceptable_path_hit_rate"] == 1.0
     assert layers["tool"]["param_accuracy"] == 1.0
+
+

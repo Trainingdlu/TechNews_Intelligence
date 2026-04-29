@@ -25,7 +25,7 @@ def _doc(idx: int, *, source: str, day: int, sim: float, topic_group: str = "") 
 
 def test_pack_compare_sources_preserves_source_coverage() -> None:
     task = {
-        "skill": "compare_sources",
+        "tool": "compare_sources",
         "scenario": "normal",
         "sampling": {"pool_size": 8, "sources": ["HackerNews", "TechCrunch"]},
     }
@@ -41,7 +41,7 @@ def test_pack_compare_sources_preserves_source_coverage() -> None:
 
 
 def test_pack_timeline_preserves_time_spread() -> None:
-    task = {"skill": "build_timeline", "scenario": "normal", "sampling": {"pool_size": 8}}
+    task = {"tool": "build_timeline", "scenario": "normal", "sampling": {"pool_size": 8}}
     docs = [_doc(i, source="S", day=i, sim=0.7 + i * 0.01) for i in range(1, 13)]
 
     selected, meta = pack_cluster(task, docs, pool_size=8)
@@ -53,7 +53,7 @@ def test_pack_timeline_preserves_time_spread() -> None:
 
 
 def test_pack_compare_topics_balances_topic_groups() -> None:
-    task = {"skill": "compare_topics", "scenario": "normal", "sampling": {"pool_size": 10}}
+    task = {"tool": "compare_topics", "scenario": "normal", "sampling": {"pool_size": 10}}
     docs = [
         *[_doc(i, source="S1", day=i, sim=0.9, topic_group="A") for i in range(1, 7)],
         *[_doc(i, source="S2", day=i, sim=0.8, topic_group="B") for i in range(7, 13)],
@@ -72,7 +72,7 @@ def test_empty_build_pools_uses_negative_candidates_without_positive_floor(monke
     monkeypatch.setattr(sampler, "_recall_sim_floor", lambda: 0.3)
     task = {
         "task_id": "search_news.empty",
-        "skill": "search_news",
+        "tool": "search_news",
         "scenario": "empty",
         "sampling": {"pool_size": 8},
     }

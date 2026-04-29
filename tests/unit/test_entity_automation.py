@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agent.skills import entity_automation as mod
+from agent.tools import entity_automation as mod
 from eval import build_entity_alias_candidates as build_cli
 from eval import promote_entity_alias_candidates as promote_cli
 

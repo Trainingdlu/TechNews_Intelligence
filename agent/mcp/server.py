@@ -1,4 +1,4 @@
-"""In-process MCP server abstraction for NewsDB tools."""
+﻿"""In-process MCP server abstraction for NewsDB tools."""
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ValidationError
 
-from ..core.skill_catalog import SkillDefinition, iter_skill_definitions
-from ..core.skill_contracts import SkillEnvelope, build_error_envelope
+from ..core.runtime_factories import build_default_tool_runtime
+from ..core.tool_catalog import ToolDefinition, iter_tool_definitions
+from ..core.tool_contracts import ToolEnvelope, build_tool_error_envelope
 
-MCPToolHandler = Callable[[BaseModel], SkillEnvelope]
+MCPToolHandler = Callable[[BaseModel], ToolEnvelope]
 
 
 @dataclass(frozen=True)
@@ -64,11 +65,11 @@ class InProcessMCPServer:
             )
         return rows
 
-    def call_tool(self, tool_name: str, payload: dict[str, Any] | None = None) -> SkillEnvelope:
+    def call_tool(self, tool_name: str, payload: dict[str, Any] | None = None) -> ToolEnvelope:
         request_payload = payload or {}
         spec = self._tools.get(str(tool_name).strip())
         if spec is None:
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=str(tool_name),
                 request=request_payload,
                 error="mcp_unknown_tool",
@@ -78,7 +79,7 @@ class InProcessMCPServer:
         try:
             parsed_input = spec.input_model.model_validate(request_payload)
         except ValidationError as exc:
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=spec.name,
                 request=request_payload,
                 error="mcp_input_validation_failed",
@@ -88,7 +89,7 @@ class InProcessMCPServer:
         try:
             envelope = spec.handler(parsed_input)
         except Exception as exc:  # noqa: BLE001
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=spec.name,
                 request=parsed_input.model_dump(mode="python"),
                 error="mcp_tool_execution_failed",
@@ -111,10 +112,13 @@ class InProcessMCPServer:
         return envelope
 
 
-def _build_delegated_handler(definition: SkillDefinition) -> MCPToolHandler:
-    def _handler(payload: BaseModel) -> SkillEnvelope:
-        envelope = definition.handler(payload)
-        envelope.diagnostics["delegated_skill"] = definition.name
+def _build_delegated_handler(definition: ToolDefinition) -> MCPToolHandler:
+    def _handler(payload: BaseModel) -> ToolEnvelope:
+        envelope = build_default_tool_runtime().execute(
+            definition.name,
+            payload.model_dump(mode="python"),
+        )
+        envelope.diagnostics["delegated_tool"] = definition.name
         return envelope
 
     return _handler
@@ -124,7 +128,7 @@ def build_newsdb_server(server_name: str = "newsdb") -> InProcessMCPServer:
     """Build local NewsDB MCP server with namespaced tool contracts."""
 
     server = InProcessMCPServer(server_name=server_name)
-    for definition in iter_skill_definitions():
+    for definition in iter_tool_definitions():
         if definition.expose_in_mcp:
             server.register_tool(
                 name=definition.mcp_name or definition.name,
@@ -133,3 +137,4 @@ def build_newsdb_server(server_name: str = "newsdb") -> InProcessMCPServer:
                 description=definition.description,
             )
     return server
+

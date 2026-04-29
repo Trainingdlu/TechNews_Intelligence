@@ -1,4 +1,4 @@
-﻿"""Web API 入口：FastAPI + Token 自动发放 + 限额管理"""
+"""Web API 入口：FastAPI + Token 自动发放 + 限额管理"""
 
 import os
 import json

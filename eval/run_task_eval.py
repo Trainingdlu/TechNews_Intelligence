@@ -166,10 +166,10 @@ def _parse_args() -> argparse.Namespace:
         help="If > 0, evaluate only first N cases.",
     )
     parser.add_argument(
-        "--strict-skill-check",
+        "--strict-tool-check",
         action="store_true",
         default=False,
-        help="Validate case skill names against live catalog while loading dataset.",
+        help="Validate case tool names against live catalog while loading dataset.",
     )
     parser.add_argument(
         "--include-trace-summary",
@@ -213,7 +213,7 @@ def main() -> int:
     if not dataset_path.exists():
         raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
-    cases = load_cases_jsonl(dataset_path, strict_skill=bool(args.strict_skill_check))
+    cases = load_cases_jsonl(dataset_path, strict_tool=bool(args.strict_tool_check))
     if args.max_cases and int(args.max_cases) > 0:
         cases = cases[: int(args.max_cases)]
     if not cases:
@@ -336,7 +336,7 @@ def main() -> int:
                 "case": {
                     "case_id": case.get("case_id"),
                     "task_type": case.get("task_type"),
-                    "skill": case.get("skill"),
+                    "tool": case.get("tool"),
                     "intent_label": case.get("intent_label"),
                     "retrieval_evaluable": case.get("retrieval_evaluable"),
                     "tags": case.get("tags", []),

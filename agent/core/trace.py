@@ -15,7 +15,7 @@ from typing import Any, Iterator
 
 from services.llm_provider import agent_runtime_metadata
 
-from .skill_contracts import SkillEnvelope
+from .tool_contracts import ToolEnvelope
 
 _MAX_SUMMARY_DEPTH = 2
 _MAX_STR_LEN = 240
@@ -129,8 +129,8 @@ def _extract_context_docs(data: Any) -> list[dict[str, Any]]:
     return docs
 
 
-def summarize_envelope(envelope: SkillEnvelope) -> dict[str, Any]:
-    """Build a compact summary from a SkillEnvelope."""
+def summarize_envelope(envelope: ToolEnvelope) -> dict[str, Any]:
+    """Build a compact summary from a ToolEnvelope."""
     summary: dict[str, Any] = {
         "status": envelope.status,
         "evidence_count": len(envelope.evidence),
@@ -508,7 +508,7 @@ def trace_tool_start(tool_name: str, payload: dict[str, Any]) -> int | None:
 
 def trace_tool_finish_with_envelope(
     event_index: int | None,
-    envelope: SkillEnvelope,
+    envelope: ToolEnvelope,
     *,
     status_override: str | None = None,
     error_code: str | None = None,

@@ -92,7 +92,8 @@ def _normalize_sampling_for_fingerprint(task_types: list[dict[str, Any]]) -> lis
         rows.append(
             {
                 "task_id": str(task.get("task_id", "")).strip(),
-                "skill": str(task.get("skill", "")).strip(),
+                "tool": str(task.get("tool", "")).strip(),
+                "capability": str(task.get("capability", "")).strip(),
                 "scenario": str(task.get("scenario", "")).strip().lower(),
                 "retrieval_mode": str(task.get("retrieval_mode", "")).strip().lower(),
                 "sampling": {
@@ -437,7 +438,7 @@ def _build_grounded_question(
     pool_docs: list[dict[str, Any]],
     expected_paths: list[list[dict[str, Any]]],
 ) -> str:
-    skill = str(task.get("skill", "")).strip()
+    tool = str(task.get("tool", "")).strip()
     days = _safe_int(
         _first_arg(expected_paths, "days") or task.get("sampling", {}).get("days", 30),
         30,
@@ -452,32 +453,32 @@ def _build_grounded_question(
     topic_a = _first_arg(expected_paths, "topic_a")
     topic_b = _first_arg(expected_paths, "topic_b")
 
-    if skill == "compare_sources":
+    if tool == "compare_sources":
         return f"请比较过去{days}天「{topic}」在 HackerNews 与 TechCrunch 的覆盖和情绪差异。"
-    if skill == "compare_topics":
+    if tool == "compare_topics":
         a = topic_a or topic or "主题A"
         b = topic_b or "主题B"
         return f"请比较过去{days}天「{a}」与「{b}」的热度、情绪与来源结构。"
-    if skill == "build_timeline":
+    if tool == "build_timeline":
         return f"请构建过去{days}天「{topic}」的关键事件时间线，最多{limit}条。"
-    if skill == "trend_analysis":
+    if tool == "trend_analysis":
         return f"请分析「{topic}」最近{days}天相对前{days}天的趋势变化。"
-    if skill == "analyze_landscape":
+    if tool == "analyze_landscape":
         return f"请分析过去{days}天「{topic}」相关赛道的竞争格局。"
-    if skill == "fulltext_batch":
+    if tool == "fulltext_batch":
         return f"请围绕「{topic}」筛选最近{days}天相关新闻并批量读取全文，提炼关键结论。"
-    if skill == "search_news":
+    if tool == "search_news":
         return f"请检索最近{days}天与「{topic}」相关的新闻，并返回最相关结果。"
-    if skill == "query_news":
+    if tool == "query_news":
         return f"请查询最近{days}天与「{topic}」相关的新闻，并按相关性返回结果。"
-    if skill == "read_news_content":
+    if tool == "read_news_content":
         url = _first_arg(expected_paths, "url")
         if url:
             return f"请读取该新闻链接全文并提炼要点：{url}"
         return "请读取指定新闻全文并提炼关键要点。"
-    if skill == "list_topics":
+    if tool == "list_topics":
         return "请给出最近一段时间的主题分布与数量统计。"
-    if skill == "get_db_stats":
+    if tool == "get_db_stats":
         return "请返回当前新闻库总量与最新数据时间。"
     return f"请基于最近{days}天新闻，围绕「{topic}」完成分析。"
 
@@ -703,7 +704,7 @@ def _generator_prompts(
                 "expected_question": "string",
                 "expected_answer": "string",
                 "expected_tool_paths": [
-                    [{"tool": task["skill"], "args": task["parameter_template"]}]
+                    [{"tool": task["tool"], "args": task["parameter_template"]}]
                 ],
                 "required_tools": task["required_tools"],
                 "forbidden_tools": task["forbidden_tools"],
@@ -771,7 +772,8 @@ def _generator_prompts(
     payload = {
         "task_definition": {
             "task_id": task["task_id"],
-            "skill": task["skill"],
+            "tool": task["tool"],
+            "capability": task.get("capability", ""),
             "intent_label": task["intent_label"],
             "retrieval_mode": task["retrieval_mode"],
             "scenario": task["scenario"],
@@ -811,7 +813,8 @@ def _audit_prompts(task: dict[str, Any], cases: list[dict[str, Any]]) -> tuple[s
     payload = {
         "task": {
             "task_id": task["task_id"],
-            "skill": task["skill"],
+            "tool": task["tool"],
+            "capability": task.get("capability", ""),
             "retrieval_mode": task["retrieval_mode"],
             "scenario": task["scenario"],
             "acceptable_tool_paths": task["acceptable_tool_paths"],
@@ -1066,7 +1069,8 @@ def _audit_single_case_with_evidence(
     payload = {
         "task": {
             "task_id": task["task_id"],
-            "skill": task["skill"],
+            "tool": task["tool"],
+            "capability": task.get("capability", ""),
             "retrieval_mode": task["retrieval_mode"],
             "scenario": task["scenario"],
             "parameter_template": task["parameter_template"],
@@ -1512,16 +1516,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Output manifest JSON path.",
     )
     parser.add_argument(
-        "--strict-skill-check",
+        "--strict-tool-check",
         action="store_true",
         default=True,
-        help="Validate task/case tools against live skill catalog.",
+        help="Validate task/case tools against live tool catalog.",
     )
     parser.add_argument(
-        "--no-strict-skill-check",
-        dest="strict_skill_check",
+        "--no-strict-tool-check",
+        dest="strict_tool_check",
         action="store_false",
-        help="Skip strict skill catalog validation.",
+        help="Skip strict tool catalog validation.",
     )
     parser.add_argument(
         "--enforce-coverage-policy",
@@ -1746,7 +1750,7 @@ def main(argv: list[str] | None = None) -> int:
 
     task_types = load_task_types(
         args.task_types.resolve(),
-        strict_skill=bool(args.strict_skill_check),
+        strict_tool=bool(args.strict_tool_check),
         enforce_coverage_policy=bool(args.enforce_coverage_policy),
     )
     if bool(getattr(args, "enforce_scenario_retrieval_map", False)):
@@ -1927,13 +1931,14 @@ def main(argv: list[str] | None = None) -> int:
                 case["packing_meta"] = pool_meta
 
         for case in generated_cases:
-            validate_case(case, strict_skill=bool(args.strict_skill_check))
+            validate_case(case, strict_tool=bool(args.strict_tool_check))
         all_cases.extend(generated_cases)
 
         manifest_tasks.append(
             {
                 "task_id": task["task_id"],
-                "skill": task["skill"],
+                "tool": task["tool"],
+                "capability": task.get("capability", ""),
                 "retrieval_mode": task["retrieval_mode"],
                 "scenario": task["scenario"],
                 "candidate_docs": len(candidates),

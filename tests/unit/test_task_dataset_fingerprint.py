@@ -34,14 +34,14 @@ def _task_rows() -> list[dict]:
     return [
         {
             "task_id": "search_news.normal",
-            "skill": "search_news",
+            "tool": "search_news",
             "scenario": "normal",
             "retrieval_mode": "evaluable",
             "sampling": {"n_min": 10, "days": 30, "pool_size": 12, "candidate_limit": 300},
         },
         {
             "task_id": "search_news.empty",
-            "skill": "search_news",
+            "tool": "search_news",
             "scenario": "empty",
             "retrieval_mode": "non_retrieval",
             "sampling": {"n_min": 4, "days": 30, "pool_size": 12, "candidate_limit": 300},

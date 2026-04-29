@@ -19,7 +19,7 @@ def _expected_tool_paths(query: str = "OpenAI") -> list[list[dict]]:
 def _task_type() -> dict:
     return {
         "task_id": "query_news.filter.precise.normal",
-        "skill": "query_news",
+        "tool": "query_news",
         "intent_label": "query_news",
         "retrieval_mode": "evaluable",
         "scenario": "normal",
@@ -90,9 +90,10 @@ def test_load_task_types_accepts_valid_file(tmp_path: Path) -> None:
     temp_dir = _case_dir(tmp_path)
     path = temp_dir / "tasks.json"
     path.write_text(json.dumps([_task_type()]), encoding="utf-8")
-    rows = load_task_types(path, strict_skill=False, enforce_coverage_policy=False)
+    rows = load_task_types(path, strict_tool=False, enforce_coverage_policy=False)
     assert len(rows) == 1
     assert rows[0]["task_id"] == "query_news.filter.precise.normal"
+    assert rows[0]["capability"]
 
 
 def test_normalize_case_enforces_retrieval_gold_subset() -> None:
@@ -104,7 +105,8 @@ def test_normalize_case_enforces_retrieval_gold_subset() -> None:
         pool_id="pool-1",
         input_news_pool=_pool(),
     )
-    validate_case(case, strict_skill=False)
+    validate_case(case, strict_tool=False)
+    assert case["capability"]
     assert case["retrieval_gold_urls"] == ["https://a.example.com"]
     assert case["input_news_pool_hash"] == build_news_pool_hash(_pool())
 

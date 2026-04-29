@@ -12,14 +12,14 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[1] / "agent" / ".env")
 
 try:
-    from agent.skills.rerank import rerank_candidates
+    from agent.tools.rerank import rerank_candidates
 except ImportError:
     import sys
 
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-    from agent.skills.rerank import rerank_candidates  # type: ignore
+    from agent.tools.rerank import rerank_candidates  # type: ignore
 
 
 def _dcg(labels: list[int]) -> float:

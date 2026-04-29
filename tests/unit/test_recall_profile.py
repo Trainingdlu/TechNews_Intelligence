@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent.skills.recall_profile import PROFILE_BASE, PROFILE_WIDE, resolve_recall_profile
+from agent.tools.recall_profile import PROFILE_BASE, PROFILE_WIDE, resolve_recall_profile
 
 
 def test_recall_profile_defaults_to_base(monkeypatch) -> None:

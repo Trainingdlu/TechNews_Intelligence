@@ -1,4 +1,4 @@
-"""Analyze-landscape skill implementation and structured adapter.
+﻿"""Analyze-landscape tool implementation and structured adapter.
 
 Refactored to use semantic vector pools for entity matching and
 embedding-anchor classification for signal categorisation, replacing
@@ -13,11 +13,11 @@ from typing import Any
 
 from services.db import get_conn, put_conn
 
-from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _is_recent_timestamp
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .retrieval import _get_query_embedding
-from .schemas import AnalyzeLandscapeSkillInput
+from .schemas import AnalyzeLandscapeToolInput
 from .semantic_pool import fetch_semantic_url_pool
 
 # ---------------------------------------------------------------------------
@@ -51,27 +51,27 @@ SIGNAL_ANCHOR_TEXTS: dict[str, str] = {
     "compute_cost": (
         "GPU TPU chip semiconductor datacenter data center server compute "
         "training cost inference cost capex power consumption energy "
-        "算力 芯片 电力 能耗 数据中心 服务器 计算成本"
+        "绠楀姏 鑺墖 鐢靛姏 鑳借€?鏁版嵁涓績 鏈嶅姟鍣?璁＄畻鎴愭湰"
     ),
     "algorithm_efficiency": (
         "model benchmark reasoning architecture transformer agent inference "
         "distillation fine-tuning parameter efficiency quantization "
-        "算法 模型 推理 架构 蒸馏 微调 量化 参数效率"
+        "绠楁硶 妯″瀷 鎺ㄧ悊 鏋舵瀯 钂搁 寰皟 閲忓寲 鍙傛暟鏁堢巼"
     ),
     "data_moat": (
         "dataset data corpus licensing proprietary copyright privacy "
         "synthetic data curation annotation training data "
-        "数据 语料 授权 版权 隐私 合成数据 标注"
+        "鏁版嵁 璇枡 鎺堟潈 鐗堟潈 闅愮 鍚堟垚鏁版嵁 鏍囨敞"
     ),
     "go_to_market": (
         "enterprise customer pricing revenue subscription partnership "
         "adoption sales ARR growth market share commercialize "
-        "商业化 客户 定价 收入 订阅 合作 落地 营收"
+        "鍟嗕笟鍖?瀹㈡埛 瀹氫环 鏀跺叆 璁㈤槄 鍚堜綔 钀藉湴 钀ユ敹"
     ),
     "policy_security": (
         "regulation compliance antitrust lawsuit security breach "
         "vulnerability policy military export control sanctions "
-        "监管 合规 诉讼 安全 漏洞 军方 出口管制 制裁"
+        "鐩戠 鍚堣 璇夎 瀹夊叏 婕忔礊 鍐涙柟 鍑哄彛绠″埗 鍒惰"
     ),
 }
 
@@ -812,7 +812,7 @@ def analyze_ai_landscape(days: int = 30, entities: str = "", limit_per_entity: i
     return analyze_landscape(topic="AI", days=days, entities=entities, limit_per_entity=limit_per_entity)
 
 
-def analyze_landscape_skill(payload: AnalyzeLandscapeSkillInput) -> SkillEnvelope:
+def analyze_landscape_tool(payload: AnalyzeLandscapeToolInput) -> ToolEnvelope:
     request = payload.model_dump(mode="python")
     result = _analyze_landscape_structured(
         topic=request.get("topic", ""),
@@ -824,7 +824,7 @@ def analyze_landscape_skill(payload: AnalyzeLandscapeSkillInput) -> SkillEnvelop
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
     diagnostics = result.get("diagnostics") if isinstance(result.get("diagnostics"), dict) else {}
     if status == "error":
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="analyze_landscape",
             request=request,
             error=str(result.get("error_code") or "analyze_landscape_failed"),
@@ -832,7 +832,7 @@ def analyze_landscape_skill(payload: AnalyzeLandscapeSkillInput) -> SkillEnvelop
             diagnostics=diagnostics,
         )
     if status == "empty":
-        return build_empty_envelope(
+        return build_tool_empty_envelope(
             tool="analyze_landscape",
             request=request,
             empty_reason=str(diagnostics.get("empty_reason") or "no_landscape_data"),
@@ -843,7 +843,7 @@ def analyze_landscape_skill(payload: AnalyzeLandscapeSkillInput) -> SkillEnvelop
     evidence = _evidence_from_records(result.get("evidence", []) or [], max_items=12)
     data = dict(data)
     data.setdefault("raw_output", _format_landscape_result(result))
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool="analyze_landscape",
         status="ok",
         request=request,
@@ -851,3 +851,5 @@ def analyze_landscape_skill(payload: AnalyzeLandscapeSkillInput) -> SkillEnvelop
         evidence=evidence,
         diagnostics={**diagnostics, "evidence_count": len(evidence)},
     )
+
+

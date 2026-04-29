@@ -18,12 +18,12 @@ from typing import Any
 from services.db import get_conn, put_conn
 
 try:
-    from agent.skills.embeddings import get_query_embedding
+    from agent.tools.embeddings import get_query_embedding
 except Exception:  # pragma: no cover
     get_query_embedding = None  # type: ignore[assignment]
 
 try:
-    from agent.skills.recall_profile import resolve_recall_profile
+    from agent.tools.recall_profile import resolve_recall_profile
 except Exception:  # pragma: no cover
     resolve_recall_profile = None  # type: ignore[assignment]
 
@@ -677,20 +677,20 @@ def _pack_default(cluster_docs: list[dict[str, Any]], pool_size: int) -> tuple[l
 
 
 def pack_cluster(task: dict[str, Any], cluster_docs: list[dict[str, Any]], *, pool_size: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    skill = str(task.get("skill", "")).strip()
+    tool = str(task.get("tool", "")).strip()
     scenario = str(task.get("scenario", "")).strip().lower()
     pool_size = max(1, min(12, max(8, int(pool_size))))
     strategy = "default_source_diverse"
     if scenario == "empty":
         selected, ok = _pack_default(cluster_docs, pool_size)
         strategy = "empty_negative_source_time"
-    elif skill == "compare_sources":
+    elif tool == "compare_sources":
         selected, ok = _pack_compare_sources(task, cluster_docs, pool_size)
         strategy = "source_stratified"
-    elif skill == "compare_topics":
+    elif tool == "compare_topics":
         selected, ok = _pack_compare_topics(cluster_docs, pool_size)
         strategy = "topic_balanced"
-    elif skill in {"build_timeline", "trend_analysis"}:
+    elif tool in {"build_timeline", "trend_analysis"}:
         selected, ok = _pack_timeline(cluster_docs, pool_size)
         strategy = "time_stratified"
     else:

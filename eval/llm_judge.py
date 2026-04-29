@@ -144,7 +144,7 @@ class LLMJudge:
     """Faithfulness and Answer Relevancy evaluator using LLM-as-a-Judge.
 
     Uses CoT prompting with 1-5 scoring scale, aligned with the
-    rag-evaluation skill's rubric.
+    rag-evaluation tool's rubric.
 
     Parameters
     ----------

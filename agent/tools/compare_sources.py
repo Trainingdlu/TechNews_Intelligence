@@ -1,13 +1,13 @@
-"""Compare-sources skill implementation and structured adapter."""
+﻿"""Compare-sources tool implementation and structured adapter."""
 
 from __future__ import annotations
 
 from services.db import get_conn, put_conn
 
-from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from .helpers import _clamp_int, _evidence_from_records
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
-from .schemas import CompareSourcesSkillInput
+from .schemas import CompareSourcesToolInput
 from .semantic_pool import fetch_semantic_url_pool
 
 
@@ -231,14 +231,14 @@ def compare_sources(topic: str, days: int = 14) -> str:
     return _format_compare_sources_result(_compare_sources_structured(topic, days=days))
 
 
-def compare_sources_skill(payload: CompareSourcesSkillInput) -> SkillEnvelope:
+def compare_sources_tool(payload: CompareSourcesToolInput) -> ToolEnvelope:
     request = payload.model_dump(mode="python")
     result = _compare_sources_structured(topic=request["topic"], days=int(request.get("days", 14)))
     status = str(result.get("status") or "error")
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
     diagnostics = result.get("diagnostics") if isinstance(result.get("diagnostics"), dict) else {}
     if status == "error":
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="compare_sources",
             request=request,
             error=str(result.get("error_code") or "compare_sources_failed"),
@@ -246,7 +246,7 @@ def compare_sources_skill(payload: CompareSourcesSkillInput) -> SkillEnvelope:
             diagnostics=diagnostics,
         )
     if status == "empty":
-        return build_empty_envelope(
+        return build_tool_empty_envelope(
             tool="compare_sources",
             request=request,
             empty_reason=str(diagnostics.get("empty_reason") or "no_comparison_data"),
@@ -257,7 +257,7 @@ def compare_sources_skill(payload: CompareSourcesSkillInput) -> SkillEnvelope:
     evidence = _evidence_from_records(result.get("evidence", []) or [], max_items=6)
     data = dict(data)
     data.setdefault("raw_output", _format_compare_sources_result(result))
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool="compare_sources",
         status="ok",
         request=request,
@@ -265,3 +265,5 @@ def compare_sources_skill(payload: CompareSourcesSkillInput) -> SkillEnvelope:
         evidence=evidence,
         diagnostics={**diagnostics, "evidence_count": len(evidence)},
     )
+
+

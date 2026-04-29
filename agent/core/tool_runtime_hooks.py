@@ -1,15 +1,15 @@
-"""Pre/Post hooks for structured skill execution auditing."""
+﻿"""Pre/Post hooks for structured tool execution auditing."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Literal
 
-from .skill_contracts import SkillEnvelope
+from .tool_contracts import ToolEnvelope
 
 HookAction = Literal["allow", "warn", "deny"]
 PreHook = Callable[[str, dict[str, Any]], "HookDecision"]
-PostHook = Callable[[str, dict[str, Any], SkillEnvelope], "HookDecision"]
+PostHook = Callable[[str, dict[str, Any], ToolEnvelope], "HookDecision"]
 
 
 @dataclass
@@ -22,8 +22,8 @@ class HookDecision:
     diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
-class ToolHookRunner:
-    """Runs pre/post hooks around skill dispatch."""
+class ToolRuntimeHooks:
+    """Runs pre/post hooks around tool dispatch."""
 
     def __init__(
         self,
@@ -49,7 +49,7 @@ class ToolHookRunner:
         self,
         tool_name: str,
         payload: dict[str, Any],
-        output: SkillEnvelope,
+        output: ToolEnvelope,
     ) -> HookDecision:
         warnings: list[str] = []
         diagnostics: dict[str, Any] = {}
@@ -126,7 +126,7 @@ class ToolHookRunner:
                     diagnostics={"topic": topic},
                 )
 
-        # Generic days range guard for time-windowed skills
+        # Generic days range guard for time-windowed tools
         if tool_name in {"compare_sources", "compare_topics", "build_timeline", "analyze_landscape"}:
             raw_days = payload.get("days")
             if raw_days is not None:
@@ -151,34 +151,37 @@ class ToolHookRunner:
     def _post_evidence_guard(
         tool_name: str,
         payload: dict[str, Any],
-        output: SkillEnvelope,
+        output: ToolEnvelope,
     ) -> HookDecision:
         del payload
 
         if output.status == "ok":
             evidence_count = len(output.evidence)
+            from .tool_catalog import iter_tool_definitions
+
             evidence_tools = {
-                "query_news", "trend_analysis", "search_news",
-                "compare_sources", "compare_topics", "build_timeline",
-                "analyze_landscape", "fulltext_batch",
+                definition.name
+                for definition in iter_tool_definitions()
+                if definition.requires_evidence
             }
             if evidence_count == 0 and tool_name in evidence_tools:
                 return HookDecision(
                     action="warn",
-                    reason="no_evidence_urls_in_skill_output",
+                    reason="no_evidence_urls_in_tool_output",
                     diagnostics={"tool": tool_name, "status": output.status},
                 )
         if output.status == "empty" and "empty_reason" not in output.diagnostics:
             return HookDecision(
                 action="warn",
-                reason="missing_empty_reason_in_skill_output",
+                reason="missing_empty_reason_in_tool_output",
                 diagnostics={"tool": tool_name, "status": output.status},
             )
         if output.status == "error" and not (output.error_code or output.diagnostics.get("error_code")):
             return HookDecision(
                 action="warn",
-                reason="missing_error_code_in_skill_output",
+                reason="missing_error_code_in_tool_output",
                 diagnostics={"tool": tool_name, "status": output.status},
             )
 
         return HookDecision(action="allow")
+

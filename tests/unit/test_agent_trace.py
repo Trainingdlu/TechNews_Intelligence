@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agent.core.skill_contracts import SkillEnvelope, SkillEvidence
+from agent.core.tool_contracts import ToolEnvelope, ToolEvidence
 from agent.core.trace import (
     finalize_request_trace,
     request_trace_context,
@@ -23,19 +23,19 @@ def test_trace_records_tool_success_empty_and_error() -> None:
         evt_ok = trace_tool_start("query_news", {"query": "openai", "days": 7})
         trace_tool_finish_with_envelope(
             evt_ok,
-            SkillEnvelope(
+            ToolEnvelope(
                 tool="query_news",
                 status="ok",
                 request={"query": "openai", "days": 7},
                 data={"records": [{"title": "a"}]},
-                evidence=[SkillEvidence(url="https://a.example.com")],
+                evidence=[ToolEvidence(url="https://a.example.com")],
             ),
         )
 
         evt_empty = trace_tool_start("query_news", {"query": "unknown", "days": 7})
         trace_tool_finish_with_envelope(
             evt_empty,
-            SkillEnvelope(
+            ToolEnvelope(
                 tool="query_news",
                 status="empty",
                 request={"query": "unknown", "days": 7},

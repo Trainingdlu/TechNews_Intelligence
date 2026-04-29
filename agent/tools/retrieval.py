@@ -1,4 +1,4 @@
-"""Low-level retrieval primitives for skills."""
+"""Low-level retrieval primitives for tools."""
 
 from __future__ import annotations
 
@@ -116,7 +116,7 @@ def lookup_candidates_by_query(
     limit: int = 5,
     rerank_mode: str | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Return unified retrieval candidates for query-driven skills."""
+    """Return unified retrieval candidates for query-driven tools."""
     query_clean = (query or "").strip()
     recall_profile = resolve_recall_profile()
     resolved_mode = resolve_rerank_mode(

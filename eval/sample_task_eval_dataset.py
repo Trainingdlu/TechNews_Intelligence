@@ -37,9 +37,9 @@ def _scenario(task_type: str) -> str:
 
 
 def _strata_key(case: dict[str, Any]) -> tuple[str, str]:
-    skill = str(case.get("skill", "")).strip() or "unknown_skill"
+    tool = str(case.get("tool", "")).strip() or "unknown_tool"
     scenario = _scenario(str(case.get("task_type", "")).strip())
-    return skill, scenario
+    return tool, scenario
 
 
 def _build_quotas(

@@ -1,4 +1,4 @@
-"""Skill contracts and envelope schema for structured tool execution."""
+﻿"""tool contracts and envelope schema for structured tool execution."""
 
 from __future__ import annotations
 
@@ -7,12 +7,12 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-SKILL_SCHEMA_VERSION = "1.0"
-SkillStatus = Literal["ok", "empty", "error"]
+TOOL_SCHEMA_VERSION = "1.0"
+ToolStatus = Literal["ok", "empty", "error"]
 
 
-class SkillEvidence(BaseModel):
-    """Evidence metadata attached to structured skill outputs."""
+class ToolEvidence(BaseModel):
+    """Evidence metadata attached to structured tool outputs."""
 
     url: str
     title: str | None = None
@@ -26,15 +26,15 @@ class SkillEvidence(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class SkillEnvelope(BaseModel):
-    """Unified output envelope for all skills."""
+class ToolEnvelope(BaseModel):
+    """Unified output envelope for all tools."""
 
-    schema_version: str = SKILL_SCHEMA_VERSION
+    schema_version: str = TOOL_SCHEMA_VERSION
     tool: str
-    status: SkillStatus
+    status: ToolStatus
     request: dict[str, Any] = Field(default_factory=dict)
     data: dict[str, Any] | list[Any] | None = None
-    evidence: list[SkillEvidence] = Field(default_factory=list)
+    evidence: list[ToolEvidence] = Field(default_factory=list)
     diagnostics: dict[str, Any] = Field(default_factory=dict)
     error_code: str | None = None
     error: str | None = None
@@ -46,7 +46,7 @@ class SkillEnvelope(BaseModel):
         return json.dumps(self.to_dict(), ensure_ascii=False)
 
 
-def build_error_envelope(
+def build_tool_error_envelope(
     tool: str,
     request: dict[str, Any],
     error: str,
@@ -54,13 +54,13 @@ def build_error_envelope(
     *,
     error_code: str | None = None,
     data: dict[str, Any] | list[Any] | None = None,
-) -> SkillEnvelope:
+) -> ToolEnvelope:
     """Build a standardized error envelope."""
 
     normalized_code = _normalize_error_code(error_code or error)
     merged_diagnostics = dict(diagnostics or {})
     merged_diagnostics.setdefault("error_code", normalized_code)
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool=tool,
         status="error",
         request=request,
@@ -71,19 +71,19 @@ def build_error_envelope(
     )
 
 
-def build_empty_envelope(
+def build_tool_empty_envelope(
     tool: str,
     request: dict[str, Any],
     empty_reason: str,
     data: dict[str, Any] | list[Any] | None = None,
     diagnostics: dict[str, Any] | None = None,
-) -> SkillEnvelope:
+) -> ToolEnvelope:
     """Build a standardized empty-result envelope."""
 
     merged_diagnostics = dict(diagnostics or {})
     merged_diagnostics.setdefault("empty_reason", empty_reason)
     merged_diagnostics.setdefault("evidence_count", 0)
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool=tool,
         status="empty",
         request=request,
@@ -96,7 +96,7 @@ def build_empty_envelope(
 def _normalize_error_code(value: str) -> str:
     raw = str(value or "").strip().lower()
     if not raw:
-        return "skill_error"
+        return "tool_error"
     chars = []
     for char in raw:
         if char.isalnum():
@@ -105,7 +105,8 @@ def _normalize_error_code(value: str) -> str:
             chars.append("_")
     code = "_".join(part for part in "".join(chars).split("_") if part)
     if not code:
-        return "skill_error"
+        return "tool_error"
     if len(code) > 80:
-        return "skill_error"
+        return "tool_error"
     return code
+

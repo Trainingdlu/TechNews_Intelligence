@@ -1,4 +1,4 @@
-"""Second-stage reranking utilities for retrieval-oriented skills."""
+"""Second-stage reranking utilities for retrieval-oriented tools."""
 
 from __future__ import annotations
 

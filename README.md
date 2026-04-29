@@ -117,7 +117,7 @@
 
 ### 运行时架构
 
-系统采用统一的 ReAct 智能体单循环架构，LLM 拥有完全的工具调用自主权。工具执行通过 SkillRegistry（技能注册中心）统一分发，并由 ToolHookRunner 在执行前后插入参数校验与证据审计守卫。每次请求自动绑定 `AgentRequestTrace`，记录工具调用链、延迟与 Token 用量，并在请求结束后持久化至 `agent_runs` / `agent_tool_events` 表。当证据不足或来源冲突时，Clarification HITL 机制会中断生成并返回结构化澄清问题，由用户补充范围后再继续。
+系统采用统一的 ReAct 智能体单循环架构，LLM 拥有完全的工具调用自主权。工具执行通过框架无关的 `ToolRuntime` 统一入口完成，并由 `ToolRegistry` 分发、`ToolRuntimeHooks` 在执行前后插入参数校验与证据审计守卫。每次请求自动绑定 `AgentRequestTrace`，记录工具调用链、延迟与 Token 用量，并在请求结束后持久化至 `agent_runs` / `agent_tool_events` 表。当证据不足或来源冲突时，Clarification HITL 机制会中断生成并返回结构化澄清问题，由用户补充范围后再继续。
 
 ```text
 请求入口 (app/api.py / app/bot.py / app/cli.py)
@@ -129,14 +129,16 @@ request_trace_context() ── 绑定 AgentRequestTrace
 agent.py → LangGraph create_react_agent
   ↓  ↑ (tool calls)
 trace_tool_start()             ── 记录工具开始
-ToolHookRunner.pre_tool_use()  ── 参数校验
+ToolRuntime.execute()          ── 统一工具运行时入口
   ↓
-SkillRegistry.execute()        ── agent/skills/... (DB / Jina Rerank / 知识库能力)
+ToolRuntimeHooks.pre_tool_use()  ── 参数校验
   ↓
-ToolHookRunner.post_tool_use() ── 证据审计
+ToolRegistry.execute()         ── agent/tools/... (DB / Jina Rerank / 知识库能力)
+  ↓
+ToolRuntimeHooks.post_tool_use() ── 证据审计
 trace_tool_finish()            ── 记录工具结束与输出摘要
   ↓
-SkillEnvelope → Evidence 累积
+ToolEnvelope → Evidence 累积
   ↓
 LLM 生成最终回复 → Token 用量采集
   ↓
@@ -149,7 +151,7 @@ finalize_request_trace()       ── Trace 持久化至 DB
 
 ### 工具体系
 
-智能体拥有 11 个工具，通过 SkillRegistry 分发，均有 Pydantic 输入验证和 SkillEnvelope 结构化输出：
+智能体拥有 11 个工具，通过 `ToolCatalog` 统一定义，并由 `ToolRuntime` / `ToolRegistry` 分发，均有 Pydantic 输入验证和 `ToolEnvelope` 结构化输出：
 
 | 工具 | 用途 |
 | :--- | :--- |
@@ -173,13 +175,15 @@ finalize_request_trace()       ── Trace 持久化至 DB
 
 | 组件 | 文件 | 职责 |
 | :--- | :--- | :--- |
-| SkillRegistry | `core/skill_registry.py` | 技能注册与执行：Pydantic 输入验证 → handler 调用 → SkillEnvelope 输出标准化 |
-| SkillEnvelope | `core/skill_contracts.py` | 统一输出信封：`status`(ok/empty/error) + `data` + `evidence[]` + `diagnostics` |
-| ToolHookRunner | `core/tool_hooks.py` | Pre-hook 参数守卫（时间窗口范围、topic 非空、去重校验）；Post-hook 证据完整性审计 |
+| ToolCatalog | `core/tool_catalog.py` | 工具唯一真相源：名称、输入模型、handler、description、capability、tool_group、证据要求与意图适配 |
+| ToolRuntime | `core/tool_runtime.py` | 框架无关执行入口：input validation、hook、handler dispatch、trace、evidence 累积 |
+| ToolRegistry | `core/tool_registry.py` | 工具注册与执行：Pydantic 输入验证 → handler 调用 → ToolEnvelope 输出标准化 |
+| ToolEnvelope | `core/tool_contracts.py` | 统一输出信封：`status`(ok/empty/error) + `data` + `evidence[]` + `diagnostics` |
+| ToolRuntimeHooks | `core/tool_runtime_hooks.py` | Pre-hook 参数守卫（时间窗口范围、topic 非空、去重校验）；Post-hook 证据完整性审计 |
 | Evidence Pipeline | `core/evidence.py` | URL 提取 → 内联引用编号 → 来源列表渲染 → 无效引用清洗 |
 | Agent Trace | `core/trace.py` | 请求级追踪：工具调用事件记录、Token 用量采集、异常链捕获、摘要持久化 |
 | Trace Store | `services/agent_trace_store.py` | Trace 持久化适配器：将 `AgentRequestTrace` 摘要写入 `agent_runs` + `agent_tool_events` 表 |
-| Rerank | `skills/rerank.py` | 二次精排：Jina LLM Rerank（`jina-reranker-v3`），支持环境变量配置与 fallback |
+| Rerank | `tools/rerank.py` | 二次精排：Jina LLM Rerank（`jina-reranker-v3`），支持环境变量配置与 fallback |
 | Clarification HITL | `clarification.py` | 证据不足 / 范围模糊 / 来源冲突检测 → 结构化澄清问题生成 → 用户追问自动合并 |
 | Thread Persistence | `services/conversations.py` | 对话线程持久化：创建线程、追加消息、加载历史、按 channel 列举 |
 | Metrics | `core/metrics.py` | 运行时指标：请求量、成功率、错误率、递归超限率、Trace 指标，自动日志输出 |
@@ -237,8 +241,9 @@ TechNews_Intelligence/
 │   ├── agent.py                     # ReAct 运行时主入口
 │   ├── clarification.py             # Clarification HITL：范围/冲突检测 + 结构化澄清
 │   ├── prompts.py                   # 系统提示词与约束
-│   ├── skills/                      # 具体技能实现代码（含 rerank.py 二次精排）
-│   ├── core/                        # skill registry / hooks / evidence / metrics / trace
+│   ├── tools/                       # 具体工具实现代码（含 rerank.py 二次精排）
+│   ├── tool_adapters/               # LangChain / 未来 MCP 等外部框架适配层
+│   ├── core/                        # tool runtime / registry / hooks / evidence / metrics / trace
 │   ├── mcp/                         # MCP 扩展层
 │   ├── .env.example
 
@@ -360,6 +365,5 @@ python -m app.cli
 
 ## 5. 开源协议
 本项目采用 GNU AGPLv3 协议。
-
 
 

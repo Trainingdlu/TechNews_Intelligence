@@ -1,14 +1,14 @@
-"""Search-news skill implementation and structured adapter."""
+﻿"""Search-news tool implementation and structured adapter."""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
-from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _json_text
 from .retrieval import lookup_candidates_by_query
-from .schemas import SearchNewsSkillInput
+from .schemas import SearchNewsToolInput
 
 
 def _format_search_news_text(records: list[dict[str, Any]]) -> str:
@@ -131,7 +131,7 @@ def search_news(
         return f"search_news failed: {exc}"
 
 
-def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
+def search_news_tool(payload: SearchNewsToolInput) -> ToolEnvelope:
     request = payload.model_dump(mode="python")
     try:
         raw_output = search_news(
@@ -140,7 +140,7 @@ def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
             response_format="json",
         )
     except Exception as exc:
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="search_news",
             request=request,
             error="search_news_execution_failed",
@@ -150,7 +150,7 @@ def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
     try:
         parsed = json.loads(raw_output)
     except Exception as exc:
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="search_news",
             request=request,
             error="search_news_json_parse_failed",
@@ -166,7 +166,7 @@ def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
     if not isinstance(rerank_meta, dict):
         rerank_meta = {}
     if status == "error":
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="search_news",
             request=request,
             error=str(parsed.get("error") or "search_news_failed"),
@@ -175,7 +175,7 @@ def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
         )
 
     if status == "empty":
-        return build_empty_envelope(
+        return build_tool_empty_envelope(
             tool="search_news",
             request=request,
             empty_reason="no_related_news",
@@ -192,7 +192,7 @@ def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
     records_raw = parsed.get("records")
     records = records_raw if isinstance(records_raw, list) else []
     evidence = _evidence_from_records(records, max_items=5)
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool="search_news",
         status="ok",
         request=request,
@@ -208,3 +208,5 @@ def search_news_skill(payload: SearchNewsSkillInput) -> SkillEnvelope:
             "rerank": rerank_meta,
         },
     )
+
+

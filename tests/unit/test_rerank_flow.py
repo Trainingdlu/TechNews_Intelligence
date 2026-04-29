@@ -1,4 +1,4 @@
-"""Unit tests for rerank integration on search/retrieval paths."""
+﻿"""Unit tests for rerank integration on search/retrieval paths."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from unittest.mock import patch
 
 import requests
 
-from agent.skills import fulltext_batch as fulltext_mod
-from agent.skills import rerank as rerank_mod
-from agent.skills import retrieval as retrieval_mod
-from agent.skills import search_news as search_news_mod
+from agent.tools import fulltext_batch as fulltext_mod
+from agent.tools import rerank as rerank_mod
+from agent.tools import retrieval as retrieval_mod
+from agent.tools import search_news as search_news_mod
 
 
 class _FakeCursor:
@@ -217,7 +217,7 @@ def test_search_news_rerank_failure_fallbacks_to_recall_order() -> None:
     assert payload["rerank"]["fallback"] is True
 
 
-def test_search_news_skill_keeps_rerank_meta_in_diagnostics() -> None:
+def test_search_news_tool_keeps_rerank_meta_in_diagnostics() -> None:
     candidates = [
         _candidate(
             title="Title B",
@@ -249,7 +249,7 @@ def test_search_news_skill_keeps_rerank_meta_in_diagnostics() -> None:
     }
 
     with patch.object(search_news_mod, "lookup_candidates_by_query", lambda **_kwargs: (candidates, rerank_meta)):
-        envelope = search_news_mod.search_news_skill(search_news_mod.SearchNewsSkillInput(query="OpenAI", days=7))
+        envelope = search_news_mod.search_news_tool(search_news_mod.SearchNewsToolInput(query="OpenAI", days=7))
 
     assert envelope.status == "ok"
     assert envelope.diagnostics["rerank"]["rerank_mode"] == "llm_rerank"
@@ -296,7 +296,7 @@ def test_lookup_candidates_by_query_accepts_extended_hybrid_columns_without_reor
             "TechCrunch",
             datetime(2026, 4, 10, 10, 0, 0),
             10,
-            2.0,   # score/final_score (排序字段)
+            2.0,   # score/final_score (鎺掑簭瀛楁)
             0.2,   # text_score
             0.3,   # semantic_score
             0.1,   # exact_score
@@ -314,7 +314,7 @@ def test_lookup_candidates_by_query_accepts_extended_hybrid_columns_without_reor
             4.0,   # text_score
             0.9,   # semantic_score
             3.0,   # exact_score
-            0.9,   # match_score (更高，但不影响查询排序)
+            0.9,   # match_score (鏇撮珮锛屼絾涓嶅奖鍝嶆煡璇㈡帓搴?
         ),
     ]
     fake_conn = _FakeConn(rows)
@@ -510,7 +510,7 @@ def test_fulltext_batch_text_output_hides_rerank_debug_line() -> None:
     assert "[Rerank]" not in text
 
 
-def test_fulltext_batch_skill_exposes_rerank_meta_in_diagnostics() -> None:
+def test_fulltext_batch_tool_exposes_rerank_meta_in_diagnostics() -> None:
     payload = {
         "tool": "fulltext_batch",
         "status": "ok",
@@ -532,8 +532,10 @@ def test_fulltext_batch_skill_exposes_rerank_meta_in_diagnostics() -> None:
         ],
     }
     with patch.object(fulltext_mod, "fulltext_batch", lambda **_kwargs: json.dumps(payload, ensure_ascii=False)):
-        envelope = fulltext_mod.fulltext_batch_skill(fulltext_mod.FulltextBatchSkillInput(urls="OpenAI", max_chars_per_article=2000))
+        envelope = fulltext_mod.fulltext_batch_tool(fulltext_mod.FulltextBatchToolInput(urls="OpenAI", max_chars_per_article=2000))
 
     assert envelope.status == "ok"
     assert envelope.diagnostics["rerank"]["rerank_mode"] == "llm_rerank"
     assert envelope.diagnostics["rerank"]["candidate_count"] == 6
+
+

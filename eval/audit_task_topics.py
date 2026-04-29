@@ -88,7 +88,7 @@ def _base_result(task: dict[str, Any]) -> dict[str, Any]:
     sampling = _sampling(task)
     return {
         "task_id": str(task.get("task_id", "")),
-        "skill": str(task.get("skill", "")),
+        "tool": str(task.get("tool", "")),
         "scenario": str(task.get("scenario", "")).strip().lower(),
         "retrieval_mode": str(task.get("retrieval_mode", "")).strip().lower(),
         "should_clarify": bool(task.get("should_clarify", False)),
@@ -121,7 +121,7 @@ def _is_placeholder(text: str) -> bool:
 
 
 def _main_tool_args_match(task: dict[str, Any]) -> list[dict[str, Any]]:
-    skill = str(task.get("skill", "")).strip()
+    tool = str(task.get("tool", "")).strip()
     expected_args = _params(task)
     mismatches: list[dict[str, Any]] = []
     paths = task.get("acceptable_tool_paths", [])
@@ -131,7 +131,7 @@ def _main_tool_args_match(task: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(path, list):
             continue
         for step_idx, step in enumerate(path, 1):
-            if not isinstance(step, dict) or str(step.get("tool", "")).strip() != skill:
+            if not isinstance(step, dict) or str(step.get("tool", "")).strip() != tool:
                 continue
             args = step.get("args", {})
             if args != expected_args:
@@ -267,7 +267,7 @@ def audit_task_with_sample(
     result = audit_task_config(task)
     issues = result["issues"]
     warnings = result["warnings"]
-    skill = result["skill"]
+    tool = result["tool"]
     scenario = result["scenario"]
     retrieval_evaluable = result["retrieval_mode"] == "evaluable"
 
@@ -320,7 +320,7 @@ def audit_task_with_sample(
                 )
             )
 
-    if retrieval_evaluable and skill == "compare_sources":
+    if retrieval_evaluable and tool == "compare_sources":
         missing = {
             source: source_counts.get(source, 0)
             for source in result["sources"]
@@ -336,7 +336,7 @@ def audit_task_with_sample(
                 )
             )
 
-    if retrieval_evaluable and skill == "compare_topics":
+    if retrieval_evaluable and tool == "compare_topics":
         side_counts = _topic_side_counts(candidates)
         result["coverage"]["topic_side_counts"] = side_counts
         if side_counts["A"] < MIN_TOPIC_SIDE_DOCS or side_counts["B"] < MIN_TOPIC_SIDE_DOCS:
@@ -362,7 +362,7 @@ def audit_task_with_sample(
                 )
             )
 
-    if retrieval_evaluable and skill in {"build_timeline", "trend_analysis"}:
+    if retrieval_evaluable and tool in {"build_timeline", "trend_analysis"}:
         if date_count < 3:
             issues.append(
                 _issue(
@@ -372,7 +372,7 @@ def audit_task_with_sample(
                     minimum=3,
                 )
             )
-        if skill == "trend_analysis":
+        if tool == "trend_analysis":
             trend_counts = _trend_window_counts(task, candidates)
             result["coverage"]["trend_window_counts"] = trend_counts
             if trend_counts["current_window_docs"] == 0 or trend_counts["previous_window_docs"] == 0:
@@ -384,7 +384,7 @@ def audit_task_with_sample(
                     )
                 )
 
-    if retrieval_evaluable and skill == "analyze_landscape":
+    if retrieval_evaluable and tool == "analyze_landscape":
         entity_counts = _entity_coverage(task, candidates)
         active = sum(1 for count in entity_counts.values() if count > 0)
         result["coverage"]["entity_counts"] = entity_counts
@@ -486,7 +486,7 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = _parse_args()
-    task_types = load_task_types(args.task_file, strict_skill=False, enforce_coverage_policy=False)
+    task_types = load_task_types(args.task_file, strict_tool=False, enforce_coverage_policy=False)
     report = run_topic_audit(
         task_types,
         runtime=not bool(args.static_only),

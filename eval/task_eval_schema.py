@@ -1,4 +1,4 @@
-"""Task-driven evaluation schema.
+﻿"""Task-driven evaluation schema.
 
 This module is intentionally isolated from legacy capability pipelines.
 """
@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from agent.core.skill_catalog import iter_skill_definitions
+    from agent.core.tool_catalog import iter_tool_definitions
 except Exception:  # pragma: no cover
-    iter_skill_definitions = None  # type: ignore[assignment]
+    iter_tool_definitions = None  # type: ignore[assignment]
 
 
 VALID_RETRIEVAL_MODES = {"evaluable", "non_retrieval"}
@@ -40,7 +40,7 @@ SCENARIO_COVERAGE_POLICY: dict[str, set[str]] = {
 
 TASK_TYPE_REQUIRED_FIELDS = (
     "task_id",
-    "skill",
+    "tool",
     "intent_label",
     "retrieval_mode",
     "scenario",
@@ -54,7 +54,7 @@ CASE_REQUIRED_FIELDS = (
     "pool_id",
     "input_news_pool_hash",
     "task_type",
-    "skill",
+    "tool",
     "intent_label",
     "input_news_pool",
     "expected_question",
@@ -72,13 +72,25 @@ CASE_REQUIRED_FIELDS = (
 )
 
 
-def _available_skills() -> set[str]:
-    if iter_skill_definitions is None:
+def _available_tools() -> set[str]:
+    if iter_tool_definitions is None:
         return set()
     try:
-        return {row.name for row in iter_skill_definitions()}
+        return {row.name for row in iter_tool_definitions()}
     except Exception:
         return set()
+
+
+def _tool_capability(tool: str) -> str:
+    if iter_tool_definitions is None:
+        return ""
+    try:
+        for row in iter_tool_definitions():
+            if row.name == tool:
+                return str(getattr(row, "capability", "") or "").strip()
+    except Exception:
+        return ""
+    return ""
 
 
 def _as_non_empty_str(value: Any, field: str) -> str:
@@ -198,13 +210,13 @@ def _normalize_sampling(raw: Any) -> dict[str, Any]:
     }
 
 
-def normalize_task_type(raw: dict[str, Any], *, strict_skill: bool = True) -> dict[str, Any]:
+def normalize_task_type(raw: dict[str, Any], *, strict_tool: bool = True) -> dict[str, Any]:
     for field in TASK_TYPE_REQUIRED_FIELDS:
         if field not in raw:
             raise ValueError(f"task_type missing required field: {field}")
 
     task_id = _as_non_empty_str(raw.get("task_id"), "task_id")
-    skill = _as_non_empty_str(raw.get("skill"), "skill")
+    tool = _as_non_empty_str(raw.get("tool"), "tool")
     intent_label = _as_non_empty_str(raw.get("intent_label"), "intent_label")
     retrieval_mode = _as_non_empty_str(raw.get("retrieval_mode"), "retrieval_mode").lower()
     scenario = _as_non_empty_str(raw.get("scenario"), "scenario").lower()
@@ -224,9 +236,9 @@ def normalize_task_type(raw: dict[str, Any], *, strict_skill: bool = True) -> di
     if scenario not in VALID_SCENARIOS:
         raise ValueError(f"task_type {task_id}: invalid scenario={scenario}")
 
-    available_skills = _available_skills()
-    if strict_skill and available_skills and skill not in available_skills:
-        raise ValueError(f"task_type {task_id}: unknown skill={skill}")
+    available_tools = _available_tools()
+    if strict_tool and available_tools and tool not in available_tools:
+        raise ValueError(f"task_type {task_id}: unknown tool={tool}")
 
     path_tools = {
         str(call.get("tool", "")).strip()
@@ -235,16 +247,16 @@ def normalize_task_type(raw: dict[str, Any], *, strict_skill: bool = True) -> di
     }
     if not path_tools:
         raise ValueError(f"task_type {task_id}: acceptable_tool_paths cannot be empty.")
-    if skill not in path_tools:
-        raise ValueError(f"task_type {task_id}: acceptable_tool_paths must include skill={skill}")
-    if strict_skill and available_skills:
-        unknown = sorted(tool for tool in path_tools if tool not in available_skills)
+    if tool not in path_tools:
+        raise ValueError(f"task_type {task_id}: acceptable_tool_paths must include tool={tool}")
+    if strict_tool and available_tools:
+        unknown = sorted(tool for tool in path_tools if tool not in available_tools)
         if unknown:
             raise ValueError(f"task_type {task_id}: unknown tools in paths={unknown}")
 
-    required_tools = _as_str_list(raw.get("required_tools", [skill]))
+    required_tools = _as_str_list(raw.get("required_tools", [tool]))
     if not required_tools:
-        required_tools = [skill]
+        required_tools = [tool]
     forbidden_tools = _as_str_list(raw.get("forbidden_tools", []))
     if set(required_tools).intersection(forbidden_tools):
         raise ValueError(f"task_type {task_id}: required_tools overlaps forbidden_tools.")
@@ -256,7 +268,8 @@ def normalize_task_type(raw: dict[str, Any], *, strict_skill: bool = True) -> di
 
     return {
         "task_id": task_id,
-        "skill": skill,
+        "tool": tool,
+        "capability": str(raw.get("capability") or _tool_capability(tool) or tool).strip(),
         "intent_label": intent_label,
         "retrieval_mode": retrieval_mode,
         "scenario": scenario,
@@ -273,20 +286,20 @@ def normalize_task_type(raw: dict[str, Any], *, strict_skill: bool = True) -> di
 
 
 def validate_task_type_scenario_coverage(task_types: list[dict[str, Any]]) -> None:
-    by_skill: dict[str, set[str]] = {}
+    by_tool: dict[str, set[str]] = {}
     for row in task_types:
-        skill = str(row.get("skill", "")).strip()
+        tool = str(row.get("tool", "")).strip()
         scenario = str(row.get("scenario", "")).strip().lower()
-        if not skill or not scenario:
+        if not tool or not scenario:
             continue
-        by_skill.setdefault(skill, set()).add(scenario)
+        by_tool.setdefault(tool, set()).add(scenario)
 
     missing: dict[str, list[str]] = {}
-    for skill, required in SCENARIO_COVERAGE_POLICY.items():
-        covered = by_skill.get(skill, set())
+    for tool, required in SCENARIO_COVERAGE_POLICY.items():
+        covered = by_tool.get(tool, set())
         missing_scenarios = sorted(required.difference(covered))
         if missing_scenarios:
-            missing[skill] = missing_scenarios
+            missing[tool] = missing_scenarios
     if missing:
         raise ValueError(f"task_type scenario coverage policy violated: {missing}")
 
@@ -294,7 +307,7 @@ def validate_task_type_scenario_coverage(task_types: list[dict[str, Any]]) -> No
 def load_task_types(
     path: Path,
     *,
-    strict_skill: bool = True,
+    strict_tool: bool = True,
     enforce_coverage_policy: bool = True,
 ) -> list[dict[str, Any]]:
     payload = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -306,7 +319,7 @@ def load_task_types(
     for idx, row in enumerate(payload, 1):
         if not isinstance(row, dict):
             raise ValueError(f"task_types[{idx}] must be object.")
-        normalized = normalize_task_type(row, strict_skill=strict_skill)
+        normalized = normalize_task_type(row, strict_tool=strict_tool)
         task_id = normalized["task_id"]
         if task_id in seen:
             raise ValueError(f"duplicate task_id: {task_id}")
@@ -494,7 +507,8 @@ def normalize_case(
         "pool_id": _as_non_empty_str(pool_id, "pool_id"),
         "input_news_pool_hash": input_news_pool_hash,
         "task_type": task_type["task_id"],
-        "skill": task_type["skill"],
+        "tool": task_type["tool"],
+        "capability": str(task_type.get("capability") or _tool_capability(task_type["tool"]) or task_type["tool"]).strip(),
         "intent_label": str(raw_case.get("intent_label", task_type["intent_label"])).strip() or task_type["intent_label"],
         "input_news_pool": input_news_pool,
         "expected_question": expected_question,
@@ -510,11 +524,11 @@ def normalize_case(
         "difficulty": difficulty,
         "tags": _as_str_list(raw_case.get("tags", task_type.get("tags", []))),
     }
-    validate_case(case, strict_skill=False)
+    validate_case(case, strict_tool=False)
     return case
 
 
-def validate_case(case: dict[str, Any], *, strict_skill: bool = True) -> None:
+def validate_case(case: dict[str, Any], *, strict_tool: bool = True) -> None:
     for field in CASE_REQUIRED_FIELDS:
         if field not in case:
             raise ValueError(f"case missing required field: {field}")
@@ -523,7 +537,7 @@ def validate_case(case: dict[str, Any], *, strict_skill: bool = True) -> None:
     _as_non_empty_str(case.get("pool_id"), f"{case_id}.pool_id")
     _as_non_empty_str(case.get("input_news_pool_hash"), f"{case_id}.input_news_pool_hash")
     _as_non_empty_str(case.get("task_type"), f"{case_id}.task_type")
-    skill = _as_non_empty_str(case.get("skill"), f"{case_id}.skill")
+    tool = _as_non_empty_str(case.get("tool"), f"{case_id}.tool")
     _as_non_empty_str(case.get("intent_label"), f"{case_id}.intent_label")
     expected_question = _as_non_empty_str(case.get("expected_question"), f"{case_id}.expected_question")
     expected_answer = _as_non_empty_str(case.get("expected_answer"), f"{case_id}.expected_answer")
@@ -532,9 +546,9 @@ def validate_case(case: dict[str, Any], *, strict_skill: bool = True) -> None:
     if not _contains_zh(expected_answer):
         raise ValueError(f"{case_id}: expected_answer must contain Chinese text.")
 
-    available_skills = _available_skills()
-    if strict_skill and available_skills and skill not in available_skills:
-        raise ValueError(f"{case_id}: unknown skill={skill}")
+    available_tools = _available_tools()
+    if strict_tool and available_tools and tool not in available_tools:
+        raise ValueError(f"{case_id}: unknown tool={tool}")
 
     input_news_pool = case.get("input_news_pool")
     if not isinstance(input_news_pool, list):
@@ -556,23 +570,23 @@ def validate_case(case: dict[str, Any], *, strict_skill: bool = True) -> None:
         case.get("expected_tool_paths"),
         field=f"{case_id}.expected_tool_paths",
     )
-    if strict_skill and available_skills:
+    if strict_tool and available_tools:
         unknown_tools = sorted(
             {
                 str(call.get("tool", "")).strip()
                 for path in expected_tool_paths
                 for call in path
-                if str(call.get("tool", "")).strip() not in available_skills
+                if str(call.get("tool", "")).strip() not in available_tools
             }
         )
         if unknown_tools:
             raise ValueError(f"{case_id}: unknown tools in expected_tool_paths={unknown_tools}")
-    if skill not in {
+    if tool not in {
         call["tool"]
         for path in expected_tool_paths
         for call in path
     }:
-        raise ValueError(f"{case_id}: expected_tool_paths must include skill={skill}.")
+        raise ValueError(f"{case_id}: expected_tool_paths must include tool={tool}.")
 
     required_tools = _as_str_list(case.get("required_tools"))
     if not required_tools:
@@ -666,7 +680,7 @@ def validate_case(case: dict[str, Any], *, strict_skill: bool = True) -> None:
         raise ValueError(f"{case_id}: tags must be list.")
 
 
-def load_cases_jsonl(path: Path, *, strict_skill: bool = False) -> list[dict[str, Any]]:
+def load_cases_jsonl(path: Path, *, strict_tool: bool = False) -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
     for idx, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
         text = line.strip()
@@ -678,8 +692,9 @@ def load_cases_jsonl(path: Path, *, strict_skill: bool = False) -> list[dict[str
             raise ValueError(f"invalid JSONL at line {idx}: {exc}") from exc
         if not isinstance(row, dict):
             raise ValueError(f"line {idx}: case must be object.")
-        validate_case(row, strict_skill=strict_skill)
+        validate_case(row, strict_tool=strict_tool)
         cases.append(row)
     if not cases:
         raise ValueError("empty case dataset.")
     return cases
+

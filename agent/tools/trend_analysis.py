@@ -1,4 +1,4 @@
-"""Trend-analysis skill implementation and structured adapter."""
+﻿"""Trend-analysis tool implementation and structured adapter."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from typing import Any
 
 from services.db import get_conn, put_conn
 
-from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _json_text
 from .query_news import query_news
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
-from .schemas import TrendAnalysisSkillInput
+from .schemas import TrendAnalysisToolInput
 from .semantic_pool import fetch_semantic_url_pool
 
 
@@ -177,7 +177,7 @@ def trend_analysis(topic: str, window: int = 7, response_format: str = "text") -
         put_conn(conn)
 
 
-def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
+def trend_analysis_tool(payload: TrendAnalysisToolInput) -> ToolEnvelope:
     request = payload.model_dump(mode="python")
     raw_output = trend_analysis(
         topic=request.get("topic", ""),
@@ -188,7 +188,7 @@ def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
     try:
         parsed = json.loads(raw_output)
     except Exception as exc:
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="trend_analysis",
             request=request,
             error="trend_analysis_json_parse_failed",
@@ -201,7 +201,7 @@ def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
 
     status = str(parsed.get("status", "error")).lower()
     if status not in {"ok", "empty", "error"}:
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="trend_analysis",
             request=request,
             error="trend_analysis_invalid_status",
@@ -209,7 +209,7 @@ def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
         )
 
     if status == "error":
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="trend_analysis",
             request=request,
             error="trend_analysis_failed",
@@ -218,7 +218,7 @@ def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
 
     data = parsed.get("data") if isinstance(parsed.get("data"), dict) else {}
     if status == "empty":
-        return build_empty_envelope(
+        return build_tool_empty_envelope(
             tool="trend_analysis",
             request=request,
             empty_reason="no_semantic_matches",
@@ -252,7 +252,7 @@ def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
             evidence_records = []
 
     evidence = _evidence_from_records(evidence_records, max_items=6)
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool="trend_analysis",
         status=status,
         request=request,
@@ -267,3 +267,5 @@ def trend_analysis_skill(payload: TrendAnalysisSkillInput) -> SkillEnvelope:
             "fallback": False,
         },
     )
+
+

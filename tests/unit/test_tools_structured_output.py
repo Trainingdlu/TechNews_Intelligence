@@ -1,4 +1,4 @@
-"""Unit tests for structured outputs in skill modules."""
+﻿"""Unit tests for structured outputs in tool modules."""
 
 from __future__ import annotations
 
@@ -7,24 +7,24 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from agent.core.skill_catalog import iter_skill_definitions
-from agent.core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
-from agent.skills import analyze_landscape as landscape_mod  # noqa: E402  pylint: disable=wrong-import-position
-from agent.skills import build_timeline as timeline_mod  # noqa: E402  pylint: disable=wrong-import-position
-from agent.skills import compare_sources as compare_sources_mod  # noqa: E402  pylint: disable=wrong-import-position
-from agent.skills import compare_topics as compare_topics_mod  # noqa: E402  pylint: disable=wrong-import-position
-from agent.skills import fulltext_batch as fulltext_mod  # noqa: E402  pylint: disable=wrong-import-position
-from agent.skills import helpers as helpers_mod  # noqa: E402  pylint: disable=wrong-import-position
-from agent.skills import query_news as query_news_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.core.tool_catalog import iter_tool_definitions
+from agent.core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
+from agent.tools import analyze_landscape as landscape_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.tools import build_timeline as timeline_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.tools import compare_sources as compare_sources_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.tools import compare_topics as compare_topics_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.tools import fulltext_batch as fulltext_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.tools import helpers as helpers_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.tools import query_news as query_news_mod  # noqa: E402  pylint: disable=wrong-import-position
 
-from agent.skills import trend_analysis as trend_mod  # noqa: E402  pylint: disable=wrong-import-position
-from agent.skills.schemas import (  # noqa: E402  pylint: disable=wrong-import-position
-    AnalyzeLandscapeSkillInput,
-    BuildTimelineSkillInput,
-    CompareSourcesSkillInput,
-    CompareTopicsSkillInput,
-    QueryNewsSkillInput,
-    TrendAnalysisSkillInput,
+from agent.tools import trend_analysis as trend_mod  # noqa: E402  pylint: disable=wrong-import-position
+from agent.tools.schemas import (  # noqa: E402  pylint: disable=wrong-import-position
+    AnalyzeLandscapeToolInput,
+    BuildTimelineToolInput,
+    CompareSourcesToolInput,
+    CompareTopicsToolInput,
+    QueryNewsToolInput,
+    TrendAnalysisToolInput,
 )
 
 
@@ -96,7 +96,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertTrue(helpers_mod._is_recent_timestamp(iso_value, cutoff))
 
     def test_extract_time_window_days_supports_week_and_month(self) -> None:
-        self.assertEqual(helpers_mod._extract_time_window_days("最近2周相关新闻", default=14), 14)
+        self.assertEqual(helpers_mod._extract_time_window_days("最近 1 周相关新闻", default=14), 7)
         self.assertEqual(helpers_mod._extract_time_window_days("past 1 month coverage", default=14), 30)
 
 
@@ -105,7 +105,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         rows = [
             (
                 "OpenAI launches X",
-                "[AI] OpenAI 发布 X",
+                "[AI] OpenAI 鍙戝竷 X",
                 "https://a.com",
                 "summary A",
                 "Positive",
@@ -178,7 +178,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(len(payload["articles"]), 2)
         self.assertEqual(payload["articles"][0]["url"], "https://a.com")
 
-    def test_query_news_skill_returns_envelope_with_evidence(self) -> None:
+    def test_query_news_tool_returns_envelope_with_evidence(self) -> None:
         query_payload = {
             "tool": "query_news",
             "status": "ok",
@@ -197,7 +197,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
                     "rank": 1,
                     "source": "TechCrunch",
                     "title": "OpenAI launches model",
-                    "title_cn": "[AI] OpenAI 发新模型",
+                    "title_cn": "[AI] OpenAI 鍙戞柊妯″瀷",
                     "url": "https://example.com/a",
                     "summary": "summary",
                     "sentiment": "Positive",
@@ -208,7 +208,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
             ],
         }
         with patch.object(query_news_mod, "query_news", lambda **_kwargs: json.dumps(query_payload)):
-            envelope = query_news_mod.query_news_skill(QueryNewsSkillInput(query="OpenAI", days=7, limit=3))
+            envelope = query_news_mod.query_news_tool(QueryNewsToolInput(query="OpenAI", days=7, limit=3))
 
         self.assertEqual(envelope.tool, "query_news")
         self.assertEqual(envelope.status, "ok")
@@ -217,7 +217,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(envelope.evidence[0].url, "https://example.com/a")
         self.assertEqual(envelope.evidence[0].score, 99.0)
 
-    def test_trend_analysis_skill_backfills_evidence(self) -> None:
+    def test_trend_analysis_tool_backfills_evidence(self) -> None:
         trend_payload = {
             "tool": "trend_analysis",
             "status": "ok",
@@ -257,7 +257,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
             patch.object(trend_mod, "trend_analysis", lambda **_kwargs: json.dumps(trend_payload)),
             patch.object(trend_mod, "query_news", lambda **_kwargs: json.dumps(evidence_payload)),
         ):
-            envelope = trend_mod.trend_analysis_skill(TrendAnalysisSkillInput(topic="OpenAI", window=7))
+            envelope = trend_mod.trend_analysis_tool(TrendAnalysisToolInput(topic="OpenAI", window=7))
 
         self.assertEqual(envelope.tool, "trend_analysis")
         self.assertEqual(envelope.status, "ok")
@@ -266,16 +266,16 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(envelope.evidence[0].url, "https://example.com/evidence")
 
     def test_envelope_helpers_add_stable_empty_and_error_contracts(self) -> None:
-        empty = build_empty_envelope("search_news", {"query": "x"}, "no_related_news")
+        empty = build_tool_empty_envelope("search_news", {"query": "x"}, "no_related_news")
         self.assertEqual(empty.status, "empty")
         self.assertEqual(empty.diagnostics["empty_reason"], "no_related_news")
 
-        error = build_error_envelope("search_news", {"query": "x"}, "search_news_failed")
+        error = build_tool_error_envelope("search_news", {"query": "x"}, "search_news_failed")
         self.assertEqual(error.status, "error")
         self.assertEqual(error.error_code, "search_news_failed")
         self.assertEqual(error.diagnostics["error_code"], "search_news_failed")
 
-        envelope = SkillEnvelope(
+        envelope = ToolEnvelope(
             tool="search_news",
             status="ok",
             request={},
@@ -293,12 +293,12 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(envelope.evidence[0].match_score, 0.91)
 
     def test_catalog_descriptions_are_specific_for_routing(self) -> None:
-        descriptions = {definition.name: definition.description for definition in iter_skill_definitions()}
+        descriptions = {definition.name: definition.description for definition in iter_tool_definitions()}
         self.assertIn("evidence", descriptions["search_news"].lower())
         self.assertIn("match-score", descriptions["compare_topics"].lower())
         self.assertIn("url", descriptions["read_news_content"].lower())
 
-    def test_compare_sources_skill_uses_structured_rows_for_evidence(self) -> None:
+    def test_compare_sources_tool_uses_structured_rows_for_evidence(self) -> None:
         now = datetime(2026, 3, 28, 10, 0, 0)
         fake_conn = _SequenceConn(
             [
@@ -319,8 +319,8 @@ class ToolStructuredOutputTests(unittest.TestCase):
             patch.object(compare_sources_mod, "put_conn", lambda _conn: None),
             patch.object(compare_sources_mod, "retrieve_and_rerank", lambda *_args, **_kwargs: ([], [], {})),
         ):
-            envelope = compare_sources_mod.compare_sources_skill(
-                CompareSourcesSkillInput(topic="OpenAI", days=14)
+            envelope = compare_sources_mod.compare_sources_tool(
+                CompareSourcesToolInput(topic="OpenAI", days=14)
             )
 
         self.assertEqual(envelope.status, "ok")
@@ -329,7 +329,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(envelope.evidence[0].match_score, 0.91)
         self.assertEqual(envelope.diagnostics["evidence_count"], 2)
 
-    def test_build_timeline_skill_uses_structured_events_for_evidence(self) -> None:
+    def test_build_timeline_tool_uses_structured_events_for_evidence(self) -> None:
         now = datetime(2026, 3, 28, 10, 0, 0)
         fake_conn = _SequenceConn(
             [
@@ -346,8 +346,8 @@ class ToolStructuredOutputTests(unittest.TestCase):
             patch.object(timeline_mod, "put_conn", lambda _conn: None),
             patch.object(timeline_mod, "retrieve_and_rerank", lambda *_args, **_kwargs: ([], [], {})),
         ):
-            envelope = timeline_mod.build_timeline_skill(
-                BuildTimelineSkillInput(topic="OpenAI", days=30, limit=3)
+            envelope = timeline_mod.build_timeline_tool(
+                BuildTimelineToolInput(topic="OpenAI", days=30, limit=3)
             )
 
         self.assertEqual(envelope.status, "ok")
@@ -371,7 +371,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
             ["https://example.com/shared", "https://example.com/b"],
         )
 
-    def test_compare_topics_skill_uses_structured_rows_for_evidence(self) -> None:
+    def test_compare_topics_tool_uses_structured_rows_for_evidence(self) -> None:
         now = datetime(2026, 3, 28, 10, 0, 0)
         fake_conn = _SequenceConn(
             [
@@ -395,8 +395,8 @@ class ToolStructuredOutputTests(unittest.TestCase):
             patch.object(compare_topics_mod, "get_conn", lambda: fake_conn),
             patch.object(compare_topics_mod, "put_conn", lambda _conn: None),
         ):
-            envelope = compare_topics_mod.compare_topics_skill(
-                CompareTopicsSkillInput(topic_a="OpenAI", topic_b="Anthropic", days=14)
+            envelope = compare_topics_mod.compare_topics_tool(
+                CompareTopicsToolInput(topic_a="OpenAI", topic_b="Anthropic", days=14)
             )
 
         self.assertEqual(envelope.status, "ok")
@@ -404,7 +404,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(envelope.evidence[0].url, "https://example.com/a")
         self.assertEqual(envelope.evidence[0].match_score, 0.92)
 
-    def test_analyze_landscape_skill_uses_structured_rows_for_evidence(self) -> None:
+    def test_analyze_landscape_tool_uses_structured_rows_for_evidence(self) -> None:
         now = datetime(2026, 3, 28, 10, 0, 0)
         fake_conn = _SequenceConn(
             [
@@ -433,11 +433,14 @@ class ToolStructuredOutputTests(unittest.TestCase):
             patch.object(landscape_mod, "put_conn", lambda _conn: None),
             patch.object(landscape_mod, "retrieve_and_rerank", lambda *_args, **_kwargs: ([], [], {})),
         ):
-            envelope = landscape_mod.analyze_landscape_skill(
-                AnalyzeLandscapeSkillInput(topic="", days=30, entities="OpenAI", limit_per_entity=1)
+            envelope = landscape_mod.analyze_landscape_tool(
+                AnalyzeLandscapeToolInput(topic="", days=30, entities="OpenAI", limit_per_entity=1)
             )
 
         self.assertEqual(envelope.status, "ok")
         self.assertEqual(envelope.data["coverage"]["matched_entity_articles"], 1)
         self.assertEqual(envelope.data["entity_stats"]["OpenAI"]["count"], 1)
         self.assertEqual(envelope.evidence[0].url, "https://example.com/openai")
+
+
+

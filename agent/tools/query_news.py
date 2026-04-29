@@ -1,4 +1,4 @@
-"""Query-news skill implementation and structured adapter."""
+﻿"""Query-news tool implementation and structured adapter."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import Any
 
 from services.db import get_conn, put_conn
 
-from ..core.skill_contracts import SkillEnvelope, build_empty_envelope, build_error_envelope
+from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from .helpers import _clamp_int, _evidence_from_records, _json_text, _source_to_db_label
-from .schemas import QueryNewsSkillInput
+from .schemas import QueryNewsToolInput
 
 
 def query_news(
@@ -126,7 +126,7 @@ def query_news(
         put_conn(conn)
 
 
-def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
+def query_news_tool(payload: QueryNewsToolInput) -> ToolEnvelope:
     request = payload.model_dump(mode="python")
     raw_output = query_news(
         query=request.get("query", ""),
@@ -142,7 +142,7 @@ def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
     try:
         parsed = json.loads(raw_output)
     except Exception as exc:
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="query_news",
             request=request,
             error="query_news_json_parse_failed",
@@ -155,7 +155,7 @@ def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
 
     status = str(parsed.get("status", "error")).lower()
     if status not in {"ok", "empty", "error"}:
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="query_news",
             request=request,
             error="query_news_invalid_status",
@@ -163,7 +163,7 @@ def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
         )
 
     if status == "error":
-        return build_error_envelope(
+        return build_tool_error_envelope(
             tool="query_news",
             request=request,
             error=str(parsed.get("error") or "query_news_failed"),
@@ -182,7 +182,7 @@ def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
         "fallback": False,
     }
     if status == "empty":
-        return build_empty_envelope(
+        return build_tool_empty_envelope(
             tool="query_news",
             request=request,
             empty_reason="no_matching_records",
@@ -190,7 +190,7 @@ def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
             diagnostics=diagnostics,
         )
 
-    return SkillEnvelope(
+    return ToolEnvelope(
         tool="query_news",
         status=status,
         request=request,
@@ -198,3 +198,5 @@ def query_news_skill(payload: QueryNewsSkillInput) -> SkillEnvelope:
         evidence=evidence,
         diagnostics=diagnostics,
     )
+
+

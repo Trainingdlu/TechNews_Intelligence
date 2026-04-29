@@ -1,7 +1,7 @@
-"""Bulk semantic URL retrieval for aggregation-oriented skills.
+"""Bulk semantic URL retrieval for aggregation-oriented tools.
 
 Provides a large-batch vector recall channel that trades reranker precision
-for throughput.  Downstream skills (trend_analysis, compare_topics, …) feed
+for throughput.  Downstream tools (trend_analysis, compare_topics, …) feed
 the returned URL set into SQL aggregation queries, replacing the legacy
 ILIKE + hardcoded-dictionary approach with true semantic matching.
 
@@ -356,7 +356,7 @@ def fetch_semantic_url_pool(
     limit: int = 300,
     sim_floor: float | None = None,
 ) -> list[tuple[str, float]]:
-    """Large-batch vector recall for aggregation skills (backward-compatible).
+    """Large-batch vector recall for aggregation tools (backward-compatible).
 
     Returns ``(url, match_score)`` tuples sorted by descending final_score.
     Delegates to ``fetch_semantic_candidates()`` internally.

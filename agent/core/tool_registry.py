@@ -1,4 +1,4 @@
-"""Skill registry with typed input validation and unified dispatch."""
+﻿"""tool registry with typed input validation and unified dispatch."""
 
 from __future__ import annotations
 
@@ -7,26 +7,26 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ValidationError
 
-from .skill_contracts import SkillEnvelope, build_error_envelope
+from .tool_contracts import ToolEnvelope, build_tool_error_envelope
 
-SkillHandler = Callable[[BaseModel], SkillEnvelope | dict[str, Any]]
+ToolHandler = Callable[[BaseModel], ToolEnvelope | dict[str, Any]]
 
 
 @dataclass(frozen=True)
-class SkillSpec:
-    """Registered skill metadata."""
+class ToolSpec:
+    """Registered tool metadata."""
 
     name: str
     input_model: type[BaseModel]
-    handler: SkillHandler
+    handler: ToolHandler
     description: str = ""
 
 
-class SkillRegistry:
-    """In-process registry for skill discovery and execution."""
+class ToolRegistry:
+    """In-process registry for tool discovery and execution."""
 
     def __init__(self) -> None:
-        self._specs: dict[str, SkillSpec] = {}
+        self._specs: dict[str, ToolSpec] = {}
 
     @staticmethod
     def _normalize_name(name: str) -> str:
@@ -36,15 +36,15 @@ class SkillRegistry:
         self,
         name: str,
         input_model: type[BaseModel],
-        handler: SkillHandler,
+        handler: ToolHandler,
         description: str = "",
     ) -> None:
         normalized_name = self._normalize_name(name)
         if not normalized_name:
-            raise ValueError("Skill name must not be empty")
+            raise ValueError("tool name must not be empty")
         if normalized_name in self._specs:
-            raise ValueError(f"Skill '{normalized_name}' is already registered")
-        self._specs[normalized_name] = SkillSpec(
+            raise ValueError(f"tool '{normalized_name}' is already registered")
+        self._specs[normalized_name] = ToolSpec(
             name=normalized_name,
             input_model=input_model,
             handler=handler,
@@ -57,27 +57,27 @@ class SkillRegistry:
             return False
         return normalized_name in self._specs
 
-    def get(self, name: str) -> SkillSpec:
+    def get(self, name: str) -> ToolSpec:
         normalized_name = self._normalize_name(name)
         if normalized_name not in self._specs:
-            raise KeyError(f"Unknown skill: {name}")
+            raise KeyError(f"Unknown tool: {name}")
         return self._specs[normalized_name]
 
-    def list_skills(self) -> list[str]:
+    def list_tools(self) -> list[str]:
         return sorted(self._specs.keys())
 
     def input_schema(self, name: str) -> dict[str, Any]:
         return self.get(name).input_model.model_json_schema()
 
-    def execute(self, name: str, payload: dict[str, Any] | None = None) -> SkillEnvelope:
+    def execute(self, name: str, payload: dict[str, Any] | None = None) -> ToolEnvelope:
         request_payload = payload or {}
         normalized_name = self._normalize_name(name)
         if normalized_name not in self._specs:
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=normalized_name or str(name),
                 request=request_payload,
-                error="unknown_skill",
-                diagnostics={"available_skills": self.list_skills()},
+                error="unknown_tool",
+                diagnostics={"available_tools": self.list_tools()},
             )
 
         spec = self._specs[normalized_name]
@@ -85,7 +85,7 @@ class SkillRegistry:
         try:
             parsed_input = spec.input_model.model_validate(request_payload)
         except ValidationError as exc:
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=normalized_name,
                 request=request_payload,
                 error="input_validation_failed",
@@ -95,10 +95,10 @@ class SkillRegistry:
         try:
             raw_output = spec.handler(parsed_input)
         except Exception as exc:  # noqa: BLE001
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=normalized_name,
                 request=parsed_input.model_dump(mode="python"),
-                error="skill_execution_failed",
+                error="tool_execution_failed",
                 diagnostics={
                     "exception_type": type(exc).__name__,
                     "exception_message": str(exc),
@@ -106,12 +106,12 @@ class SkillRegistry:
             )
 
         try:
-            if isinstance(raw_output, SkillEnvelope):
+            if isinstance(raw_output, ToolEnvelope):
                 envelope = raw_output
             else:
-                envelope = SkillEnvelope.model_validate(raw_output)
+                envelope = ToolEnvelope.model_validate(raw_output)
         except ValidationError as exc:
-            return build_error_envelope(
+            return build_tool_error_envelope(
                 tool=normalized_name,
                 request=parsed_input.model_dump(mode="python"),
                 error="output_validation_failed",
@@ -123,3 +123,5 @@ class SkillRegistry:
         if not envelope.request:
             envelope.request = parsed_input.model_dump(mode="python")
         return envelope
+
+

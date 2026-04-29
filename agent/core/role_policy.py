@@ -1,7 +1,7 @@
-"""Role-level skill allowlist policy.
+﻿"""Role-level tool allowlist policy.
 
 In the unified ReAct architecture, the primary role is 'agent' which has
-access to all registered skills. The multi-role definitions (router, miner,
+access to all registered tools. The multi-role definitions (router, miner,
 analyst, formatter) are preserved as extension points for future multi-agent
 orchestration scenarios.
 """
@@ -9,9 +9,9 @@ orchestration scenarios.
 from __future__ import annotations
 
 # ---------------------------------------------------------------------------
-# Unified agent role — full skill access
+# Unified agent role 鈥?full tool access
 # ---------------------------------------------------------------------------
-_ALL_SKILLS: set[str] = {
+_ALL_TOOLS: set[str] = {
     "query_news",
     "trend_analysis",
     "search_news",
@@ -20,47 +20,51 @@ _ALL_SKILLS: set[str] = {
     "build_timeline",
     "analyze_landscape",
     "fulltext_batch",
+    "read_news_content",
+    "get_db_stats",
+    "list_topics",
 }
 
-ROLE_ALLOWED_SKILLS: dict[str, set[str]] = {
-    # Primary role — used by the ReAct agent
-    "agent": set(_ALL_SKILLS),
-    # Subagent roles — reserved for future multi-agent evolution
+ROLE_ALLOWED_TOOLS: dict[str, set[str]] = {
+    # Primary role 鈥?used by the ReAct agent
+    "agent": set(_ALL_TOOLS),
+    # Subagent roles 鈥?reserved for future multi-agent evolution
     "router": {
         "classify_intent",
         "extract_entities",
-    } | _ALL_SKILLS,
-    "miner": set(_ALL_SKILLS),
+    } | _ALL_TOOLS,
+    "miner": set(_ALL_TOOLS),
     "analyst": {
         "compute_momentum",
         "compare_entities",
         "synthesize_findings",
-    } | _ALL_SKILLS,
+    } | _ALL_TOOLS,
     "formatter": {
         "format_answer",
     },
 }
 
 
-def allowed_skills_for_role(role: str) -> set[str]:
+def allowed_tools_for_role(role: str) -> set[str]:
     """Return the allowlist for a role."""
 
-    return set(ROLE_ALLOWED_SKILLS.get(role, set()))
+    return set(ROLE_ALLOWED_TOOLS.get(role, set()))
 
 
-def is_skill_allowed(role: str, skill_name: str) -> bool:
-    """Check whether a role can execute the given skill."""
+def is_tool_allowed(role: str, tool_name: str) -> bool:
+    """Check whether a role can execute the given tool."""
 
-    if role not in ROLE_ALLOWED_SKILLS:
+    if role not in ROLE_ALLOWED_TOOLS:
         return False
-    return skill_name in ROLE_ALLOWED_SKILLS[role]
+    return tool_name in ROLE_ALLOWED_TOOLS[role]
 
 
-def assert_skill_allowed(role: str, skill_name: str) -> tuple[bool, str | None]:
+def assert_tool_allowed(role: str, tool_name: str) -> tuple[bool, str | None]:
     """Permission decision with denial reason for logging/hooks."""
 
-    if role not in ROLE_ALLOWED_SKILLS:
+    if role not in ROLE_ALLOWED_TOOLS:
         return False, f"unknown_role:{role}"
-    if skill_name not in ROLE_ALLOWED_SKILLS[role]:
-        return False, f"role:{role} cannot use skill:{skill_name}"
+    if tool_name not in ROLE_ALLOWED_TOOLS[role]:
+        return False, f"role:{role} cannot use tool:{tool_name}"
     return True, None
+

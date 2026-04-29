@@ -1,18 +1,18 @@
-"""Tests for shared runtime factory builders.
+﻿"""Tests for shared runtime factory builders.
 
 The old Router->Miner->Analyst->Formatter workflow graph was retired.
-This module now validates the shared SkillRegistry / ToolHookRunner builders
+This module now validates the shared ToolRegistry / ToolRuntimeHooks builders
 used by the unified ReAct runtime.
 """
 
 from __future__ import annotations
 
-from agent.core.skill_catalog import iter_skill_definitions
-from agent.core.skill_contracts import SkillEnvelope
-from agent.core.runtime_factories import build_default_hook_runner, build_default_registry
+from agent.core.tool_catalog import iter_tool_definitions
+from agent.core.tool_contracts import ToolEnvelope
+from agent.core.runtime_factories import build_default_tool_runtime_hooks, build_default_registry
 
 
-EXPECTED_SKILLS = {
+EXPECTED_TOOLS = {
     "query_news",
     "trend_analysis",
     "search_news",
@@ -27,9 +27,9 @@ EXPECTED_SKILLS = {
 }
 
 
-def test_skill_catalog_matches_expected_skill_set() -> None:
-    catalog_names = {definition.name for definition in iter_skill_definitions()}
-    assert catalog_names == EXPECTED_SKILLS
+def test_tool_catalog_matches_expected_tool_set() -> None:
+    catalog_names = {definition.name for definition in iter_tool_definitions()}
+    assert catalog_names == EXPECTED_TOOLS
 
 
 def test_build_default_registry_is_singleton() -> None:
@@ -38,14 +38,14 @@ def test_build_default_registry_is_singleton() -> None:
     assert reg_a is reg_b
 
 
-def test_build_default_registry_contains_expected_skills() -> None:
+def test_build_default_registry_contains_expected_tools() -> None:
     registry = build_default_registry()
-    assert set(registry.list_skills()) == EXPECTED_SKILLS
+    assert set(registry.list_tools()) == EXPECTED_TOOLS
 
 
 def test_build_default_registry_matches_catalog_input_models() -> None:
     registry = build_default_registry()
-    for definition in iter_skill_definitions():
+    for definition in iter_tool_definitions():
         spec = registry.get(definition.name)
         assert spec.input_model is definition.input_model
 
@@ -59,29 +59,37 @@ def test_build_default_registry_exposes_input_schema() -> None:
     assert "days" in schema["properties"]
 
 
-def test_build_default_registry_has_descriptions_for_all_skills() -> None:
+def test_build_default_registry_has_descriptions_for_all_tools() -> None:
     registry = build_default_registry()
-    for skill_name in EXPECTED_SKILLS:
-        spec = registry.get(skill_name)
+    for tool_name in EXPECTED_TOOLS:
+        spec = registry.get(tool_name)
         assert spec.description.strip()
 
 
-def test_build_default_hook_runner_is_singleton() -> None:
-    hooks_a = build_default_hook_runner()
-    hooks_b = build_default_hook_runner()
+def test_tool_catalog_exposes_graph_ready_metadata() -> None:
+    for definition in iter_tool_definitions():
+        assert definition.capability.strip()
+        assert definition.tool_group.strip()
+        assert isinstance(definition.requires_evidence, bool)
+        assert definition.allowed_for_intents
+
+
+def test_build_default_tool_runtime_hooks_is_singleton() -> None:
+    hooks_a = build_default_tool_runtime_hooks()
+    hooks_b = build_default_tool_runtime_hooks()
     assert hooks_a is hooks_b
 
 
 def test_default_hook_runner_denies_invalid_time_window() -> None:
-    hooks = build_default_hook_runner()
+    hooks = build_default_tool_runtime_hooks()
     decision = hooks.pre_tool_use("query_news", {"query": "OpenAI", "days": 999})
     assert decision.action == "deny"
     assert "between 1 and 365" in str(decision.reason)
 
 
 def test_default_hook_runner_warns_when_evidence_missing() -> None:
-    hooks = build_default_hook_runner()
-    envelope = SkillEnvelope(
+    hooks = build_default_tool_runtime_hooks()
+    envelope = ToolEnvelope(
         tool="query_news",
         status="ok",
         request={"query": "OpenAI", "days": 7},
@@ -90,12 +98,12 @@ def test_default_hook_runner_warns_when_evidence_missing() -> None:
     )
     decision = hooks.post_tool_use("query_news", {"query": "OpenAI", "days": 7}, envelope)
     assert decision.action == "warn"
-    assert "no_evidence_urls_in_skill_output" in str(decision.reason)
+    assert "no_evidence_urls_in_tool_output" in str(decision.reason)
 
 
 def test_default_hook_runner_allows_non_evidence_tool_output() -> None:
-    hooks = build_default_hook_runner()
-    envelope = SkillEnvelope(
+    hooks = build_default_tool_runtime_hooks()
+    envelope = ToolEnvelope(
         tool="list_topics",
         status="ok",
         request={},
@@ -104,4 +112,6 @@ def test_default_hook_runner_allows_non_evidence_tool_output() -> None:
     )
     decision = hooks.post_tool_use("list_topics", {}, envelope)
     assert decision.action == "allow"
+
+
 
