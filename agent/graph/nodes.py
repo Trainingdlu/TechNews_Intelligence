@@ -97,7 +97,7 @@ class GraphNodeRunner:
         _audit("tool_selection", "start")
         intent = state.get("intent") or {}
         selected = _select_tools(intent)
-        emit_graph_progress("selecting_tools", "正在调用工具", items=selected)
+        emit_graph_progress("selecting_tools", "正在准备工具")
         _audit("tool_selection", "finish", {"selected_tools": selected})
         return {
             "selected_tools": selected,
@@ -111,7 +111,7 @@ class GraphNodeRunner:
         tool_results = list(state.get("tool_results") or [])
         existing_calls = _normalize_tool_calls({"tool_calls": state.get("pending_tool_calls") or []})
         if existing_calls:
-            emit_graph_progress("selecting_tools", "正在调用工具", items=[call["name"] for call in existing_calls])
+            emit_graph_progress("selecting_tools", "正在准备工具")
             _audit("tool_worker", "finish", {"tool_calls": existing_calls, "source": "state"})
             return {
                 "pending_tool_calls": existing_calls,
@@ -146,7 +146,7 @@ class GraphNodeRunner:
                 selected_tools=selected_tools,
                 tool_results=tool_results,
             )
-        emit_graph_progress("selecting_tools", "正在调用工具", items=[call["name"] for call in calls])
+        emit_graph_progress("selecting_tools", "正在准备工具")
         _audit("tool_worker", "finish", {"tool_calls": calls})
         return {
             "pending_tool_calls": calls,
@@ -268,7 +268,7 @@ class GraphNodeRunner:
 
     def final_synthesizer(self, state: AgentGraphState) -> dict[str, Any]:
         _audit("final_synthesizer", "start")
-        emit_graph_progress("synthesizing", "正在生成分析", detail="输出结论、依据、风险和不确定性")
+        emit_graph_progress("synthesizing", "正在生成分析", detail="输出结论、依据")
         results = list(state.get("tool_results") or [])
         user_message = str(state.get("user_message") or "")
         context = format_tool_results_for_final_synthesis(results)
@@ -689,10 +689,9 @@ def _emit_tool_running_status(name: str, args: dict[str, Any]) -> None:
         detail = f"{query} 最近 {days} 天" if query and days else query
         emit_graph_progress("retrieving", "正在检索相关新闻", detail=detail)
     elif name in {"read_news_content", "fulltext_batch"}:
-        detail = str(args.get("url") or args.get("urls") or "").strip()
-        emit_graph_progress("retrieving", "正在读取文章", detail=detail[:160])
+        emit_graph_progress("retrieving", "正在准备读取文章")
     else:
-        emit_graph_progress("analyzing", "正在整理信息", detail=name)
+        emit_graph_progress("analyzing", "正在整理信息")
 
 
 def _normalize_evidence(results: list[ToolEnvelope]) -> tuple[list[str], str]:

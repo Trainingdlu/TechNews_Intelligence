@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from agent.core.run_context import agent_run_context
 from agent.core.role_policy import assert_tool_allowed
 from agent.core.tool_contracts import (
     ToolEnvelope,
@@ -122,6 +123,26 @@ def test_tool_runtime_execute_returns_ok_envelope() -> None:
     assert envelope.status == "ok"
     assert envelope.tool == "dummy_tool"
     assert envelope.data["double"] == 8
+
+
+def test_tool_runtime_progress_uses_actual_executed_tool_name() -> None:
+    registry = ToolRegistry()
+    registry.register("dummy_tool", _DummyInput, _dummy_handler, "test tool")
+    runtime = ToolRuntime(registry=registry, hooks=ToolRuntimeHooks())
+    events = []
+
+    with agent_run_context(progress_callback=events.append):
+        envelope = runtime.execute(
+            "dummy_tool",
+            {"value": 4},
+            ToolRuntimeContext(trace=False, emit_progress_events=True),
+        )
+
+    assert envelope.status == "ok"
+    assert events
+    assert events[0]["event"] == "progress"
+    assert events[0]["tool"] == "dummy_tool"
+    assert events[0]["title"] == "调用dummy_tool"
 
 
 def test_tool_envelope_has_no_runtime_version_field() -> None:

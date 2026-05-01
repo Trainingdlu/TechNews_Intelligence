@@ -84,7 +84,13 @@ class ToolRuntime:
 
             effective_payload = pre.updated_payload if pre.updated_payload is not None else request_payload
             if runtime_context.emit_progress_events:
-                emit_progress(_progress_stage(normalized_name), normalized_name)
+                emit_progress(
+                    _progress_stage(normalized_name),
+                    normalized_name,
+                    title=f"调用{normalized_name}",
+                    status="running",
+                    event="progress",
+                )
 
             envelope = self.registry.execute(normalized_name, effective_payload)
             if runtime_context.accumulate_tool_call:

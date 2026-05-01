@@ -20,8 +20,7 @@
     column-gap: clamp(14px, 1.8vw, 24px);
 }
 
-#subscribe-view::before,
-#subscribe-view::after {
+#subscribe-view::before {
     content: "";
     position: absolute;
     pointer-events: none;
@@ -35,22 +34,27 @@
         linear-gradient(180deg, var(--subscribe-sheen), transparent 50%);
 }
 
-#subscribe-view::after {
-    width: 88vw;
-    height: 50vw;
-    left: -34vw;
-    top: -12vw;
-    border: 1px solid var(--subscribe-ellipse);
-    border-radius: 50%;
-    transform: rotate(-9deg);
-}
-
 .subscribe-card {
     grid-column: 1 / -1;
     justify-self: center;
+    position: relative;
+    z-index: 1;
     max-width: 520px;
     width: 100%;
     text-align: left;
+}
+
+@media (min-width: 769px) {
+    #subscribe-view::before {
+        background:
+            linear-gradient(138deg, transparent 0 76.3%, var(--subscribe-right-line) 76.38%, transparent 76.46%),
+            linear-gradient(138deg, transparent 0 33%, var(--subscribe-diag) 33.08%, transparent 33.16%),
+            linear-gradient(180deg, var(--subscribe-sheen), transparent 50%);
+    }
+
+    .subscribe-card {
+        margin-top: clamp(30px, 4.5vh, 44px);
+    }
 }
 
 .subscribe-card .auth-title {

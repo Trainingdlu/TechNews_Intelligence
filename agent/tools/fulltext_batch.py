@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..core.run_context import emit_progress
 from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from .helpers import (
     _clamp_int,
@@ -14,7 +15,7 @@ from .helpers import (
     _safe_float,
     _split_urls,
 )
-from .news_ops import read_news_content
+from .news_ops import lookup_url_titles, read_news_content
 from .rerank import resolve_rerank_mode
 from .retrieval import lookup_candidates_by_query
 from .schemas import FulltextBatchToolInput
@@ -48,8 +49,14 @@ def fulltext_batch(
     selected_meta: list[dict[str, Any]] = []
 
     if direct_urls:
+        title_map = lookup_url_titles(direct_urls[:12])
         for url in direct_urls[:12]:
-            meta = {"selection_mode": "direct", "url": url, "rerank_mode": resolved_rerank_mode}
+            meta = {
+                "selection_mode": "direct",
+                "url": url,
+                "headline": title_map.get(url, ""),
+                "rerank_mode": resolved_rerank_mode,
+            }
             selected.append(("direct", url, meta))
             selected_meta.append(meta)
         rerank_meta = {
@@ -131,6 +138,7 @@ def fulltext_batch(
     chunks: list[str] = []
     article_rows: list[dict[str, Any]] = []
     for idx, (_, url, meta) in enumerate(selected, 1):
+        _emit_article_read_progress(url=url, meta=meta, index=idx, total=len(selected))
         content = read_news_content(url)
         truncated = False
         if len(content) > max_chars_per_article:
@@ -166,6 +174,25 @@ def fulltext_batch(
     if prefix_lines:
         return "\n".join(prefix_lines) + "\n\n" + "\n\n".join(chunks)
     return "\n\n".join(chunks)
+
+
+def _emit_article_read_progress(*, url: str, meta: dict[str, Any], index: int, total: int) -> None:
+    title = str(meta.get("headline") or meta.get("title") or "").strip()
+    display = title or str(url or "").strip()
+    emit_progress(
+        "retrieving",
+        "fulltext_batch",
+        title="调用fulltext_batch",
+        detail=display,
+        status="running",
+        event="progress",
+        extra={
+            "article_title": display,
+            "url": str(url or "").strip(),
+            "index": index,
+            "total": total,
+        },
+    )
 
 
 def fulltext_batch_tool(payload: FulltextBatchToolInput) -> ToolEnvelope:

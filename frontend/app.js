@@ -306,7 +306,7 @@
         history.push({ role: 'user', parts: [{ text }] });
         history.push({ role: 'model', parts: [{ text: reply }] });
 
-        appendMessage('agent', reply, { citationUrls });
+        appendMessage('agent', reply, { citationUrls, reveal: true });
         const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
         const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
         updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
@@ -376,17 +376,30 @@
 
     function updateTypingProgress(typingEl, payload) {
         if (!typingEl || !payload) return;
-        updateTypingStatus(typingEl, String(payload.title || '').trim());
+        const tool = String(payload.tool || '').trim();
+        const phase = String(payload.phase || '').trim();
+        const title = String(payload.title || '').trim();
+        const articleTitle = String(payload.article_title || '').trim();
+
+        if (tool) {
+            updateTypingStatus(typingEl, `调用${tool}`);
+        } else {
+            updateTypingStatus(typingEl, title);
+        }
 
         const detailEl = typingEl.querySelector('.typing-detail');
-        const detail = String(payload.detail || '').trim();
+        const detail = articleTitle || String(payload.detail || '').trim();
         if (detailEl) {
-            detailEl.textContent = detail;
-            detailEl.hidden = !detail;
+            const keepExistingDetail = tool && !detail;
+            if (!keepExistingDetail) {
+                detailEl.textContent = detail;
+                detailEl.hidden = !detail;
+            }
         }
 
         const itemsEl = typingEl.querySelector('.typing-items');
-        const items = Array.isArray(payload.items)
+        const shouldShowItems = !tool && phase !== 'selecting_tools';
+        const items = shouldShowItems && Array.isArray(payload.items)
             ? payload.items.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 3)
             : [];
         if (itemsEl) {
@@ -401,14 +414,10 @@
     }
 
     function updateTypingEvidence(typingEl, payload) {
-        const title = String((payload && payload.title) || '').trim();
-        const source = String((payload && payload.source) || '').trim();
-        if (!title && !source) return;
-        updateTypingProgress(typingEl, {
-            title: '正在读取文章',
-            detail: '',
-            items: [source ? `${source} · ${title}` : title],
-        });
+        // Evidence events mean "source found"; article-reading titles are emitted
+        // as progress events from the tool that is actually reading content.
+        void typingEl;
+        void payload;
     }
 
     async function consumeChatStream(res, typingEl) {
@@ -533,12 +542,14 @@
                     appendMessage('agent', '出错了：未收到完整回复');
                     return;
                 }
+                removeTyping(typingEl);
                 applyChatPayload(text, streamed.final);
                 return;
             }
 
             if (await handleChatHttpError(streamRes)) return;
             const fallbackData = await streamRes.json();
+            removeTyping(typingEl);
             applyChatPayload(text, fallbackData);
         } catch {
             // If streaming request itself failed before getting a response object,
@@ -551,6 +562,7 @@
                     });
                     if (await handleChatHttpError(nonStreamRes)) return;
                     const nonStreamData = await nonStreamRes.json();
+                    removeTyping(typingEl);
                     applyChatPayload(text, nonStreamData);
                     return;
                 } catch {
@@ -664,6 +676,10 @@
         if (role === 'agent') {
             const citationUrls = Array.isArray(meta.citationUrls) ? meta.citationUrls : [];
             content.innerHTML = marked.parse(_prepareAgentMarkdown(text, citationUrls));
+            if (meta.reveal) {
+                msg.classList.add('answer-reveal-msg');
+                applyAnswerReveal(content);
+            }
         } else {
             content.textContent = text;
         }
@@ -677,6 +693,22 @@
                 top: messagesEl.scrollHeight,
                 behavior: 'smooth',
             });
+        });
+    }
+
+    function applyAnswerReveal(content) {
+        const blocks = Array.from(content.children).filter((el) => {
+            const tag = el.tagName.toLowerCase();
+            return ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'blockquote', 'pre', 'table', 'hr'].includes(tag);
+        });
+        if (!blocks.length) return;
+
+        const stepMs = 25;
+        const maxDelayMs = 450;
+        content.classList.add('answer-reveal-content');
+        blocks.forEach((block, index) => {
+            block.classList.add('answer-reveal-block');
+            block.style.setProperty('--answer-reveal-delay', `${Math.min(index * stepMs, maxDelayMs)}ms`);
         });
     }
 

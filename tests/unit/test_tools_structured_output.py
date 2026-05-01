@@ -7,6 +7,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from agent.core.run_context import agent_run_context
 from agent.core.tool_catalog import iter_tool_definitions
 from agent.core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build_tool_error_envelope
 from agent.tools import analyze_landscape as landscape_mod  # noqa: E402  pylint: disable=wrong-import-position
@@ -158,6 +159,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
                 "score": 1.876,
             },
         ]
+        events = []
         with (
             patch.object(
                 fulltext_mod,
@@ -168,6 +170,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
                 ),
             ),
             patch.object(fulltext_mod, "read_news_content", lambda _url: "Full content:\nHello world"),
+            agent_run_context(progress_callback=events.append),
         ):
             out = fulltext_mod.fulltext_batch("OpenAI recent 14 days", response_format="json")
 
@@ -177,6 +180,9 @@ class ToolStructuredOutputTests(unittest.TestCase):
         self.assertEqual(len(payload["selected"]), 2)
         self.assertEqual(len(payload["articles"]), 2)
         self.assertEqual(payload["articles"][0]["url"], "https://a.com")
+        article_events = [event for event in events if event.get("tool") == "fulltext_batch"]
+        self.assertEqual(article_events[0]["title"], "调用fulltext_batch")
+        self.assertEqual(article_events[0]["article_title"], "A title")
 
     def test_query_news_tool_returns_envelope_with_evidence(self) -> None:
         query_payload = {

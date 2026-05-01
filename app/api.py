@@ -330,8 +330,13 @@ def _status_text_from_progress(payload: dict) -> str | None:
 def _progress_event_payload(payload: dict) -> dict:
     return {
         "phase": str(payload.get("phase") or payload.get("stage") or "").strip(),
+        "tool": str(payload.get("tool") or payload.get("tool_name") or "").strip(),
         "title": str(payload.get("title") or _status_text_from_progress(payload) or "").strip(),
         "detail": str(payload.get("detail") or "").strip(),
+        "article_title": str(payload.get("article_title") or "").strip(),
+        "url": str(payload.get("url") or "").strip(),
+        "index": payload.get("index"),
+        "total": payload.get("total"),
         "items": [
             str(item).strip()
             for item in (payload.get("items") if isinstance(payload.get("items"), list) else [])
@@ -1098,9 +1103,10 @@ async def chat_stream(
                     continue
 
                 event_type = str(payload.get("event") or "").strip().lower()
-                if event_type == "progress":
+                if event_type == "progress" or payload.get("tool") or payload.get("tool_name"):
                     progress_payload = _progress_event_payload(payload)
                     yield _sse_event("progress", progress_payload)
+                    continue
                 elif event_type == "evidence":
                     evidence_payload = _evidence_event_payload(payload)
                     if evidence_payload.get("url") or evidence_payload.get("title"):

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from ..core.run_context import emit_progress
 from ..core.tool_contracts import ToolEnvelope, build_tool_error_envelope
-from .news_ops import get_db_stats, list_topics, read_news_content
+from .news_ops import get_db_stats, list_topics, lookup_url_titles, read_news_content
 from .schemas import GetDbStatsInput, ListTopicsInput, ReadNewsContentInput
 
 
@@ -53,13 +54,25 @@ def read_news_content_tool(input: ReadNewsContentInput) -> ToolEnvelope:
     """Wrapped read_news_content."""
     req = input.model_dump()
     try:
+        url = str(input.url)
+        title = lookup_url_titles([url]).get(url, "")
+        display = title or url
+        emit_progress(
+            "retrieving",
+            "read_news_content",
+            title="调用read_news_content",
+            detail=display,
+            status="running",
+            event="progress",
+            extra={"article_title": display, "url": url, "index": 1, "total": 1},
+        )
         text = read_news_content(str(input.url))
         return ToolEnvelope(
             tool="read_news_content",
             status="ok",
             request=req,
             data={"raw_output": text, "url": input.url},
-            evidence=[{"url": str(input.url), "title": None, "source": None, "created_at": None, "score": None, "rank": 1}],
+            evidence=[{"url": url, "title": title or None, "source": None, "created_at": None, "score": None, "rank": 1}],
             diagnostics={"evidence_count": 1},
         )
     except Exception as e:
