@@ -43,7 +43,7 @@ def _build_summary() -> dict:
         "exception_chain": [],
         "tool_call_chain": ["query_news", "compare_topics"],
         "final_answer_metadata": {"response_kind": "text", "answer_chars": 1200, "source_count": 2},
-        "runtime": {"route": "react", "provider": "gemini_api", "model": "gemini-2.5-pro"},
+        "runtime": {"route": "custom_graph", "provider": "gemini_api", "model": "gemini-2.5-pro"},
         "tool_events": [
             {
                 "event_index": 1,
@@ -93,7 +93,7 @@ def test_persist_request_trace_writes_agent_runs_and_tool_events(
     assert run_params[6]["total_tokens"] == 30
     assert run_params[11]["summary"]["request_id"] == "req-1001"
     assert run_params[11]["final_answer_metadata"]["response_kind"] == "text"
-    assert run_params[11]["runtime"]["route"] == "react"
+    assert run_params[11]["runtime"]["route"] == "custom_graph"
 
     assert len(cursor.executemany_calls) == 1
     tool_sql, tool_rows = cursor.executemany_calls[0]

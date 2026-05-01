@@ -7,7 +7,6 @@
     const form = document.getElementById("subscribe-form");
     const emailInput = document.getElementById("email-input");
     const nameInput = document.getElementById("name-input");
-    const frequencySelect = document.getElementById("frequency-select");
     const timezoneInput = document.getElementById("timezone-input");
     const sourceOptions = document.getElementById("source-options");
     const saveBtn = document.getElementById("save-btn");
@@ -20,7 +19,7 @@
     let statusFadeTimer = null;
 
     const defaultEmailPlaceholder =
-        emailInput.getAttribute("placeholder") || "输入邮箱地址订阅日报";
+        emailInput.getAttribute("placeholder") || "输入邮箱地址";
 
     function clearStatusTimers() {
         if (statusHideTimer) {
@@ -146,19 +145,6 @@
 
             const data = await res.json();
 
-            if (Array.isArray(data.frequencies) && data.frequencies.length > 0) {
-                const current = frequencySelect.value;
-                frequencySelect.innerHTML = "";
-
-                data.frequencies.forEach((freq) => {
-                    const option = document.createElement("option");
-                    option.value = freq;
-                    option.textContent = freq === "daily" ? "每天推送" : freq;
-                    if (freq === current) option.selected = true;
-                    frequencySelect.appendChild(option);
-                });
-            }
-
             renderSourceOptions(data.sources || []);
 
             if (data.default_timezone && !timezoneInput.value) {
@@ -198,7 +184,6 @@
 
             const data = await res.json();
             nameInput.value = data.name || "";
-            frequencySelect.value = data.frequency || "daily";
             timezoneInput.value = data.timezone || "Asia/Shanghai";
             setSelectedSources(data.sources || []);
 
@@ -239,7 +224,7 @@
             email,
             name: nameInput.value.trim() || null,
             sources: selectedSources,
-            frequency: frequencySelect.value,
+            frequency: "daily",
             timezone: timezoneInput.value.trim() || "Asia/Shanghai",
         };
 

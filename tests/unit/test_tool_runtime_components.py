@@ -124,6 +124,17 @@ def test_tool_runtime_execute_returns_ok_envelope() -> None:
     assert envelope.data["double"] == 8
 
 
+def test_tool_envelope_has_no_runtime_version_field() -> None:
+    envelope = ToolEnvelope(
+        tool="dummy_tool",
+        status="ok",
+        request={"value": 1},
+        data={"value": 2},
+    )
+
+    assert "schema" + "_version" not in envelope.to_dict()
+
+
 def test_tool_runtime_execute_returns_empty_envelope() -> None:
     registry = ToolRegistry()
     registry.register("dummy_tool", _DummyInput, _empty_handler, "test tool")

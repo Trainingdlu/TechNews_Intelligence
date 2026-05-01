@@ -5,10 +5,10 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
-from typing import Callable, Iterator
+from typing import Any, Callable, Iterator
 
 
-ProgressCallback = Callable[[dict[str, str]], None]
+ProgressCallback = Callable[[dict[str, Any]], None]
 
 
 @dataclass
@@ -78,14 +78,41 @@ def get_request_metadata() -> dict[str, str | None]:
     }
 
 
-def emit_progress(stage: str, tool_name: str = "") -> None:
+def emit_progress(
+    stage: str,
+    tool_name: str = "",
+    *,
+    title: str | None = None,
+    detail: str | None = None,
+    items: list[str] | None = None,
+    status: str | None = None,
+    phase: str | None = None,
+    event: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
     state = _get_state(create_if_missing=False)
     if state is None or not callable(state.progress_callback):
         return
 
-    payload: dict[str, str] = {"stage": str(stage or "").strip()}
+    payload: dict[str, Any] = {"stage": str(stage or "").strip()}
     if tool_name:
         payload["tool"] = str(tool_name).strip()
+    if phase:
+        payload["phase"] = str(phase).strip()
+    if title:
+        payload["title"] = str(title).strip()
+    if detail:
+        payload["detail"] = str(detail).strip()
+    if items:
+        payload["items"] = [str(item).strip() for item in items if str(item).strip()]
+    if status:
+        payload["status"] = str(status).strip()
+    if event:
+        payload["event"] = str(event).strip()
+    if isinstance(extra, dict):
+        for key, value in extra.items():
+            if key and key not in payload:
+                payload[str(key)] = value
     try:
         state.progress_callback(payload)
     except Exception:

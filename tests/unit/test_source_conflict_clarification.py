@@ -11,6 +11,7 @@ pytestmark = pytest.mark.usefixtures("agent_dependency_stubs")
 
 def test_generate_response_core_wide_query_appends_soft_hitl_followup() -> None:
     from agent.agent import _generate_response_core
+    from agent.graph.state import AgentRunResult
 
     response_text = (
         "Cross-source overview covers OpenAI, NVIDIA, Google and Microsoft "
@@ -27,7 +28,7 @@ def test_generate_response_core_wide_query_appends_soft_hitl_followup() -> None:
         "https://example.com/d",
     ]
 
-    with patch("agent.agent._generate_react", return_value=(response_text, urls)):
+    with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult(response_text, urls)):
         with patch("agent.agent._get_accumulated_tool_calls", return_value={"query_news", "compare_sources"}):
             with patch("agent.agent._build_hitl_soft_followup", return_value="你更希望先限定时间范围还是来源范围？"):
                 text, valid_urls = _generate_response_core([], "帮我做 AI 行业全景总结")
@@ -39,6 +40,7 @@ def test_generate_response_core_wide_query_appends_soft_hitl_followup() -> None:
 
 def test_generate_response_core_conflict_risk_appends_soft_hitl_followup() -> None:
     from agent.agent import _generate_response_core
+    from agent.graph.state import AgentRunResult
 
     response_text = (
         "TechCrunch is optimistic on OpenAI commercialization growth, while "
@@ -49,7 +51,7 @@ def test_generate_response_core_conflict_risk_appends_soft_hitl_followup() -> No
         "https://news.ycombinator.com/item?id=100",
     ]
 
-    with patch("agent.agent._generate_react", return_value=(response_text, urls)):
+    with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult(response_text, urls)):
         with patch("agent.agent._get_accumulated_tool_calls", return_value={"compare_sources"}):
             with patch("agent.agent._build_hitl_soft_followup", return_value="是否只看单一来源后再给结论？"):
                 text, valid_urls = _generate_response_core([], "OpenAI 现在前景怎么样？")
@@ -61,6 +63,7 @@ def test_generate_response_core_conflict_risk_appends_soft_hitl_followup() -> No
 
 def test_generate_response_core_specific_query_keeps_original_answer() -> None:
     from agent.agent import _generate_response_core
+    from agent.graph.state import AgentRunResult
 
     response_text = "OpenAI trend is up on TechCrunch within the last 30 days."
     urls = [
@@ -68,7 +71,7 @@ def test_generate_response_core_specific_query_keeps_original_answer() -> None:
         "https://techcrunch.com/2025/04/10/openai-product/",
     ]
 
-    with patch("agent.agent._generate_react", return_value=(response_text, urls)):
+    with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult(response_text, urls)):
         with patch("agent.agent._get_accumulated_tool_calls", return_value={"query_news", "trend_analysis"}):
             with patch("agent.agent._build_hitl_soft_followup") as followup_mock:
                 text, valid_urls = _generate_response_core([], "最近30天只看TechCrunch，分析OpenAI趋势")
@@ -76,4 +79,3 @@ def test_generate_response_core_specific_query_keeps_original_answer() -> None:
     assert text == response_text
     assert valid_urls == urls
     assert not followup_mock.called
-

@@ -9,22 +9,24 @@ import pytest
 pytestmark = pytest.mark.usefixtures("agent_dependency_stubs")
 
 
-def test_generate_response_core_uses_react_path_by_default() -> None:
+def test_generate_response_core_uses_custom_graph_path() -> None:
     from agent.agent import _generate_response_core
+    from agent.graph.state import AgentRunResult
 
-    with patch("agent.agent._generate_react", return_value=("structured answer", {"https://a.com"})) as mock_react:
+    with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult("structured answer", ["https://a.com"])) as mock_graph:
         text, urls = _generate_response_core([], "OpenAI trend")
 
     assert text == "structured answer"
-    assert urls == {"https://a.com"}
-    assert mock_react.called
+    assert urls == ["https://a.com"]
+    assert mock_graph.called
 
 
 def test_generate_response_core_empty_evidence_requires_clarification() -> None:
     from agent.agent import _generate_response_core
     from agent.clarification import ClarificationRequiredError
+    from agent.graph.state import AgentRunResult
 
-    with patch("agent.agent._generate_react", return_value=("answer-without-evidence", set())):
+    with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult("answer-without-evidence", [])):
         with pytest.raises(ClarificationRequiredError) as ei:
             _generate_response_core([], "OpenAI trend")
     payload = ei.value.clarification.to_dict()

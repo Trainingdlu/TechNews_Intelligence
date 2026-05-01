@@ -1,4 +1,4 @@
-"""Tests for agent module - ReAct architecture."""
+"""Tests for agent module - custom graph architecture."""
 
 from __future__ import annotations
 
@@ -13,22 +13,22 @@ pytestmark = pytest.mark.usefixtures("agent_dependency_stubs")
 # Tests: metrics module
 # ---------------------------------------------------------------------------
 class TestMetrics:
-    """Test the simplified ReAct metrics system."""
+    """Test the simplified graph metrics system."""
 
     def test_metrics_inc_and_snapshot(self):
         from agent.core.metrics import metrics_inc, get_route_metrics_snapshot, reset_route_metrics
 
         reset_route_metrics()
         metrics_inc("requests_total", 3)
-        metrics_inc("react_attempts", 3)
-        metrics_inc("react_success", 2)
-        metrics_inc("react_error", 1)
+        metrics_inc("graph_attempts", 3)
+        metrics_inc("graph_success", 2)
+        metrics_inc("graph_error", 1)
 
         snap = get_route_metrics_snapshot()
         assert snap["requests_total"] == 3
-        assert snap["react_attempts"] == 3
-        assert snap["react_success"] == 2
-        assert snap["react_error"] == 1
+        assert snap["graph_attempts"] == 3
+        assert snap["graph_success"] == 2
+        assert snap["graph_error"] == 1
         assert abs(snap["success_rate"] - 2 / 3) < 0.01
         assert abs(snap["error_rate"] - 1 / 3) < 0.01
 
@@ -39,7 +39,7 @@ class TestMetrics:
         reset_route_metrics()
         snap = get_route_metrics_snapshot()
         assert snap["requests_total"] == 0
-        assert snap["react_attempts"] == 0
+        assert snap["graph_attempts"] == 0
 
     def test_metrics_disabled(self):
         from agent.core.metrics import metrics_inc, get_route_metrics_snapshot, reset_route_metrics
@@ -192,10 +192,10 @@ class TestPromptContract:
 class TestAgentStructure:
     """Test that agent.py exports are correct and import cleanly."""
 
-    def test_langchain_tools_list(self):
-        from agent.agent import LANGCHAIN_TOOLS
+    def test_tool_catalog_list(self):
+        from agent.core.tool_catalog import iter_tool_definitions
 
-        tool_names = {t.name for t in LANGCHAIN_TOOLS}
+        tool_names = {t.name for t in iter_tool_definitions()}
         expected = {
             "search_news",
             "read_news_content",
@@ -222,7 +222,9 @@ class TestAgentStructure:
         assert "from .core.pipelines" not in source
         assert "LEGACY_TOOLS" not in source
         assert "_generate_legacy" not in source
-        assert "deepseek" not in source.lower()
+        assert "create_" + "rea" + "ct_agent" not in source
+        assert "LANGCHAIN" + "_TOOLS" not in source
+        assert "build_" + "rea" + "ct_graph" not in source
 
     def test_generate_response_exists(self):
         from agent.agent import generate_response, generate_response_payload, create_agent_chat
@@ -238,7 +240,7 @@ class TestHistoryConversion:
     """Test message format conversion utilities."""
 
     def test_history_to_messages(self):
-        from agent.agent import _history_to_messages
+        from agent.graph.nodes import _history_to_messages
 
         history = [
             {"role": "user", "parts": [{"text": "Hello"}]},
@@ -253,7 +255,7 @@ class TestHistoryConversion:
         assert isinstance(messages[2], HumanMessage)
 
     def test_empty_history(self):
-        from agent.agent import _history_to_messages
+        from agent.graph.nodes import _history_to_messages
 
         assert _history_to_messages([]) == []
         assert _history_to_messages(None) == []
@@ -339,52 +341,39 @@ class TestPackageExports:
 class TestAgentSafety:
     """Ensure prompt injection is mandatory and runtime errors are user-friendly."""
 
-    def test_build_react_prompt_kwargs_prefers_prompt(self):
+    def test_agent_module_does_not_import_prebuilt_runtime(self):
         import agent.agent as agent_mod
 
-        def _fake_create_react_agent(model, tools, prompt):  # noqa: ANN001
-            return {"model": model, "tools": tools, "prompt": prompt}
+        with open(agent_mod.__file__, "r", encoding="utf-8") as f:
+            source = f.read()
 
-        with patch.object(agent_mod, "create_react_agent", _fake_create_react_agent):
-            kwargs, key = agent_mod._build_react_prompt_kwargs()
-        assert key == "prompt"
-        assert "prompt" in kwargs
-
-    def test_build_react_prompt_kwargs_supports_state_modifier(self):
-        import agent.agent as agent_mod
-
-        def _fake_create_react_agent(model, tools, state_modifier):  # noqa: ANN001
-            return {"model": model, "tools": tools, "state_modifier": state_modifier}
-
-        with patch.object(agent_mod, "create_react_agent", _fake_create_react_agent):
-            kwargs, key = agent_mod._build_react_prompt_kwargs()
-        assert key == "state_modifier"
-        assert "state_modifier" in kwargs
+        assert "create_" + "rea" + "ct_agent" not in source
+        assert "_generate_" + "re" + "act" not in source
 
     def test_generate_response_core_handles_recursion_error(self):
         from agent.agent import AgentGenerationError, _generate_response_core
         from agent.core.metrics import get_route_metrics_snapshot, reset_route_metrics
 
         reset_route_metrics()
-        with patch("agent.agent._generate_react", side_effect=RuntimeError("GraphRecursionError: limit reached")):
+        with patch("agent.agent.invoke_custom_graph", side_effect=RuntimeError("GraphRecursionError: limit reached")):
             with pytest.raises(AgentGenerationError) as ei:
                 _generate_response_core([], "analyze AI trend in recent 10 days")
         assert "超时" in str(ei.value)
         snapshot = get_route_metrics_snapshot()
-        assert snapshot["react_error"] == 1
-        assert snapshot["react_recursion_limit_hit"] == 1
+        assert snapshot["graph_error"] == 1
+        assert snapshot["graph_recursion_limit_hit"] == 1
 
     def test_generate_response_core_handles_transient_error(self):
         from agent.agent import AgentGenerationError, _generate_response_core
         from agent.core.metrics import get_route_metrics_snapshot, reset_route_metrics
 
         reset_route_metrics()
-        with patch("agent.agent._generate_react", side_effect=RuntimeError("429 resource exhausted")):
+        with patch("agent.agent.invoke_custom_graph", side_effect=RuntimeError("429 resource exhausted")):
             with pytest.raises(AgentGenerationError) as ei:
                 _generate_response_core([], "analyze AI trend in recent 10 days")
         assert "暂时不可用" in str(ei.value)
         snapshot = get_route_metrics_snapshot()
-        assert snapshot["react_error"] == 1
+        assert snapshot["graph_error"] == 1
 
 
 
@@ -401,9 +390,9 @@ class TestAgentSafety:
                 with patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}):
                     with pytest.raises(AgentGenerationError) as ei:
                         generate_response([], "最近AI动态")
-        assert ei.value.code == "react_inline_citation_missing"
+        assert ei.value.code == "graph_inline_citation_missing"
         snapshot = get_route_metrics_snapshot()
-        assert snapshot.get("react_inline_citation_blocked", 0) == 1
+        assert snapshot.get("graph_inline_citation_blocked", 0) == 1
 
     def test_generate_response_allows_when_body_has_valid_source_url(self):
         from agent.agent import generate_response
@@ -439,9 +428,9 @@ class TestAgentSafety:
             with pytest.raises(AgentGenerationError) as ei:
                 generate_response([], "recent ai updates")
 
-        assert ei.value.code == "react_url_outside_valid_set"
+        assert ei.value.code == "graph_url_outside_valid_set"
         snapshot = get_route_metrics_snapshot()
-        assert snapshot.get("react_url_outside_valid_set_blocked", 0) == 1
+        assert snapshot.get("graph_url_outside_valid_set_blocked", 0) == 1
 
     def test_generate_response_allows_url_subset_of_valid_urls(self):
         from agent.agent import generate_response
@@ -478,26 +467,32 @@ class TestAgentSafety:
     def test_generate_response_core_allows_smalltalk_without_evidence_when_no_tools(self):
         from agent.agent import _generate_response_core
 
-        with patch("agent.agent._generate_react", return_value=("Hello, I can help with tech intelligence analysis.", set())):
+        from agent.graph.state import AgentRunResult
+
+        with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult("Hello, I can help with tech intelligence analysis.", [])):
             with patch("agent.agent._get_accumulated_tool_calls", return_value=set()):
                 text, urls = _generate_response_core([], "hello")
         assert "help" in text.lower()
-        assert urls == set()
+        assert urls == []
 
     def test_generate_response_core_allows_capability_question_without_evidence_when_no_tools(self):
         from agent.agent import _generate_response_core
 
-        with patch("agent.agent._generate_react", return_value=("I can do trend, comparison, timeline and landscape analysis.", set())):
+        from agent.graph.state import AgentRunResult
+
+        with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult("I can do trend, comparison, timeline and landscape analysis.", [])):
             with patch("agent.agent._get_accumulated_tool_calls", return_value=set()):
                 text, urls = _generate_response_core([], "assistant what can you do")
         assert "compar" in text.lower()
-        assert urls == set()
+        assert urls == []
 
     def test_generate_response_core_blocks_analysis_without_evidence_when_no_tools(self):
         from agent.agent import _generate_response_core
         from agent.clarification import ClarificationRequiredError
 
-        with patch("agent.agent._generate_react", return_value=("analysis result", set())):
+        from agent.graph.state import AgentRunResult
+
+        with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult("analysis result", [])):
             with patch("agent.agent._get_accumulated_tool_calls", return_value=set()):
                 with pytest.raises(ClarificationRequiredError) as ei:
                     _generate_response_core([], "analyze recent 30 days AI trend")
@@ -509,7 +504,9 @@ class TestAgentSafety:
         from agent.agent import _generate_response_core
         from agent.clarification import ClarificationRequiredError
 
-        with patch("agent.agent._generate_react", return_value=("tool output empty", set())):
+        from agent.graph.state import AgentRunResult
+
+        with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult("tool output empty", [])):
             with patch("agent.agent._get_accumulated_tool_calls", return_value={"query_news"}):
                 with pytest.raises(ClarificationRequiredError) as ei:
                     _generate_response_core([], "hello")

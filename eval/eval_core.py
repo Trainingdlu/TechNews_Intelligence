@@ -510,9 +510,9 @@ DEFAULT_BASELINE_METRIC_SPECS: list[tuple[str, str]] = [
     ("summary.avg_ndcg_at_10", "higher_better"),
     ("summary.avg_forbidden_claim_rate", "lower_better"),
     ("summary.avg_error_rate", "lower_better"),
-    ("route_metrics.react_success_rate", "higher_better"),
-    ("route_metrics.react_error_rate", "lower_better"),
-    ("route_metrics.react_recursion_limit_rate", "lower_better"),
+    ("route_metrics.graph_success_rate", "higher_better"),
+    ("route_metrics.graph_error_rate", "lower_better"),
+    ("route_metrics.graph_recursion_limit_rate", "lower_better"),
 ]
 
 

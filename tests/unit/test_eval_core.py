@@ -116,9 +116,9 @@ class EvalCoreTests(unittest.TestCase):
                 "avg_error_rate": 0.01,
             },
             "route_metrics": {
-                "react_success_rate": 0.97,
-                "react_error_rate": 0.03,
-                "react_recursion_limit_rate": 0.02,
+                "graph_success_rate": 0.97,
+                "graph_error_rate": 0.03,
+                "graph_recursion_limit_rate": 0.02,
             },
         }
         baseline = {
@@ -130,9 +130,9 @@ class EvalCoreTests(unittest.TestCase):
                 "avg_error_rate": 0.02,
             },
             "route_metrics": {
-                "react_success_rate": 0.95,
-                "react_error_rate": 0.05,
-                "react_recursion_limit_rate": 0.03,
+                "graph_success_rate": 0.95,
+                "graph_error_rate": 0.05,
+                "graph_recursion_limit_rate": 0.03,
             },
         }
         cmp_out = build_baseline_comparison(current, baseline)
@@ -147,7 +147,7 @@ class EvalCoreTests(unittest.TestCase):
                 "avg_min_url_hit_rate": 0.90,
             },
             "route_metrics": {
-                "react_error_rate": 0.04,
+                "graph_error_rate": 0.04,
             },
         }
         gates = [
@@ -164,8 +164,8 @@ class EvalCoreTests(unittest.TestCase):
                 "threshold": 0.80,
             },
             {
-                "name": "react_error_max",
-                "metric_path": "route_metrics.react_error_rate",
+                "name": "graph_error_max",
+                "metric_path": "route_metrics.graph_error_rate",
                 "op": "max",
                 "threshold": 0.03,
             },

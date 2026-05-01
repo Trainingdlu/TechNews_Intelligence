@@ -113,11 +113,11 @@
 >**发布热力图**：单个最高热度时段为周一 14:00（316），次高峰出现在周四 13:00（295）；此外，周六 08:00（258）与周日 09:00（269）等周末早间时段，以及大部分的深夜（22:00-23:00）均出现了显著的活跃高峰，体现了HN社区的热度分布呈现高度碎片化。
 
 ## 2.4 深度分析智能体
-基于 LangGraph ReAct 架构构建的交互式分析智能体，支持 Vertex AI 与 Gemini API。提供网页前端、Telegram 机器人、本地命令行三种接入方式。
+基于自定义 LangGraph `StateGraph` 构建的交互式分析智能体，支持 Vertex AI、Gemini API 与 DeepSeek 兼容 OpenAI 接口。提供网页前端、Telegram 机器人、本地命令行三种接入方式。
 
 ### 运行时架构
 
-系统采用统一的 ReAct 智能体单循环架构，LLM 拥有完全的工具调用自主权。工具执行通过框架无关的 `ToolRuntime` 统一入口完成，并由 `ToolRegistry` 分发、`ToolRuntimeHooks` 在执行前后插入参数校验与证据审计守卫。每次请求自动绑定 `AgentRequestTrace`，记录工具调用链、延迟与 Token 用量，并在请求结束后持久化至 `agent_runs` / `agent_tool_events` 表。当证据不足或来源冲突时，Clarification HITL 机制会中断生成并返回结构化澄清问题，由用户补充范围后再继续。
+系统采用项目自有的 LangGraph 节点/边编排，主链路不再依赖预构建智能体运行时。Gemini 负责意图识别与最终整合，DeepSeek 负责工具调用计划，工具执行通过框架无关的 `ToolRuntime` 统一入口完成，并由 `ToolRegistry` 分发、`ToolRuntimeHooks` 在执行前后插入参数校验与证据审计守卫。每次请求自动绑定 `AgentRequestTrace`，记录 graph 节点、模型角色、工具调用链、证据 URL、延迟与 Token 用量，并在请求结束后持久化至 `agent_runs` / `agent_tool_events` 表。当证据不足、URL 越权或来源冲突时，Clarification HITL 机制会返回结构化澄清问题，由用户补充范围后再继续。
 
 ```text
 请求入口 (app/api.py / app/bot.py / app/cli.py)
@@ -126,27 +126,61 @@ Clarification 历史解析 ── 检测是否为澄清追问，合并原问题
   ↓
 request_trace_context() ── 绑定 AgentRequestTrace
   ↓
-agent.py → LangGraph create_react_agent
-  ↓  ↑ (tool calls)
-trace_tool_start()             ── 记录工具开始
-ToolRuntime.execute()          ── 统一工具运行时入口
+agent.py → invoke_custom_graph()
   ↓
-ToolRuntimeHooks.pre_tool_use()  ── 参数校验
+prepare_context ── 历史压缩与上下文整理
   ↓
-ToolRegistry.execute()         ── agent/tools/... (DB / Jina Rerank / 知识库能力)
+intent_router ── 输出 direct_answer / needs_clarification / needs_tools
   ↓
-ToolRuntimeHooks.post_tool_use() ── 证据审计
-trace_tool_finish()            ── 记录工具结束与输出摘要
+tool_selection ── 按意图动态裁剪工具集合
   ↓
-ToolEnvelope → Evidence 累积
+tool_worker ── 只输出 JSON tool_calls，不生成最终答案
   ↓
-LLM 生成最终回复 → Token 用量采集
+tool_policy ── 校验工具名、参数、URL 上下文与循环调用
   ↓
-Clarification 检测 ── 证据不足 / 范围模糊 / 来源冲突 → 结构化澄清
+tool_executor ── ToolRuntime.execute() 统一执行工具
+  ↓
+evidence_normalizer ── 只从 ToolEnvelope.evidence 合并证据
+  ↓
+tool_loop_decider ── 判断是否继续全文读取或进入综合
+  ↓
+final_synthesizer ── 基于结构化工具结果和 evidence brief 生成最终分析
+  ↓
+output_guard ── 清理非证据 URL，确保来源只来自 evidence_urls
   ↓
 后处理管道 (evidence.py)        ── 引用归一化 + 来源列表
   ↓
 finalize_request_trace()       ── Trace 持久化至 DB
+```
+
+### 流式状态展示
+
+`/chat-stream` 保留旧的 `status` 事件，同时新增稳定的 `progress` 与 `evidence` 事件。前端只展示紧凑中文状态，不暴露 prompt、原始模型输出、policy debug 或完整 graph state。
+
+```text
+正在理解问题
+需要进一步分析
+
+正在调用工具
+search_news
+fulltext_batch
+trend_analysis
+
+正在检索相关新闻
+OpenAI AI chip self-developed semiconductor 最近 7 天
+
+已找到 5 篇相关报道
+- TechCrunch · OpenAI ...
+- The Information · OpenAI ...
+- Reuters · OpenAI ...
+
+正在读取文章
+TechCrunch · OpenAI ...
+
+正在整理信息
+
+正在生成分析
+输出结论、依据、风险和不确定性
 ```
 
 ### 工具体系
@@ -178,8 +212,9 @@ finalize_request_trace()       ── Trace 持久化至 DB
 | ToolCatalog | `core/tool_catalog.py` | 工具唯一真相源：名称、输入模型、handler、description、capability、tool_group、证据要求与意图适配 |
 | ToolRuntime | `core/tool_runtime.py` | 框架无关执行入口：input validation、hook、handler dispatch、trace、evidence 累积 |
 | ToolRegistry | `core/tool_registry.py` | 工具注册与执行：Pydantic 输入验证 → handler 调用 → ToolEnvelope 输出标准化 |
-| ToolEnvelope | `core/tool_contracts.py` | 统一输出信封：`status`(ok/empty/error) + `data` + `evidence[]` + `diagnostics` |
+| ToolEnvelope | `core/tool_contracts.py` | 统一输出信封：`status`(ok/empty/error) + `data` + `evidence[]` + `diagnostics` + `error_code` |
 | ToolRuntimeHooks | `core/tool_runtime_hooks.py` | Pre-hook 参数守卫（时间窗口范围、topic 非空、去重校验）；Post-hook 证据完整性审计 |
+| Graph Runtime | `graph/` | 自定义 LangGraph 节点/边：意图路由、动态工具选择、工具计划、证据归一、最终综合、输出守卫 |
 | Evidence Pipeline | `core/evidence.py` | URL 提取 → 内联引用编号 → 来源列表渲染 → 无效引用清洗 |
 | Agent Trace | `core/trace.py` | 请求级追踪：工具调用事件记录、Token 用量采集、异常链捕获、摘要持久化 |
 | Trace Store | `services/agent_trace_store.py` | Trace 持久化适配器：将 `AgentRequestTrace` 摘要写入 `agent_runs` + `agent_tool_events` 表 |
@@ -187,7 +222,7 @@ finalize_request_trace()       ── Trace 持久化至 DB
 | Clarification HITL | `clarification.py` | 证据不足 / 范围模糊 / 来源冲突检测 → 结构化澄清问题生成 → 用户追问自动合并 |
 | Thread Persistence | `services/conversations.py` | 对话线程持久化：创建线程、追加消息、加载历史、按 channel 列举 |
 | Metrics | `core/metrics.py` | 运行时指标：请求量、成功率、错误率、递归超限率、Trace 指标，自动日志输出 |
-| 角色策略 | `core/role_policy.py` | 角色-技能 ACL 策略（预留多智能体扩展点） |
+| 角色策略 | `core/role_policy.py` | 角色-工具 ACL 策略（预留多智能体扩展点） |
 | MCP 协议层 | `mcp/` | In-Process + Stdio 双传输后端的 MCP 抽象，作为扩展层保留，非默认请求路径 |
 
 ### 系统提示词与分析框架
@@ -238,11 +273,11 @@ TechNews_Intelligence/
 │       └── eval-manual.yml
 │
 ├── agent/                           # 智能体核心逻辑
-│   ├── agent.py                     # ReAct 运行时主入口
+│   ├── agent.py                     # 自定义 LangGraph 主入口与 API payload 适配
 │   ├── clarification.py             # Clarification HITL：范围/冲突检测 + 结构化澄清
 │   ├── prompts.py                   # 系统提示词与约束
+│   ├── graph/                       # StateGraph 节点、路由、模型角色与流式事件
 │   ├── tools/                       # 具体工具实现代码（含 rerank.py 二次精排）
-│   ├── tool_adapters/               # LangChain / 未来 MCP 等外部框架适配层
 │   ├── core/                        # tool runtime / registry / hooks / evidence / metrics / trace
 │   ├── mcp/                         # MCP 扩展层
 │   ├── .env.example
@@ -334,7 +369,12 @@ cp deployment/.env.example deployment/.env
 # 编辑 deployment/.env，填入环境变量
 # 关键变量：
 # AGENT_MODEL_PROVIDER           — 模型后端
+# AGENT_GRAPH_INTENT_PROVIDER    — 意图识别模型后端，默认 vertex
+# AGENT_GRAPH_TOOL_PROVIDER      — 工具规划模型后端，默认 deepseek
+# AGENT_GRAPH_FINAL_PROVIDER     — 最终综合模型后端，默认 vertex
+# AGENT_GRAPH_MAX_TOOL_ROUNDS    — 单次请求最大工具轮次，默认 2
 # GEMINI_API_KEY                 — Gemini API 密钥
+# DEEPSEEK_API_KEY               — DeepSeek API 密钥
 # VERTEX_PROJECT                 — GCP 项目 ID
 # GOOGLE_APPLICATION_CREDENTIALS — Vertex AI 服务账号凭证路径
 # JINA_API_KEY                   — Jina Embeddings API 密钥
@@ -365,5 +405,3 @@ python -m app.cli
 
 ## 5. 开源协议
 本项目采用 GNU AGPLv3 协议。
-
-

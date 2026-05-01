@@ -1,7 +1,7 @@
 ﻿"""Shared runtime factories for tool registry and tool hooks.
 
 This module is the canonical home of the runtime component factories used by
-the unified ReAct agent path.
+the custom graph agent path.
 """
 
 from __future__ import annotations

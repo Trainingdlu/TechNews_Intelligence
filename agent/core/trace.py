@@ -499,6 +499,60 @@ def record_tool_policy_block(
     )
 
 
+def record_graph_node_event(
+    *,
+    node: str,
+    status: str,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Record a compact graph-node audit event in the current request trace."""
+    trace = get_current_request_trace()
+    if trace is None:
+        return
+    events = trace.runtime.setdefault("graph_nodes", [])
+    if not isinstance(events, list):
+        events = []
+        trace.runtime["graph_nodes"] = events
+    events.append(
+        summarize_payload(
+            {
+                "node": str(node or "").strip(),
+                "status": str(status or "").strip(),
+                "at_ms": _now_ms(),
+                "metadata": metadata if isinstance(metadata, dict) else {},
+            }
+        )
+    )
+
+
+def record_graph_model_event(
+    *,
+    node: str,
+    provider: str,
+    model: str,
+    fallback: bool = False,
+    error: str | None = None,
+) -> None:
+    """Record which model a graph node used, including fallback decisions."""
+    trace = get_current_request_trace()
+    if trace is None:
+        return
+    events = trace.runtime.setdefault("model_events", [])
+    if not isinstance(events, list):
+        events = []
+        trace.runtime["model_events"] = events
+    payload: dict[str, Any] = {
+        "node": str(node or "").strip(),
+        "provider": str(provider or "").strip(),
+        "model": str(model or "").strip(),
+        "fallback": bool(fallback),
+        "at_ms": _now_ms(),
+    }
+    if error:
+        payload["error"] = str(error)
+    events.append(summarize_payload(payload))
+
+
 def trace_tool_start(tool_name: str, payload: dict[str, Any]) -> int | None:
     trace = get_current_request_trace()
     if trace is None:

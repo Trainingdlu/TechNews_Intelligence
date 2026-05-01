@@ -188,7 +188,7 @@ def build_agent_chat_model(*, temperature: float) -> Any:
 def agent_runtime_metadata() -> dict[str, str]:
     config = resolve_agent_model_config()
     return {
-        "route": "react",
+        "route": "custom_graph",
         "provider": config.provider,
         "model": config.model,
     }

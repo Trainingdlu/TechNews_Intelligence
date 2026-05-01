@@ -37,6 +37,32 @@ def evaluate_tool_calls(
 ) -> ToolPolicyDecision:
     """Validate pending tool calls before the LangGraph tools node runs."""
     pending_calls = _pending_tool_calls(messages)
+    user_messages = [
+        str(getattr(message, "content", "") or "")
+        for message in messages
+        if str(getattr(message, "type", "")).strip().lower() == "human"
+    ]
+    previous_tool_calls = _tool_call_names_from_messages(messages)
+    return evaluate_pending_tool_calls(
+        pending_calls,
+        allowed_tool_names=allowed_tool_names,
+        input_schemas=input_schemas,
+        evidence_urls=evidence_urls,
+        user_messages=user_messages,
+        previous_tool_calls=previous_tool_calls,
+    )
+
+
+def evaluate_pending_tool_calls(
+    pending_calls: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    allowed_tool_names: set[str],
+    input_schemas: dict[str, dict[str, Any]] | None = None,
+    evidence_urls: list[str] | set[str] | None = None,
+    user_messages: list[str] | tuple[str, ...] | None = None,
+    previous_tool_calls: list[str] | tuple[str, ...] | None = None,
+) -> ToolPolicyDecision:
+    """Validate graph-native pending tool calls before ToolRuntime execution."""
     if not pending_calls:
         return allow_tool_use()
 
@@ -89,11 +115,14 @@ def evaluate_tool_calls(
                 return decision
 
         if name == "read_news_content":
-            decision = _validate_read_news_content(messages, args, evidence_urls)
+            decision = _validate_read_news_content_context(args, evidence_urls, user_messages)
             if not decision.allowed:
                 return decision
 
-    loop_decision = _validate_tool_loop(messages)
+    loop_decision = _validate_pending_tool_loop(
+        pending_calls,
+        previous_tool_calls=previous_tool_calls,
+    )
     if not loop_decision.allowed:
         return loop_decision
 
@@ -184,6 +213,23 @@ def _pending_tool_calls(messages: list[BaseMessage] | tuple[BaseMessage, ...]) -
             and str(call.get("id", "")).strip() not in answered_tool_ids
         ]
     return []
+
+
+def _tool_call_names_from_messages(messages: list[BaseMessage] | tuple[BaseMessage, ...]) -> list[str]:
+    names: list[str] = []
+    for message in messages:
+        if isinstance(message, AIMessage):
+            for call in getattr(message, "tool_calls", None) or []:
+                if not isinstance(call, dict):
+                    continue
+                name = str(call.get("name", "")).strip()
+                if name:
+                    names.append(name)
+        elif isinstance(message, ToolMessage):
+            name = str(getattr(message, "name", "")).strip()
+            if name:
+                names.append(name)
+    return names
 
 
 def _validate_numeric_args(
@@ -295,6 +341,19 @@ def _validate_read_news_content(
     args: dict[str, Any],
     evidence_urls: list[str] | set[str] | None,
 ) -> ToolPolicyDecision:
+    user_messages = [
+        str(getattr(message, "content", "") or "")
+        for message in messages
+        if str(getattr(message, "type", "")).strip().lower() == "human"
+    ]
+    return _validate_read_news_content_context(args, evidence_urls, user_messages)
+
+
+def _validate_read_news_content_context(
+    args: dict[str, Any],
+    evidence_urls: list[str] | set[str] | None,
+    user_messages: list[str] | tuple[str, ...] | None,
+) -> ToolPolicyDecision:
     url = str(args.get("url", "") or "").strip()
     if not url:
         return ToolPolicyDecision(action="clarify", reason="read_news_content_missing_url")
@@ -304,10 +363,8 @@ def _validate_read_news_content(
         normalized = normalize_url_for_match(str(item))
         if normalized:
             allowed_urls.add(normalized)
-    for message in messages:
-        if str(getattr(message, "type", "")).strip().lower() != "human":
-            continue
-        for item in extract_urls(str(getattr(message, "content", "") or "")):
+    for message in user_messages or []:
+        for item in extract_urls(str(message or "")):
             normalized = normalize_url_for_match(item)
             if normalized:
                 allowed_urls.add(normalized)
@@ -325,6 +382,33 @@ def _validate_read_news_content(
             reason="read_news_content_url_not_in_context",
             details={"url": url},
         )
+    return allow_tool_use()
+
+
+def _validate_pending_tool_loop(
+    pending_calls: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+    *,
+    previous_tool_calls: list[str] | tuple[str, ...] | None,
+) -> ToolPolicyDecision:
+    max_repeats = _env_int("AGENT_TOOL_MAX_REPEATS_PER_RUN", 6, minimum=1)
+    counts: dict[str, int] = {}
+    for raw_name in previous_tool_calls or []:
+        name = str(raw_name or "").strip()
+        if name:
+            counts[name] = counts.get(name, 0) + 1
+    for call in pending_calls:
+        if not isinstance(call, dict):
+            continue
+        name = str(call.get("name", "")).strip()
+        if not name:
+            continue
+        counts[name] = counts.get(name, 0) + 1
+        if counts[name] > max_repeats:
+            return ToolPolicyDecision(
+                action="clarify",
+                reason="tool_call_loop_detected",
+                details={"tool": name, "count": counts[name], "maximum": max_repeats},
+            )
     return allow_tool_use()
 
 

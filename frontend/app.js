@@ -374,6 +374,43 @@
         }
     }
 
+    function updateTypingProgress(typingEl, payload) {
+        if (!typingEl || !payload) return;
+        updateTypingStatus(typingEl, String(payload.title || '').trim());
+
+        const detailEl = typingEl.querySelector('.typing-detail');
+        const detail = String(payload.detail || '').trim();
+        if (detailEl) {
+            detailEl.textContent = detail;
+            detailEl.hidden = !detail;
+        }
+
+        const itemsEl = typingEl.querySelector('.typing-items');
+        const items = Array.isArray(payload.items)
+            ? payload.items.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 3)
+            : [];
+        if (itemsEl) {
+            itemsEl.innerHTML = '';
+            for (const item of items) {
+                const li = document.createElement('li');
+                li.textContent = item;
+                itemsEl.appendChild(li);
+            }
+            itemsEl.hidden = items.length === 0;
+        }
+    }
+
+    function updateTypingEvidence(typingEl, payload) {
+        const title = String((payload && payload.title) || '').trim();
+        const source = String((payload && payload.source) || '').trim();
+        if (!title && !source) return;
+        updateTypingProgress(typingEl, {
+            title: '正在读取文章',
+            detail: '',
+            items: [source ? `${source} · ${title}` : title],
+        });
+    }
+
     async function consumeChatStream(res, typingEl) {
         if (!res.body) return { final: null, error: null };
 
@@ -405,6 +442,14 @@
 
             if (eventName === 'status' && payload.text) {
                 updateTypingStatus(typingEl, payload.text);
+                return;
+            }
+            if (eventName === 'progress') {
+                updateTypingProgress(typingEl, payload);
+                return;
+            }
+            if (eventName === 'evidence') {
+                updateTypingEvidence(typingEl, payload);
                 return;
             }
             if (eventName === 'final') {
@@ -644,7 +689,11 @@
         indicator.className = 'typing-indicator';
         indicator.innerHTML = `
             <span class="typing-spinner" aria-hidden="true"></span>
-            <div class="typing-label" role="status" aria-live="polite">${statusText}</div>
+            <div class="typing-copy">
+                <div class="typing-label" role="status" aria-live="polite">${statusText}</div>
+                <div class="typing-detail" hidden></div>
+                <ul class="typing-items" hidden></ul>
+            </div>
         `;
 
         el.appendChild(indicator);

@@ -75,7 +75,7 @@ def test_agent_runtime_metadata_uses_agent_model(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("AGENT_MODEL", "deepseek-v4-pro")
 
     assert agent_runtime_metadata() == {
-        "route": "react",
+        "route": "custom_graph",
         "provider": "deepseek",
         "model": "deepseek-v4-pro",
     }

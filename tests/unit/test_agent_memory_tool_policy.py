@@ -1,26 +1,25 @@
-"""Unit tests for agent memory trimming and tool-call policy hooks."""
+"""Unit tests for agent memory trimming and graph-native tool-call policy."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
-import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agent.clarification import ClarificationRequiredError
-from agent.core.metrics import get_route_metrics_snapshot, reset_route_metrics
+from agent.core.trace import record_tool_policy_block
 from agent.core.trace import finalize_request_trace, request_trace_context
-from agent.graph_factory import make_post_model_hook, pre_model_hook
-from agent.tool_policy import evaluate_tool_calls
+from agent.memory_policy import build_llm_input_messages
+from agent.tool_policy import evaluate_pending_tool_calls, evaluate_tool_calls
 
 
-def test_pre_model_hook_uses_llm_input_messages_without_overwriting_state() -> None:
+def test_memory_policy_uses_llm_input_messages_without_overwriting_state() -> None:
     messages = []
     for idx in range(10):
         messages.append(HumanMessage(content=f"user-{idx}"))
         messages.append(AIMessage(content=f"assistant-{idx}"))
     messages.append(HumanMessage(content="latest question"))
-    state = {"messages": list(messages)}
+    original = list(messages)
+
+    import os
+    from unittest.mock import patch
 
     with patch.dict(
         "os.environ",
@@ -30,12 +29,11 @@ def test_pre_model_hook_uses_llm_input_messages_without_overwriting_state() -> N
             "AGENT_CONTEXT_MAX_TOKENS": "100000",
         },
     ):
-        update = pre_model_hook(state)
+        trimmed = build_llm_input_messages(messages)
 
-    assert "llm_input_messages" in update
-    assert len(update["llm_input_messages"]) <= 5
-    assert update["llm_input_messages"][-1].content == "latest question"
-    assert len(state["messages"]) == len(messages)
+    assert len(trimmed) <= 5
+    assert trimmed[-1].content == "latest question"
+    assert messages == original
 
 
 def test_tool_policy_blocks_out_of_range_numeric_args() -> None:
@@ -107,47 +105,30 @@ def test_tool_policy_allows_valid_tool_call() -> None:
     assert decision.allowed
 
 
-def test_post_model_hook_raises_clarification_for_invalid_tool_call() -> None:
-    reset_route_metrics()
-    hook = make_post_model_hook(
-        allowed_tool_names={"query_news"},
-        input_schemas={
-            "query_news": {
-                "type": "object",
-                "properties": {
-                    "days": {"type": "integer", "minimum": 1, "maximum": 365},
-                },
-            }
+def test_pending_tool_policy_records_trace_block_for_invalid_tool_call() -> None:
+    schemas = {
+        "query_news": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "minimum": 1, "maximum": 365},
+            },
         },
-    )
-    state = {
-        "messages": [
-            HumanMessage(content="latest AI"),
-            AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "id": "call-1",
-                        "name": "query_news",
-                        "args": {"query": "AI", "days": 999},
-                    }
-                ],
-            ),
-        ]
     }
+    pending = [{"name": "query_news", "args": {"query": "AI", "days": 999}}]
 
     with request_trace_context(user_message="latest AI", request_id="req-tool-policy"):
-        with pytest.raises(ClarificationRequiredError) as exc_info:
-            hook(state)
+        decision = evaluate_pending_tool_calls(
+            pending,
+            allowed_tool_names={"query_news"},
+            input_schemas=schemas,
+        )
+        record_tool_policy_block(reason=decision.reason, details=decision.details)
         summary = finalize_request_trace(
             final_status="clarification_required",
-            error_code="clarification_ambiguous_scope",
+            error_code=f"tool_policy_{decision.reason}",
         )
 
-    assert exc_info.value.clarification.reason == "ambiguous_scope"
-    snapshot = get_route_metrics_snapshot()
-    assert snapshot["tool_policy_blocked_total"] == 1
-    assert snapshot["tool_policy_blocked_tool_arg_out_of_range"] == 1
+    assert not decision.allowed
     assert summary["runtime"]["tool_policy_blocks"][0]["reason"] == "tool_arg_out_of_range"
 
 

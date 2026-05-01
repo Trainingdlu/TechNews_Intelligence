@@ -1,6 +1,6 @@
 ﻿"""Role-level tool allowlist policy.
 
-In the unified ReAct architecture, the primary role is 'agent' which has
+In the custom graph architecture, the primary role is 'agent' which has
 access to all registered tools. The multi-role definitions (router, miner,
 analyst, formatter) are preserved as extension points for future multi-agent
 orchestration scenarios.
@@ -26,7 +26,7 @@ _ALL_TOOLS: set[str] = {
 }
 
 ROLE_ALLOWED_TOOLS: dict[str, set[str]] = {
-    # Primary role 鈥?used by the ReAct agent
+    # Primary role used by the custom graph agent
     "agent": set(_ALL_TOOLS),
     # Subagent roles 鈥?reserved for future multi-agent evolution
     "router": {

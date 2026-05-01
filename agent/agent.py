@@ -1,26 +1,22 @@
-﻿"""Agent runtime 閳?ReAct-native architecture with tool infrastructure.
+﻿"""Agent runtime backed by a custom LangGraph StateGraph.
 
-Single runtime: LangGraph ReAct agent with full tool autonomy.
-LangChain tools are adapters over the framework-independent ToolRuntime.
+Custom runtime: LangGraph StateGraph with project-owned ToolRuntime.
 """
 
 from __future__ import annotations
 
-import inspect
 import os
 import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.prebuilt import create_react_agent
+from langchain_core.messages import HumanMessage
 
 from services.llm_provider import build_agent_chat_model
 
-from .core.runtime_factories import build_default_registry
-from .graph_factory import build_react_graph
-from .prompts import SYSTEM_INSTRUCTION
+from .graph.builder import invoke_custom_graph
 from .clarification import (
+    ClarificationPayload,
     ClarificationRequiredError,
     build_clarification_payload,
     detect_scope_or_conflict_reason,
@@ -41,42 +37,18 @@ from .core.metrics import (
 )
 from .core.run_context import (
     agent_run_context,
-    get_evidence_urls as _get_accumulated_evidence,
+    emit_progress as _emit_progress,
     get_tool_calls as _get_accumulated_tool_calls,
     set_request_metadata as _set_request_metadata,
 )
 from .core.trace import (
-    extract_token_usage as _extract_token_usage,
     finalize_request_trace as _finalize_request_trace,
     get_current_request_id as _get_current_request_id,
     get_current_thread_id as _get_current_thread_id,
     get_last_trace_summary as _get_last_trace_summary,
     request_trace_context as _request_trace_context,
-    set_request_token_usage as _set_request_token_usage,
 )
-from .tool_adapters.langchain import LANGCHAIN_TOOLS
 from .tools.news_ops import lookup_url_titles
-
-
-# ---------------------------------------------------------------------------
-# tool infrastructure (lazy-initialized singletons)
-# ---------------------------------------------------------------------------
-_registry = None
-
-
-def _get_registry():
-    global _registry
-    if _registry is None:
-        _registry = build_default_registry()
-    return _registry
-
-
-
-
-# ---------------------------------------------------------------------------
-# ReAct Agent
-# ---------------------------------------------------------------------------
-_react_agent: Any | None = None
 
 
 class AgentGenerationError(Exception):
@@ -90,91 +62,10 @@ class AgentGenerationError(Exception):
     def __str__(self) -> str:  # pragma: no cover - trivial
         return self.message
 
-
-def _build_react_prompt_kwargs() -> tuple[dict[str, str], str]:
-    """Build prompt injection kwargs for the installed LangGraph version.
-
-    We never allow creating an agent without SYSTEM_INSTRUCTION.
-    """
-    candidate_keys = ("prompt", "state_modifier", "messages_modifier")
-
-    try:
-        signature = inspect.signature(create_react_agent)
-        parameters = signature.parameters
-    except (TypeError, ValueError):
-        parameters = {}
-
-    # Prefer explicit signature-matched parameter to avoid silent drift.
-    for key in candidate_keys:
-        if key in parameters:
-            return {key: SYSTEM_INSTRUCTION}, key
-
-    # Some versions hide compatibility through **kwargs.
-    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
-        return {"prompt": SYSTEM_INSTRUCTION}, "prompt(**kwargs)"
-
-    raise RuntimeError(
-        "Unable to inject SYSTEM_INSTRUCTION into create_react_agent; "
-        "supported parameter not found (expected one of: prompt/state_modifier/messages_modifier)."
-    )
-
-
 def _build_chat_model() -> Any:
     """Create the chat model client from environment configuration."""
     temperature = float(os.getenv("AGENT_TEMPERATURE", "0.1"))
     return build_agent_chat_model(temperature=temperature)
-
-
-def _get_react_agent():
-    """Lazily initialize the LangGraph ReAct agent."""
-    global _react_agent
-    if _react_agent is not None:
-        return _react_agent
-
-    model = _build_chat_model()
-    registry = _get_registry()
-
-    prompt_kwargs, prompt_key = _build_react_prompt_kwargs()
-    try:
-        _react_agent = build_react_graph(
-            create_agent=create_react_agent,
-            model=model,
-            tools=LANGCHAIN_TOOLS,
-            prompt_kwargs=prompt_kwargs,
-            input_schemas={
-                name: registry.input_schema(name)
-                for name in registry.list_tools()
-            },
-        )
-    except TypeError as exc:
-        raise RuntimeError(
-            f"create_react_agent rejected prompt injection via '{prompt_key}': {exc}"
-        ) from exc
-
-    return _react_agent
-
-
-# ---------------------------------------------------------------------------
-# Message conversion utilities
-# ---------------------------------------------------------------------------
-def _history_to_messages(history: list[dict]) -> list[Any]:
-    """Convert API/bot history format to LangChain messages."""
-    messages: list[Any] = []
-    for item in history or []:
-        role = item.get("role", "")
-        text = ""
-        for part in item.get("parts", []):
-            if isinstance(part, dict) and part.get("text"):
-                text += str(part["text"])
-        if not text:
-            continue
-
-        if role == "user":
-            messages.append(HumanMessage(content=text))
-        else:
-            messages.append(AIMessage(content=text))
-    return messages
-
 
 def _coerce_to_text(content: Any) -> str:
     """Coerce various content types to plain text."""
@@ -193,23 +84,6 @@ def _coerce_to_text(content: Any) -> str:
     if content is None:
         return ""
     return str(content)
-
-
-def _extract_final_text(result: Any) -> str:
-    """Extract the final AI message text from a LangGraph result."""
-    if isinstance(result, dict) and "messages" in result:
-        messages = result["messages"]
-        for msg in reversed(messages):
-            if isinstance(msg, AIMessage):
-                text = _coerce_to_text(msg.content)
-                if text:
-                    return text
-        if messages:
-            tail = messages[-1]
-            text = _coerce_to_text(getattr(tail, "content", tail))
-            if text:
-                return text
-    return _coerce_to_text(result)
 
 
 # ---------------------------------------------------------------------------
@@ -338,15 +212,15 @@ def _enforce_body_valid_url_guard(
     if _contains_valid_url_in_body_core(core_text, valid_urls):
         return
 
-    _metrics_inc("react_inline_citation_blocked")
+    _metrics_inc("graph_inline_citation_blocked")
     if _contains_cjk(user_message):
         raise AgentGenerationError(
             "抱歉，本次回答正文缺少有效来源 URL。为避免无证据结论，已阻断该输出，请重试。",
-            code="react_inline_citation_missing",
+            code="graph_inline_citation_missing",
         )
     raise AgentGenerationError(
         "The response was blocked because the answer body did not include any URL from valid evidence.",
-        code="react_inline_citation_missing",
+        code="graph_inline_citation_missing",
     )
 
 
@@ -383,16 +257,16 @@ def _enforce_output_urls_in_valid_set(
     if not unknown:
         return
 
-    _metrics_inc("react_url_outside_valid_set_blocked")
+    _metrics_inc("graph_url_outside_valid_set_blocked")
     preview = ", ".join(unknown[:3])
     if _contains_cjk(user_message):
         raise AgentGenerationError(
             f"抱歉，本次输出包含不在证据集合中的 URL，已拦截。异常 URL：{preview}",
-            code="react_url_outside_valid_set",
+            code="graph_url_outside_valid_set",
         )
     raise AgentGenerationError(
         f"Blocked: output contains URLs outside current valid_urls set: {preview}",
-        code="react_url_outside_valid_set",
+        code="graph_url_outside_valid_set",
     )
 
 
@@ -444,92 +318,39 @@ def _build_hitl_soft_followup(
 # ---------------------------------------------------------------------------
 # Core generation
 # ---------------------------------------------------------------------------
-def _generate_react(
-    history: list[dict],
-    user_message: str,
-    *,
-    invoke_metadata: dict[str, Any] | None = None,
-    invoke_tags: list[str] | None = None,
-) -> tuple[str, list[str]]:
-    """Run the ReAct agent loop with tool infrastructure."""
-    agent = _get_react_agent()
-    messages = _history_to_messages(history)
-    messages.append(HumanMessage(content=user_message))
-
-    recursion_limit = int(os.getenv("AGENT_REACT_RECURSION_LIMIT", "25"))
-    invoke_config: dict[str, Any] = {"recursion_limit": recursion_limit}
-    if invoke_metadata:
-        invoke_config["metadata"] = dict(invoke_metadata)
-    if invoke_tags:
-        invoke_config["tags"] = [str(tag).strip() for tag in invoke_tags if str(tag).strip()]
-
-    result = agent.invoke(
-        {"messages": messages},
-        config=invoke_config,
-    )
-
-    if isinstance(result, dict) and "messages" in result:
-        usage = _extract_token_usage(list(result.get("messages", [])))
-        _set_request_token_usage(usage)
-
-    text = _extract_final_text(result)
-    if not text:
-        raise RuntimeError("ReAct agent returned empty response.")
-
-    # Collect evidence from two sources:
-    # 1. Structured evidence from ToolEnvelope (accumulated during tool calls)
-    valid_urls: list[str] = list(_get_accumulated_evidence())
-    seen_urls = set(valid_urls)
-
-    # 2. URLs parsed from ToolMessage content (fallback for non-tool tools)
-    if isinstance(result, dict) and "messages" in result:
-        from langchain_core.messages import ToolMessage
-        from .core.evidence import extract_urls
-
-        for msg in result.get("messages", []):
-            if isinstance(msg, AIMessage):
-                for call in (getattr(msg, "tool_calls", None) or []):
-                    if isinstance(call, dict):
-                        _accumulate_tool_call(str(call.get("name", "")).strip())
-            if isinstance(msg, ToolMessage):
-                _accumulate_tool_call(str(getattr(msg, "name", "")).strip())
-                content_str = _coerce_to_text(getattr(msg, "content", ""))
-                for url in extract_urls(content_str):
-                    if url not in seen_urls:
-                        valid_urls.append(url)
-                        seen_urls.add(url)
-
-    # 3. URLs from previous conversation history (allows multi-turn references)
-    from .core.evidence import extract_urls
-    for msg in messages:
-        if isinstance(msg, (AIMessage, HumanMessage)):
-            content_str = _coerce_to_text(getattr(msg, "content", ""))
-            for url in extract_urls(content_str):
-                if url not in seen_urls:
-                    valid_urls.append(url)
-                    seen_urls.add(url)
-
-    return text, valid_urls
-
-
 def _generate_response_core(
     history: list[dict],
     user_message: str,
-    *,
-    invoke_metadata: dict[str, Any] | None = None,
-    invoke_tags: list[str] | None = None,
 ) -> tuple[str, list[str]]:
-    """Core generation: invoke ReAct agent with metrics tracking."""
+    """Core generation: invoke the custom LangGraph agent with metrics tracking."""
     _metrics_inc("requests_total")
 
     try:
-        _metrics_inc("react_attempts")
-        result, valid_urls = _generate_react(
+        _metrics_inc("graph_attempts")
+        graph_result = invoke_custom_graph(
             history,
             user_message,
-            invoke_metadata=invoke_metadata,
-            invoke_tags=invoke_tags,
+            request_id=_get_current_request_id(),
+            thread_id=_get_current_thread_id(),
         )
+        if graph_result.clarification:
+            payload = graph_result.clarification
+            fallback = build_clarification_payload(user_message)
+            raise ClarificationRequiredError(
+                ClarificationPayload(
+                    question=str(payload.get("question") or fallback.question).strip(),
+                    hints=[
+                        str(item).strip()
+                        for item in (payload.get("hints") if isinstance(payload.get("hints"), list) else [])
+                        if str(item).strip()
+                    ],
+                    reason=str(payload.get("reason") or fallback.reason),
+                    kind=str(payload.get("kind") or "clarification_required"),
+                    original_question=str(payload.get("original_question") or user_message),
+                )
+            )
+        result = graph_result.text
+        valid_urls = list(graph_result.urls)
         tool_calls = _get_accumulated_tool_calls()
 
         if _should_block_empty_evidence(user_message, valid_urls, tool_calls):
@@ -564,7 +385,7 @@ def _generate_response_core(
                     risk_context,
                 )
             )
-            _metrics_inc("react_hitl_soft_prompt")
+            _metrics_inc("graph_hitl_soft_prompt")
             followup = _build_hitl_soft_followup(
                 user_message=user_message,
                 risk_reason=risk_reason,
@@ -573,10 +394,10 @@ def _generate_response_core(
             if followup:
                 result = f"{result.rstrip()}\n\n{followup.strip()}".strip()
 
-        _metrics_inc("react_success")
+        _metrics_inc("graph_success")
         return result, valid_urls
     except Exception as exc:
-        _metrics_inc("react_error")
+        _metrics_inc("graph_error")
         if isinstance(exc, (AgentGenerationError, ClarificationRequiredError)):
             raise exc
 
@@ -588,11 +409,11 @@ def _generate_response_core(
             or ("limit" in exc_str and "graph" in exc_str)
         )
         if recursion_hit:
-            _metrics_inc("react_recursion_limit_hit")
+            _metrics_inc("graph_recursion_limit_hit")
             print(f"[Agent][Warn] recursion limit hit: {type(exc).__name__}: {exc}")
             raise AgentGenerationError(
                 "抱歉，由于问题跨度较大，本次分析在多轮检索后超时。请缩小时间范围或换一个更具体的关键词再试。",
-                code="react_recursion_limit_hit",
+                code="graph_recursion_limit_hit",
             )
 
         transient_markers = (
@@ -610,13 +431,13 @@ def _generate_response_core(
             print(f"[Agent][Warn] upstream/transient error: {type(exc).__name__}: {exc}")
             raise AgentGenerationError(
                 "抱歉，当前上游服务暂时不可用，请稍后重试。",
-                code="react_upstream_unavailable",
+                code="graph_upstream_unavailable",
             )
 
         print(f"[Agent][Error] unexpected runtime failure: {type(exc).__name__}: {exc}")
         raise AgentGenerationError(
             "抱歉，本次分析未能完成，请稍后重试。",
-            code="react_unexpected_runtime_error",
+            code="graph_unexpected_runtime_error",
         )
 
 
@@ -649,24 +470,6 @@ def _resolve_trace_error_code(error: Exception) -> str:
     return f"runtime_{type(error).__name__.lower()}"
 
 
-def _build_runtime_invoke_context() -> tuple[dict[str, Any], list[str]]:
-    """Build per-request invoke metadata/tags for LangSmith correlation."""
-    metadata: dict[str, Any] = {"entrypoint": "runtime"}
-    tags: list[str] = ["runtime"]
-
-    request_id = _get_current_request_id()
-    if request_id:
-        metadata["request_id"] = str(request_id)
-        tags.append(f"request:{request_id}")
-
-    thread_id = _get_current_thread_id()
-    if thread_id:
-        metadata["thread_id"] = str(thread_id)
-        tags.append(f"thread:{thread_id}")
-
-    return metadata, tags
-
-
 def _run_generation_core(
     history: list[dict],
     user_message: str,
@@ -679,15 +482,11 @@ def _run_generation_core(
             thread_id=_get_current_thread_id(),
             user_message=user_message,
         )
-        invoke_metadata, invoke_tags = _build_runtime_invoke_context()
         _emit_progress("understanding")
         core_text, valid_urls = _generate_response_core(
             history,
             user_message,
-            invoke_metadata=invoke_metadata,
-            invoke_tags=invoke_tags,
         )
-        _emit_progress("finalizing")
         return core_text, valid_urls
 
 
@@ -857,25 +656,10 @@ def generate_response_eval_payload(
                     user_message=user_message,
                 )
                 eval_request_id = _get_current_request_id()
-                invoke_metadata: dict[str, Any] = {
-                    "entrypoint": "eval",
-                    "request_id": eval_request_id,
-                }
-                invoke_tags: list[str] = ["eval"]
-                if case_id:
-                    invoke_metadata["case_id"] = str(case_id)
-                    invoke_tags.append(f"case:{case_id}")
-                if experiment_group:
-                    invoke_metadata["experiment_group"] = str(experiment_group)
-                    invoke_tags.append(f"exp:{experiment_group}")
-                if thread_id:
-                    invoke_metadata["thread_id"] = str(thread_id)
 
                 core_text, valid_urls = _generate_response_core(
                     history,
                     user_message,
-                    invoke_metadata=invoke_metadata,
-                    invoke_tags=invoke_tags,
                 )
                 core_text = _strip_generic_analysis_leadin(core_text)
                 _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)

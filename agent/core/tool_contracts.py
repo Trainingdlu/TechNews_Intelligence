@@ -7,7 +7,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-TOOL_SCHEMA_VERSION = "1.0"
 ToolStatus = Literal["ok", "empty", "error"]
 
 
@@ -29,7 +28,6 @@ class ToolEvidence(BaseModel):
 class ToolEnvelope(BaseModel):
     """Unified output envelope for all tools."""
 
-    schema_version: str = TOOL_SCHEMA_VERSION
     tool: str
     status: ToolStatus
     request: dict[str, Any] = Field(default_factory=dict)

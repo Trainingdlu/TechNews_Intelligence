@@ -55,7 +55,7 @@ def test_trace_records_tool_success_empty_and_error() -> None:
 
         summary = finalize_request_trace(
             final_status="error",
-            error_code="react_unexpected_runtime_error",
+            error_code="graph_unexpected_runtime_error",
             error_message="runtime failed",
             error=RuntimeError("runtime failed"),
         )
@@ -64,7 +64,7 @@ def test_trace_records_tool_success_empty_and_error() -> None:
     assert summary["request_id"] == "req-trace-001"
     assert summary["user_message"] == "latest ai updates"
     assert summary["final_status"] == "error"
-    assert summary["error_code"] == "react_unexpected_runtime_error"
+    assert summary["error_code"] == "graph_unexpected_runtime_error"
     assert summary["evidence_count"] == 1
     assert summary["tool_call_chain"] == ["query_news", "query_news", "read_news_content"]
 
@@ -108,10 +108,10 @@ def test_generate_response_finalizes_blocked_trace() -> None:
             generate_response([], "analyze ai trend")
 
     summary = get_last_request_trace_summary()
-    assert ei.value.code == "react_inline_citation_missing"
+    assert ei.value.code == "graph_inline_citation_missing"
     assert summary is not None
     assert summary["final_status"] == "blocked"
-    assert summary["error_code"] == "react_inline_citation_missing"
+    assert summary["error_code"] == "graph_inline_citation_missing"
 
 
 def test_finalize_request_trace_reentry_does_not_persist_twice(

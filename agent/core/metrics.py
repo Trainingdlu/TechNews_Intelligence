@@ -8,10 +8,10 @@ from threading import Lock
 _route_metrics_lock = Lock()
 _route_metrics: dict[str, int] = {
     "requests_total": 0,
-    "react_attempts": 0,
-    "react_success": 0,
-    "react_error": 0,
-    "react_recursion_limit_hit": 0,
+    "graph_attempts": 0,
+    "graph_success": 0,
+    "graph_error": 0,
+    "graph_recursion_limit_hit": 0,
     "trace_runs_total": 0,
     "trace_success": 0,
     "trace_error": 0,
@@ -40,7 +40,7 @@ def metrics_inc(key: str, amount: int = 1) -> None:
         _route_metrics[key] = _route_metrics.get(key, 0) + amount
 
     # Auto-emit on error events or every N requests
-    if key in {"react_error", "react_recursion_limit_hit"}:
+    if key in {"graph_error", "graph_recursion_limit_hit"}:
         emit_route_metrics(key, force=True)
     elif key == "requests_total":
         with _route_metrics_lock:
@@ -57,10 +57,10 @@ def emit_route_metrics(route_event: str, force: bool = False) -> None:
         snapshot = dict(_route_metrics)
 
     total = max(1, snapshot.get("requests_total", 0))
-    attempts = snapshot.get("react_attempts", 0)
-    success = snapshot.get("react_success", 0)
-    errors = snapshot.get("react_error", 0)
-    recursion_hits = snapshot.get("react_recursion_limit_hit", 0)
+    attempts = snapshot.get("graph_attempts", 0)
+    success = snapshot.get("graph_success", 0)
+    errors = snapshot.get("graph_error", 0)
+    recursion_hits = snapshot.get("graph_recursion_limit_hit", 0)
     trace_runs = snapshot.get("trace_runs_total", 0)
     trace_errors = snapshot.get("trace_error", 0)
     trace_tools = snapshot.get("trace_tool_calls_total", 0)
@@ -74,10 +74,10 @@ def emit_route_metrics(route_event: str, force: bool = False) -> None:
         "[Metrics] "
         f"event={route_event} "
         f"total={total} "
-        f"react_attempts={attempts} "
-        f"react_success={success} "
-        f"react_error={errors} "
-        f"react_recursion_limit_hit={recursion_hits} "
+        f"graph_attempts={attempts} "
+        f"graph_success={success} "
+        f"graph_error={errors} "
+        f"graph_recursion_limit_hit={recursion_hits} "
         f"trace_runs_total={trace_runs} "
         f"trace_error={trace_errors} "
         f"trace_tool_calls_total={trace_tools} "
@@ -102,10 +102,10 @@ def get_route_metrics_snapshot() -> dict[str, float]:
         snapshot: dict[str, float] = dict(_route_metrics)
 
     total = max(1, int(snapshot.get("requests_total", 0)))
-    attempts = int(snapshot.get("react_attempts", 0))
-    success = int(snapshot.get("react_success", 0))
-    errors = int(snapshot.get("react_error", 0))
-    recursion_hits = int(snapshot.get("react_recursion_limit_hit", 0))
+    attempts = int(snapshot.get("graph_attempts", 0))
+    success = int(snapshot.get("graph_success", 0))
+    errors = int(snapshot.get("graph_error", 0))
+    recursion_hits = int(snapshot.get("graph_recursion_limit_hit", 0))
     trace_runs = int(snapshot.get("trace_runs_total", 0))
     trace_errors = int(snapshot.get("trace_error", 0))
     trace_tools = int(snapshot.get("trace_tool_calls_total", 0))
@@ -113,9 +113,9 @@ def get_route_metrics_snapshot() -> dict[str, float]:
 
     snapshot["success_rate"] = (success / attempts) if attempts else 0.0
     snapshot["error_rate"] = errors / total
-    snapshot["react_success_rate"] = (success / attempts) if attempts else 0.0
-    snapshot["react_error_rate"] = (errors / attempts) if attempts else 0.0
-    snapshot["react_recursion_limit_rate"] = (
+    snapshot["graph_success_rate"] = (success / attempts) if attempts else 0.0
+    snapshot["graph_error_rate"] = (errors / attempts) if attempts else 0.0
+    snapshot["graph_recursion_limit_rate"] = (
         recursion_hits / attempts
     ) if attempts else 0.0
     snapshot["trace_error_rate"] = (

@@ -39,12 +39,10 @@ tmp*/
 # Local development artifacts
 .venv/
 .tmp/
-.tmp/pytest-technews/
 .pytest_tmp/
 .pytest_tmp*/
 .tmp_pytest*/
 .codex_pytest_tmp/
-.pytest_tmp_technews/
 tests/pytest-tmp/
 .pytest_cache/
 tests/.pytest_cache/
@@ -66,6 +64,7 @@ skills-lock.json
 
 # Local AI assistant metadata
 .claude/
+.codex-ui-check/
 
 # Auto-generated eval dataset artifacts
 eval/datasets/generated_rag_testset*.csv

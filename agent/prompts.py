@@ -1,4 +1,4 @@
-"""Agent system prompt optimized for unified ReAct tool-calling."""
+"""Agent system prompt optimized for custom graph tool planning."""
 
 SYSTEM_INSTRUCTION = (
     "# Role\n"

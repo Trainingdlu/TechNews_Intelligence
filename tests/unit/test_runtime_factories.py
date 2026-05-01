@@ -2,7 +2,7 @@
 
 The old Router->Miner->Analyst->Formatter workflow graph was retired.
 This module now validates the shared ToolRegistry / ToolRuntimeHooks builders
-used by the unified ReAct runtime.
+used by the custom graph runtime.
 """
 
 from __future__ import annotations

@@ -585,13 +585,13 @@ async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     arg = _extract_command_arg(update.message.text or "")
     if not arg:
-        recursion_limit = os.getenv("AGENT_REACT_RECURSION_LIMIT", "25")
+        max_tool_rounds = os.getenv("AGENT_GRAPH_MAX_TOOL_ROUNDS", "2")
         temperature = os.getenv("AGENT_TEMPERATURE", "0.1")
         chat_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
         await update.message.reply_text(
             "当前设置：\n"
-            f"- 运行时: ReAct Agent\n"
-            f"- 递归上限: {recursion_limit}\n"
+            f"- 运行时: Custom LangGraph Agent\n"
+            f"- 工具轮次上限: {max_tool_rounds}\n"
             f"- Temperature: {temperature}\n"
             f"- 当前 chat 历史轮数上限: {chat_limit}\n"
             f"- 默认历史轮数上限: {MAX_HISTORY_TURNS}\n"
@@ -698,7 +698,7 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_admin(update, "/status", private_only=True):
         return
 
-    recursion_limit = os.getenv("AGENT_REACT_RECURSION_LIMIT", "25")
+    max_tool_rounds = os.getenv("AGENT_GRAPH_MAX_TOOL_ROUNDS", "2")
     temperature = os.getenv("AGENT_TEMPERATURE", "0.1")
     active_sessions = sum(1 for h in conversation_histories.values() if h)
     total_sessions = len(conversation_histories)
@@ -724,8 +724,8 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lines = [
         "系统状态：",
-        "- runtime: ReAct Agent",
-        f"- recursion_limit: {recursion_limit}",
+        "- runtime: Custom LangGraph Agent",
+        f"- max_tool_rounds: {max_tool_rounds}",
         f"- temperature: {temperature}",
         f"- db: {'ok' if db_ok else 'error'}",
         f"- sessions(active/total): {active_sessions}/{total_sessions}",
