@@ -1154,11 +1154,8 @@ body {
 }
 
 .typing-copy {
-    display: grid;
-    gap: 4px;
+    display: block;
     min-width: 0;
-    animation: thinkingTextTone 2.8s ease-in-out infinite;
-    will-change: opacity, filter;
 }
 
 .typing-detail {
@@ -1169,6 +1166,32 @@ body {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    width: fit-content;
+}
+
+.typing-detail[data-empty="false"] {
+    margin-top: 4px;
+}
+
+.typing-msg .typing-label,
+.typing-msg .typing-detail {
+    background-image: linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--text-tertiary) 78%, transparent) 0%,
+        color-mix(in srgb, var(--text-tertiary) 78%, transparent) 34%,
+        var(--text-secondary) 44%,
+        color-mix(in srgb, var(--text-primary) 92%, var(--primary-blue) 8%) 50%,
+        var(--text-secondary) 56%,
+        color-mix(in srgb, var(--text-tertiary) 78%, transparent) 66%,
+        color-mix(in srgb, var(--text-tertiary) 78%, transparent) 100%
+    );
+    background-size: 260% 100%;
+    background-position: -40% 0;
+    background-repeat: no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: thinkingTextSweep 2.75s linear infinite;
 }
 
 .typing-items {
@@ -1195,17 +1218,14 @@ body {
     }
 }
 
-@keyframes thinkingTextTone {
-    0%,
-    100% {
-        opacity: 0.62;
-        filter: brightness(0.86);
+@keyframes thinkingTextSweep {
+    0% {
+        background-position: -40% 0;
     }
 
-    48%,
-    58% {
-        opacity: 1;
-        filter: brightness(1.08);
+    72%,
+    100% {
+        background-position: 140% 0;
     }
 }
 
@@ -1222,10 +1242,15 @@ body {
         transform: none;
     }
 
-    .typing-copy {
+    .typing-msg .typing-label,
+    .typing-msg .typing-detail {
         animation: none;
-        filter: none;
-        opacity: 1;
+        background-image: none;
+        color: var(--text-secondary);
+    }
+
+    .typing-msg .typing-detail {
+        color: var(--text-tertiary);
     }
 }
 

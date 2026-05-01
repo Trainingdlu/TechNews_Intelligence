@@ -393,7 +393,8 @@
             const keepExistingDetail = tool && !detail;
             if (!keepExistingDetail) {
                 detailEl.textContent = detail;
-                detailEl.hidden = !detail;
+                detailEl.dataset.empty = detail ? 'false' : 'true';
+                detailEl.setAttribute('aria-hidden', String(!detail));
             }
         }
 
@@ -723,7 +724,7 @@
             <span class="typing-spinner" aria-hidden="true"></span>
             <div class="typing-copy">
                 <div class="typing-label" role="status" aria-live="polite">${statusText}</div>
-                <div class="typing-detail" hidden></div>
+                <div class="typing-detail" data-empty="true" aria-hidden="true"></div>
                 <ul class="typing-items" hidden></ul>
             </div>
         `;
