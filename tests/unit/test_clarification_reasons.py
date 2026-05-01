@@ -272,6 +272,52 @@ def test_detect_reason_for_targeted_compare_skips_ambiguous_scope() -> None:
     assert context.get("ambiguous_scope_reasons") == ["targeted_compare_request"]
 
 
+def test_detect_reason_for_strategy_difference_skips_ambiguous_scope() -> None:
+    reason, context = detect_scope_or_conflict_reason(
+        user_message="OpenAI和Google战略差异",
+        candidate_answer=(
+            "OpenAI 与 Google 的战略差异如下：覆盖 OpenAI、Google、Anthropic、Meta、Microsoft 的近期动态。"
+        ),
+        valid_urls=[
+            "https://news.ycombinator.com/item?id=1101",
+            "https://news.ycombinator.com/item?id=1102",
+            "https://techcrunch.com/2026/04/10/openai-a/",
+            "https://techcrunch.com/2026/04/11/google-a/",
+            "https://example.com/a",
+            "https://example.com/b",
+        ],
+        tool_calls={"compare_topics", "query_news"},
+    )
+
+    assert reason is None
+    assert context.get("ambiguous_scope_reasons") == ["targeted_compare_request"]
+
+
+def test_detect_reason_for_followup_commercialization_scope_skips_ambiguous_scope() -> None:
+    wrapped = (
+        "User question: 企业市场商业化布局\n"
+        "Related previous context: 对比openai和谷歌最近的战略差异"
+    )
+    reason, context = detect_scope_or_conflict_reason(
+        user_message=wrapped,
+        candidate_answer=(
+            "OpenAI 与 Google 在企业市场商业化布局上的差异如下：覆盖 OpenAI、Google、Anthropic、Meta、Microsoft。"
+        ),
+        valid_urls=[
+            "https://news.ycombinator.com/item?id=1201",
+            "https://news.ycombinator.com/item?id=1202",
+            "https://techcrunch.com/2026/04/10/openai-enterprise/",
+            "https://techcrunch.com/2026/04/11/google-enterprise/",
+            "https://example.com/a",
+            "https://example.com/b",
+        ],
+        tool_calls={"compare_topics", "query_news"},
+    )
+
+    assert reason is None
+    assert context.get("ambiguous_scope_reasons") == ["targeted_compare_request"]
+
+
 def test_followup_confidence_uses_constraint_carryover_without_explicit_reference_words() -> None:
     history = [
         {"role": "user", "parts": [{"text": "对比openai和谷歌最近30天的事件"}]},

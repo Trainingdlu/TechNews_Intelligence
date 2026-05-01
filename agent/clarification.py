@@ -37,8 +37,8 @@ _SOURCE_RANGE_RE = re.compile(
     re.IGNORECASE,
 )
 _ANALYSIS_DIM_RE = re.compile(
-    r"趋势|对比|比较|时间线|格局|"
-    r"trend|compare|comparison|timeline|landscape|outlook",
+    r"趋势|对比|比较|时间线|格局|战略|策略|商业化|企业市场|定价|生态|布局|差异|区别|"
+    r"trend|compare|comparison|timeline|landscape|outlook|strategy|pricing|enterprise|commercial|ecosystem|difference",
     re.IGNORECASE,
 )
 _MULTI_SOURCE_SCOPE_HINT_RE = re.compile(
@@ -151,6 +151,11 @@ _FOLLOWUP_REFERENCE_RE = re.compile(
 
 _COMPARE_REQUEST_RE = re.compile(
     r"(?:对比|比较|compare|comparison|vs|versus)",
+    re.IGNORECASE,
+)
+_TARGETED_COMPARE_DIM_RE = re.compile(
+    r"战略|策略|商业化|企业市场|定价|生态|布局|差异|区别|不同|"
+    r"strategy|pricing|enterprise|commercial|ecosystem|difference|different",
     re.IGNORECASE,
 )
 _SOURCE_CITATION_LINE_RE = re.compile(r"^\s*(?:-\s*)?\[(\d{1,3})\]\s+(.+?)\s*$")
@@ -1333,12 +1338,12 @@ def _is_targeted_compare_request(
     text = _extract_user_intent_text(user_message)
     if not text:
         return False
-    if not _COMPARE_REQUEST_RE.search(text):
-        return False
     if not bool(scope.get("has_topic")):
         return False
     entities = _extract_entity_candidates(text)
-    return len(entities) >= 2
+    if len(entities) < 2:
+        return False
+    return bool(_COMPARE_REQUEST_RE.search(text) or _TARGETED_COMPARE_DIM_RE.search(text))
 
 
 def _detect_source_conflict(

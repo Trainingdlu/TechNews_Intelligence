@@ -63,7 +63,9 @@ def test_classify_user_intent_for_conflict_resolution() -> None:
 
 def test_classify_user_intent_for_analysis() -> None:
     assert is_analysis_intent("最近 30 天 AI 趋势对比") is True
+    assert is_analysis_intent("企业市场商业化布局") is True
     assert classify_user_intent("请做一个 AI 行业全景深度解读") == "analysis"
+    assert classify_user_intent("企业市场商业化布局") == "analysis"
 
 
 def test_classify_tool_profile() -> None:

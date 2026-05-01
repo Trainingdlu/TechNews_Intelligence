@@ -371,6 +371,7 @@
         const labelEl = typingEl?.querySelector('.typing-label');
         if (labelEl && statusText) {
             labelEl.textContent = statusText;
+            labelEl.dataset.text = statusText;
         }
     }
 
@@ -393,6 +394,7 @@
             const keepExistingDetail = tool && !detail;
             if (!keepExistingDetail) {
                 detailEl.textContent = detail;
+                detailEl.dataset.text = detail;
                 detailEl.dataset.empty = detail ? 'false' : 'true';
                 detailEl.setAttribute('aria-hidden', String(!detail));
             }
@@ -723,8 +725,8 @@
         indicator.innerHTML = `
             <span class="typing-spinner" aria-hidden="true"></span>
             <div class="typing-copy">
-                <div class="typing-label" role="status" aria-live="polite">${statusText}</div>
-                <div class="typing-detail" data-empty="true" aria-hidden="true"></div>
+                <div class="typing-label" role="status" aria-live="polite" data-text="${statusText}">${statusText}</div>
+                <div class="typing-detail" data-text="" data-empty="true" aria-hidden="true"></div>
                 <ul class="typing-items" hidden></ul>
             </div>
         `;

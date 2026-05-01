@@ -19,8 +19,8 @@ _CAPABILITY_HINT_RE = re.compile(
 )
 _ANALYSIS_INTENT_RE = re.compile(
     r"(?:最近|过去|近\d+天|近一周|近一个月|今天|今日|last\s*\d+\s*days?|recent|past|today|"
-    r"analy[sz]e|analysis|compare|vs|timeline|trend|outlook|landscape|"
-    r"分析|对比|比较|趋势|时间线|动态|格局|局势|复盘|汇总|梳理|盘点)",
+    r"analy[sz]e|analysis|compare|vs|timeline|trend|outlook|landscape|strategy|pricing|enterprise|commercial|"
+    r"分析|对比|比较|趋势|时间线|动态|格局|局势|复盘|汇总|梳理|盘点|战略|策略|商业化|企业市场|定价|生态|布局|差异|区别)",
     re.IGNORECASE,
 )
 _ROUNDUP_SUBJECT_RE = re.compile(
@@ -33,14 +33,14 @@ _ROUNDUP_ACTION_RE = re.compile(
     re.IGNORECASE,
 )
 _ANALYSIS_HEAVY_RE = re.compile(
-    r"深度|解读|洞察|研判|前景|判断|结论|预测|推演|影响|格局|复盘|归因|"
-    r"analysis|deep\s+dive|insight|assessment|outlook|implication|forecast",
+    r"深度|解读|洞察|研判|前景|判断|结论|预测|推演|影响|格局|复盘|归因|战略|策略|商业化|企业市场|定价|布局|差异|"
+    r"analysis|deep\s+dive|insight|assessment|outlook|implication|forecast|strategy|pricing|enterprise|commercial",
     re.IGNORECASE,
 )
 _CONFLICT_RESOLUTION_RE = re.compile(
-    r"前景|怎么看|如何看|判断|结论|更好|更差|优劣|孰优|对比|比较|"
+    r"前景|怎么看|如何看|判断|结论|更好|更差|优劣|孰优|对比|比较|差异|区别|不同|"
     r"是否冲突|是否分歧|冲突点|分歧点|"
-    r"outlook|assessment|better|worse|compare|comparison|vs|versus|conflict|disagree",
+    r"outlook|assessment|better|worse|compare|comparison|vs|versus|conflict|disagree|difference",
     re.IGNORECASE,
 )
 _EXPLICIT_CONFLICT_REQUEST_RE = re.compile(

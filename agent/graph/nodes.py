@@ -258,6 +258,20 @@ class GraphNodeRunner:
         max_rounds = int(state.get("max_tool_rounds") or self.deps.config.max_tool_rounds)
         tool_round = int(state.get("tool_round") or 0)
         if not evidence_urls and _requires_evidence(state):
+            fallback_calls = _empty_evidence_fallback_calls(state)
+            if tool_round < max_rounds and fallback_calls:
+                next_step = "more_tools"
+                _audit("tool_loop_decider", "finish", {"next_step": next_step, "reason": "empty_evidence_fallback"})
+                return {
+                    "next_step": next_step,
+                    "pending_tool_calls": fallback_calls,
+                    "node_audit": _append_node_audit(
+                        state,
+                        "tool_loop_decider",
+                        "finish",
+                        {"next_step": next_step, "reason": "empty_evidence_fallback"},
+                    ),
+                }
             next_step = "insufficient_evidence"
         elif tool_round < max_rounds and _should_read_after_search(results, state):
             next_step = "more_tools"
@@ -453,6 +467,61 @@ def _coerce_to_text(content: Any) -> str:
     return "" if content is None else str(content)
 
 
+_KNOWN_ENTITY_ALIASES: tuple[tuple[str, str], ...] = (
+    (r"(?<![a-z0-9])openai(?![a-z0-9])", "OpenAI"),
+    (r"(?<![a-z0-9])google(?![a-z0-9])", "Google"),
+    (r"谷歌", "Google"),
+    (r"(?<![a-z0-9])gemini(?![a-z0-9])", "Gemini"),
+    (r"(?<![a-z0-9])anthropic(?![a-z0-9])", "Anthropic"),
+    (r"(?<![a-z0-9])claude(?![a-z0-9])", "Claude"),
+    (r"(?<![a-z0-9])microsoft(?![a-z0-9])", "Microsoft"),
+    (r"微软", "Microsoft"),
+    (r"(?<![a-z0-9])meta(?![a-z0-9])", "Meta"),
+    (r"(?<![a-z0-9])amazon(?![a-z0-9])", "Amazon"),
+    (r"亚马逊", "Amazon"),
+    (r"(?<![a-z0-9])apple(?![a-z0-9])", "Apple"),
+    (r"苹果", "Apple"),
+    (r"(?<![a-z0-9])nvidia(?![a-z0-9])", "NVIDIA"),
+    (r"英伟达", "NVIDIA"),
+    (r"(?<![a-z0-9])tesla(?![a-z0-9])", "Tesla"),
+    (r"特斯拉", "Tesla"),
+    (r"(?<![a-z0-9])xai(?![a-z0-9])", "xAI"),
+    (r"(?<![a-z0-9])grok(?![a-z0-9])", "Grok"),
+    (r"(?<![a-z0-9])deepseek(?![a-z0-9])", "DeepSeek"),
+)
+_COMPARE_DIMENSION_RE = re.compile(
+    r"差异|区别|不同|战略|策略|商业化|企业市场|定价|开源|生态|布局|路线|侧重点|"
+    r"strategy|pricing|enterprise|commerciali[sz]ation|ecosystem|difference|different",
+    re.IGNORECASE,
+)
+_COMPARE_SIDE_TRAILING_RE = re.compile(
+    r"(?:最近|近期|当前|目前|过去|近来|在|上|方面|的|战略|策略|商业化|企业市场|定价|开源|生态|布局|"
+    r"差异|区别|不同|表现|动态|事件|新闻|产品|路线|方向|侧重点|"
+    r"recent|latest|current|strategy|pricing|enterprise|commerciali[sz]ation|ecosystem|difference|different)",
+    re.IGNORECASE,
+)
+_COMPARE_SIDE_PREFIX_RE = re.compile(
+    r"^(?:帮我|请|看看|看一下|对比一下|比较一下|对比|比较|分析一下|分析|一下|"
+    r"please|compare|analyze)\s*",
+    re.IGNORECASE,
+)
+_GENERIC_COMPARE_SIDE_TERMS = {
+    "ai",
+    "人工智能",
+    "企业市场",
+    "商业化",
+    "战略",
+    "策略",
+    "定价",
+    "生态",
+    "布局",
+    "差异",
+    "区别",
+    "不同",
+    "technology news",
+}
+
+
 def _extract_json_object(text: str) -> dict[str, Any] | None:
     raw = str(text or "").strip()
     raw = re.sub(r"^```(?:json)?", "", raw).strip()
@@ -504,7 +573,7 @@ def _heuristic_intent(user_message: str) -> dict[str, Any]:
     if urls:
         route = "needs_tools"
         intent_type = "article_read"
-    if _compare_topics_hit(lowered):
+    if _compare_topics_hit(text):
         intent_type = "topic_comparison"
     elif "hackernews" in lowered or "techcrunch" in lowered or "source" in lowered or "来源" in text:
         if re.search(r"compare|comparison|vs|versus", lowered) or "对比" in text or "比较" in text:
@@ -541,8 +610,16 @@ def _looks_like_article_reference_without_url(text: str) -> bool:
     )
 
 
-def _compare_topics_hit(lowered: str) -> bool:
-    return bool(re.search(r"\bvs\b|versus|compare|comparison", lowered) or "对比" in lowered or "比较" in lowered)
+def _compare_topics_hit(text: str) -> bool:
+    raw = str(text or "")
+    lowered = raw.lower()
+    if re.search(r"\bvs\b|versus|compare|comparison", lowered) or "对比" in raw or "比较" in raw:
+        return True
+    if _COMPARE_DIMENSION_RE.search(raw) and len(_extract_entity_hints(raw)) >= 2:
+        return True
+    if _COMPARE_DIMENSION_RE.search(raw) and _has_two_specific_compare_sides(raw):
+        return True
+    return False
 
 
 def _extract_days(text: str, default: int = 14) -> int:
@@ -564,6 +641,11 @@ def _extract_days(text: str, default: int = 14) -> int:
 
 def _extract_entity_hints(text: str) -> list[str]:
     entities: list[str] = []
+    raw = str(text or "")
+    lowered = raw.lower()
+    for pattern, label in _KNOWN_ENTITY_ALIASES:
+        if re.search(pattern, lowered, flags=re.IGNORECASE) and label not in entities:
+            entities.append(label)
     for token in re.findall(r"\b[A-Z][A-Za-z0-9+._-]{1,}\b", str(text or "")):
         if token.lower() in {"today", "latest", "recent", "news"}:
             continue
@@ -579,8 +661,8 @@ def _select_tools(intent: dict[str, Any]) -> list[str]:
         return []
     mapping = {
         "trend": ["trend_analysis", "search_news", "fulltext_batch"],
-        "topic_comparison": ["compare_topics", "search_news", "fulltext_batch"],
-        "source_comparison": ["compare_sources", "search_news", "fulltext_batch"],
+        "topic_comparison": ["compare_topics", "search_news", "query_news", "fulltext_batch"],
+        "source_comparison": ["compare_sources", "search_news", "query_news", "fulltext_batch"],
         "timeline": ["build_timeline", "search_news", "fulltext_batch"],
         "landscape": ["analyze_landscape", "search_news", "fulltext_batch"],
         "article_read": ["read_news_content", "fulltext_batch", "search_news"],
@@ -667,14 +749,40 @@ def _heuristic_tool_calls(
 
 def _split_compare_topics(text: str) -> tuple[str, str]:
     raw = str(text or "").strip()
-    for pattern in (r"(.+?)\s+(?:vs|versus)\s+(.+)", r"(.+?)(?:对比|比较)(.+)"):
-        match = re.search(pattern, raw, flags=re.IGNORECASE)
-        if match:
-            return _clean_topic(match.group(1)), _clean_topic(match.group(2))
     entities = _extract_entity_hints(raw)
     if len(entities) >= 2:
         return entities[0], entities[1]
+    for pattern in (r"(.+?)\s+(?:vs|versus)\s+(.+)",):
+        match = re.search(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            return _clean_compare_topic(match.group(1)), _clean_compare_topic(match.group(2))
+    for pattern in (
+        r"(?:对比|比较)\s*(.+?)\s*(?:和|与|跟|同|及|以及)\s*(.+?)(?:的|在|上|方面|差异|区别|不同|$)",
+        r"(.+?)\s*(?:和|与|跟|同|及|以及|、)\s*(.+?)(?:的)?(?:差异|区别|不同)",
+        r"(.+?)(?:对比|比较)(.+)",
+    ):
+        match = re.search(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            return _clean_compare_topic(match.group(1)), _clean_compare_topic(match.group(2))
     return _topic_from_message(raw), "competitors"
+
+
+def _has_two_specific_compare_sides(text: str) -> bool:
+    left, right = _split_compare_topics(text)
+    if right == "competitors":
+        return False
+    return _is_specific_compare_side(left) and _is_specific_compare_side(right)
+
+
+def _is_specific_compare_side(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if len(normalized) < 2:
+        return False
+    if normalized in _GENERIC_COMPARE_SIDE_TERMS:
+        return False
+    if re.fullmatch(r"(?:最近|近期|当前|目前|过去|近来|recent|latest|current)", normalized):
+        return False
+    return True
 
 
 def _topic_from_message(text: str) -> str:
@@ -690,6 +798,15 @@ def _clean_topic(text: str) -> str:
     cleaned = re.sub(r"(最近|过去|last|past)\s*\d{1,3}\s*(天|days?)", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"(分析|对比|比较|趋势|时间线|格局|新闻|动态|帮我|please|analyze|compare|trend|timeline|landscape)", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ，,。?？:：")
+    return cleaned[:120] or "technology news"
+
+
+def _clean_compare_topic(text: str) -> str:
+    cleaned = _clean_topic(text)
+    cleaned = _COMPARE_SIDE_PREFIX_RE.sub("", cleaned).strip(" ，,。?？:：")
+    parts = _COMPARE_SIDE_TRAILING_RE.split(cleaned, maxsplit=1)
+    if parts and parts[0].strip():
+        cleaned = parts[0].strip(" ，,。?？:：")
     return cleaned[:120] or "technology news"
 
 
@@ -759,6 +876,45 @@ def _guard_output_urls(text: str, valid_urls: list[str]) -> tuple[str, dict[str,
     }
 
 
+def _empty_evidence_fallback_calls(state: AgentGraphState) -> list[dict[str, Any]]:
+    selected = list(state.get("selected_tools") or [])
+    executed = {item.tool for item in (state.get("tool_results") or [])}
+    text = _extract_user_intent_text(str(state.get("user_message") or "")) or str(state.get("user_message") or "")
+    query = _fallback_retrieval_query(text)
+    days = _extract_days(text)
+    calls: list[dict[str, Any]] = []
+    if "search_news" in selected and "search_news" not in executed:
+        calls.append({"name": "search_news", "args": {"query": query, "days": days}})
+    if "query_news" in selected and "query_news" not in executed:
+        calls.append({"name": "query_news", "args": {"query": query, "days": days, "limit": 8}})
+    if calls:
+        return calls
+    if "fulltext_batch" in selected and "fulltext_batch" not in executed:
+        return [{"name": "fulltext_batch", "args": {"urls": query, "max_chars_per_article": 4000}}]
+    return []
+
+
+def _fallback_retrieval_query(text: str) -> str:
+    raw = str(text or "").strip()
+    entities = _extract_entity_hints(raw)
+    focus_terms = re.findall(
+        r"企业市场|商业化|战略|策略|定价|开源|生态|产品|大模型|多模态|布局|差异|enterprise|commerciali[sz]ation|pricing|strategy|ecosystem",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    parts: list[str] = []
+    seen: set[str] = set()
+    for item in [*entities[:4], *focus_terms]:
+        normalized = str(item or "").strip()
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            parts.append(normalized)
+    if parts:
+        return " ".join(parts)
+    return raw[:180] or "technology news"
+
+
 def _requires_evidence(state: AgentGraphState) -> bool:
     intent = state.get("intent") or {}
     return str(intent.get("route") or "") == "needs_tools"
@@ -773,7 +929,15 @@ def _should_read_after_search(results: list[ToolEnvelope], state: AgentGraphStat
     if not any(item.tool in {"search_news", "query_news"} and item.evidence for item in results):
         return False
     intent_type = str((state.get("intent") or {}).get("intent_type") or "")
-    return intent_type in {"news_analysis", "trend", "roundup_listing", "article_read"}
+    return intent_type in {
+        "news_analysis",
+        "trend",
+        "roundup_listing",
+        "article_read",
+        "topic_comparison",
+        "source_comparison",
+        "landscape",
+    }
 
 
 def _fulltext_calls_from_evidence(evidence_urls: list[str], state: AgentGraphState) -> list[dict[str, Any]]:
