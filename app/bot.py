@@ -814,7 +814,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clarification_text = question
             if hints:
                 clarification_text = (
-                    f"{question}\n\n你可以补充以下任意一项：\n"
+                    f"{question}\n\n"
                     + "\n".join(f"- {hint}" for hint in hints)
                 )
             await _send_reply(update.message, clarification_text, url_title_map={})

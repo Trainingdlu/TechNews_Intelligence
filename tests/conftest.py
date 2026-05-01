@@ -114,6 +114,7 @@ def tmp_path(request: pytest.FixtureRequest) -> Iterator[Path]:
 @pytest.fixture()
 def agent_dependency_stubs(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Provide lightweight stubs for DB-related optional dependencies."""
+    monkeypatch.setenv("AGENT_DYNAMIC_CLARIFICATION_ENABLED", "false")
     if "services" not in sys.modules:
         try:
             importlib.import_module("services")

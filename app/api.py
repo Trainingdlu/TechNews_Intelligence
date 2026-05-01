@@ -413,6 +413,9 @@ def _model_history_item_from_payload(payload: dict) -> dict:
         clarification_payload = payload.get("clarification", {})
         if isinstance(clarification_payload, dict):
             return build_clarification_history_item(clarification_payload)
+    title_map = payload.get("url_title_map", {})
+    if not isinstance(title_map, dict):
+        title_map = {}
     return {
         "role": "model",
         "kind": "answer",
@@ -422,6 +425,11 @@ def _model_history_item_from_payload(payload: dict) -> dict:
             for url in payload.get("citation_urls", [])
             if str(url).strip()
         ] if isinstance(payload.get("citation_urls", []), list) else [],
+        "url_title_map": {
+            str(url).strip(): str(title).strip()
+            for url, title in title_map.items()
+            if str(url).strip() and str(title).strip()
+        },
     }
 
 

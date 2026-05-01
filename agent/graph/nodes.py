@@ -15,7 +15,7 @@ from agent.clarification import (
     infer_clarification_reason,
 )
 from agent.core.evidence import extract_urls, normalize_url_for_match
-from agent.core.intent import classify_user_intent
+from agent.core.intent import classify_user_intent, extract_user_intent_text as _extract_user_intent_text
 from agent.core.runtime_factories import build_default_registry, build_default_tool_runtime
 from agent.core.tool_catalog import ToolDefinition, iter_tool_definitions, tool_definition_by_name
 from agent.core.tool_contracts import ToolEnvelope
@@ -70,13 +70,20 @@ class GraphNodeRunner:
     def intent_router(self, state: AgentGraphState) -> dict[str, Any]:
         _audit("intent_router", "start")
         user_message = str(state.get("user_message") or "")
+        context_snippet = _recent_context_snippet(state.get("history") or [])
         intent = _heuristic_intent(user_message)
         model_intent = _invoke_json_model(
             self.deps.models.intent_router,
             node="intent_router",
             messages=[
                 SystemMessage(content=_INTENT_ROUTER_SYSTEM_PROMPT),
-                HumanMessage(content=f"User message:\n{user_message}\n\nReturn JSON only."),
+                HumanMessage(
+                    content=(
+                        f"Recent conversation context:\n{context_snippet}\n\n"
+                        f"Current user message:\n{user_message}\n\n"
+                        "Return JSON only."
+                    )
+                ),
             ],
         )
         if isinstance(model_intent, dict):
@@ -97,7 +104,7 @@ class GraphNodeRunner:
         _audit("tool_selection", "start")
         intent = state.get("intent") or {}
         selected = _select_tools(intent)
-        emit_graph_progress("selecting_tools", "正在准备工具")
+        emit_graph_progress("selecting_tools", "正在调用工具")
         _audit("tool_selection", "finish", {"selected_tools": selected})
         return {
             "selected_tools": selected,
@@ -108,10 +115,11 @@ class GraphNodeRunner:
         _audit("tool_worker", "start")
         selected_tools = list(state.get("selected_tools") or [])
         user_message = str(state.get("user_message") or "")
+        context_snippet = _recent_context_snippet(state.get("history") or [])
         tool_results = list(state.get("tool_results") or [])
         existing_calls = _normalize_tool_calls({"tool_calls": state.get("pending_tool_calls") or []})
         if existing_calls:
-            emit_graph_progress("selecting_tools", "正在准备工具")
+            emit_graph_progress("selecting_tools", "正在调用工具")
             _audit("tool_worker", "finish", {"tool_calls": existing_calls, "source": "state"})
             return {
                 "pending_tool_calls": existing_calls,
@@ -130,7 +138,8 @@ class GraphNodeRunner:
                 SystemMessage(content=_TOOL_WORKER_SYSTEM_PROMPT),
                 HumanMessage(
                     content=(
-                        f"User message:\n{user_message}\n\n"
+                        f"Recent conversation context:\n{context_snippet}\n\n"
+                        f"Current user message:\n{user_message}\n\n"
                         f"Selected tools:\n{schema_brief}\n\n"
                         f"Already executed tools: {[item.tool for item in tool_results]}\n"
                         "Return JSON only."
@@ -146,7 +155,7 @@ class GraphNodeRunner:
                 selected_tools=selected_tools,
                 tool_results=tool_results,
             )
-        emit_graph_progress("selecting_tools", "正在准备工具")
+        emit_graph_progress("selecting_tools", "正在调用工具")
         _audit("tool_worker", "finish", {"tool_calls": calls})
         return {
             "pending_tool_calls": calls,
@@ -479,7 +488,7 @@ def _merge_intent(base: dict[str, Any], override: dict[str, Any]) -> dict[str, A
 
 
 def _heuristic_intent(user_message: str) -> dict[str, Any]:
-    text = str(user_message or "").strip()
+    text = _extract_user_intent_text(user_message).strip() or str(user_message or "").strip()
     lowered = text.lower()
     urls = extract_urls(text)
     rule_intent = classify_user_intent(text)
@@ -627,10 +636,12 @@ def _heuristic_tool_calls(
     selected_tools: list[str],
     tool_results: list[ToolEnvelope],
 ) -> list[dict[str, Any]]:
-    text = str(user_message or "").strip()
+    text = _extract_user_intent_text(user_message).strip() or str(user_message or "").strip()
     days = _extract_days(text)
     urls = extract_urls(text)
     executed = {item.tool for item in tool_results}
+    if len(urls) > 1 and "fulltext_batch" in selected_tools and "fulltext_batch" not in executed:
+        return [{"name": "fulltext_batch", "args": {"urls": "\n".join(urls[:6]), "max_chars_per_article": 4000}}]
     if urls and "read_news_content" in selected_tools and "read_news_content" not in executed:
         return [{"name": "read_news_content", "args": {"url": urls[0]}}]
     if "fulltext_batch" in selected_tools and executed and "fulltext_batch" not in executed:
@@ -776,9 +787,61 @@ def _fulltext_calls_from_evidence(evidence_urls: list[str], state: AgentGraphSta
     return [
         {
             "name": "fulltext_batch",
-            "args": {"urls": str(state.get("user_message") or ""), "max_chars_per_article": 4000},
+            "args": {
+                "urls": _extract_user_intent_text(str(state.get("user_message") or "")) or str(state.get("user_message") or ""),
+                "max_chars_per_article": 4000,
+            },
         }
     ]
+
+
+def _recent_context_snippet(history: list[dict], max_messages: int = 4, max_chars: int = 1200) -> str:
+    if not history:
+        return "(none)"
+    chunks: list[str] = []
+    for item in history[-max_messages:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role", "")).strip().lower()
+        text = _message_text(item)
+        if not text:
+            continue
+        label = "User" if role == "user" else "Assistant"
+        urls = _history_item_context_urls(item)
+        if urls:
+            url_context = " ".join(urls[:3])
+            chunks.append(f"[{label}] {text[:240]}\nEvidence URLs: {url_context}")
+        else:
+            chunks.append(f"[{label}] {text[:320]}")
+    merged = "\n".join(chunks).strip()
+    if not merged:
+        return "(none)"
+    if len(merged) > max_chars:
+        return merged[-max_chars:]
+    return merged
+
+
+def _history_item_context_urls(item: dict[str, Any], max_urls: int = 3) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    raw_urls = item.get("citation_urls")
+    if isinstance(raw_urls, list):
+        for raw in raw_urls:
+            url = str(raw or "").strip()
+            normalized = normalize_url_for_match(url)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                urls.append(url)
+                if len(urls) >= max_urls:
+                    return urls
+    for raw in extract_urls(_message_text(item)):
+        normalized = normalize_url_for_match(raw)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            urls.append(raw)
+            if len(urls) >= max_urls:
+                return urls
+    return urls
 
 
 def _fallback_final_text(user_message: str, state: AgentGraphState) -> str:

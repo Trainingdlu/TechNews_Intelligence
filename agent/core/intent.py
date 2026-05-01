@@ -48,6 +48,7 @@ _EXPLICIT_CONFLICT_REQUEST_RE = re.compile(
     r"conflict|contradict|disagree|diverg",
     re.IGNORECASE,
 )
+_FOLLOWUP_EVIDENCE_LINE_RE = re.compile(r"^\s*-\s*\[\d{1,3}\]\s+.+https?://", re.IGNORECASE)
 
 ANALYTICAL_TOOL_NAMES = frozenset({
     "compare_sources",
@@ -77,6 +78,7 @@ def extract_user_intent_text(user_message: str) -> str:
         return text
 
     extracted: list[str] = []
+    context_hints: list[str] = []
     for line in lines:
         if line.startswith("原问题："):
             payload = line.removeprefix("原问题：").strip()
@@ -99,9 +101,51 @@ def extract_user_intent_text(user_message: str) -> str:
             if payload:
                 extracted.append(payload)
             continue
+        if lowered.startswith("current user follow-up question:"):
+            payload = line[len("current user follow-up question:"):].strip()
+            if payload:
+                extracted.append(payload)
+            continue
+        if lowered.startswith("user question:"):
+            payload = line[len("user question:"):].strip()
+            if payload:
+                extracted.append(payload)
+            continue
+        if lowered.startswith("previous user question:"):
+            payload = line[len("previous user question:"):].strip()
+            if payload:
+                context_hints.append(payload)
+            continue
+        if lowered.startswith("related previous context:"):
+            payload = line[len("related previous context:"):].strip()
+            if payload:
+                context_hints.append(payload)
+            continue
+        if lowered.startswith("related previous answer excerpt:"):
+            payload = line[len("related previous answer excerpt:"):].strip()
+            if payload:
+                context_hints.append(payload)
+            continue
+        if lowered.startswith("previous evidence urls:"):
+            continue
+        if _FOLLOWUP_EVIDENCE_LINE_RE.match(line):
+            context_hints.append(line)
+            continue
+        if lowered.startswith("previous assistant answer:") or lowered.startswith("instruction:"):
+            continue
 
-    if extracted:
-        return "\n".join(extracted)
+    if extracted or context_hints:
+        merged: list[str] = []
+        seen: set[str] = set()
+        for item in [*extracted, *context_hints]:
+            normalized = str(item).strip()
+            key = normalized.lower()
+            if not normalized or key in seen:
+                continue
+            seen.add(key)
+            merged.append(normalized)
+        if merged:
+            return "\n".join(merged)
     return text
 
 

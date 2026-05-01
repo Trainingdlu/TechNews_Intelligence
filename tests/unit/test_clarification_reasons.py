@@ -7,6 +7,8 @@ from agent.clarification import (
     CLARIFICATION_REASON_SOURCE_CONFLICT,
     build_clarification_payload,
     detect_scope_or_conflict_reason,
+    evaluate_followup_confidence,
+    resolve_user_message_with_followup_context,
 )
 
 
@@ -268,3 +270,55 @@ def test_detect_reason_for_targeted_compare_skips_ambiguous_scope() -> None:
 
     assert reason is None
     assert context.get("ambiguous_scope_reasons") == ["targeted_compare_request"]
+
+
+def test_followup_confidence_uses_constraint_carryover_without_explicit_reference_words() -> None:
+    history = [
+        {"role": "user", "parts": [{"text": "对比openai和谷歌最近30天的事件"}]},
+        {"role": "model", "parts": [{"text": "过去30天内，OpenAI与Google在产品落地与商业化方面表现如下。"}]},
+    ]
+
+    profile = evaluate_followup_confidence(
+        history,
+        "详细说说OpenAI联手Yubico推出了ChatGPT高级账户安全计划",
+    )
+
+    assert profile["decision"] in {"followup_dual_path", "followup_strong"}
+    features = profile.get("features", {})
+    assert float(features.get("carryover_dependency", 0.0) or 0.0) > 0.0
+    assert int(features.get("carryover_hits", 0) or 0) >= 1
+
+
+def test_followup_context_carries_relevant_previous_citation_url() -> None:
+    history = [
+        {"role": "user", "parts": [{"text": "对比openai和谷歌最近30天的事件"}]},
+        {
+            "role": "model",
+            "kind": "answer",
+            "parts": [
+                {
+                    "text": (
+                        "OpenAI 与 Google 近期事件如下。\n\n"
+                        "## 来源\n"
+                        "- [1] [AI] OpenAI联手Yubico推出ChatGPT高级账户安全计划\n"
+                        "- [2] [AI] Google将Gemini引入汽车"
+                    )
+                }
+            ],
+            "citation_urls": [
+                "https://example.com/openai-yubico",
+                "https://example.com/google-gemini-cars",
+            ],
+        },
+    ]
+
+    effective, profile = resolve_user_message_with_followup_context(
+        history,
+        "详细说说OpenAI联手Yubico推出了ChatGPT高级账户安全计划",
+    )
+
+    assert profile["augmented"] is True
+    assert profile["context_evidence_count"] == 1
+    assert "Previous evidence URLs" in effective
+    assert "https://example.com/openai-yubico" in effective
+    assert "https://example.com/google-gemini-cars" not in effective

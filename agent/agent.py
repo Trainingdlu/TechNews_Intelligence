@@ -6,6 +6,7 @@ Custom runtime: LangGraph StateGraph with project-owned ToolRuntime.
 from __future__ import annotations
 
 import os
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -315,6 +316,112 @@ def _build_hitl_soft_followup(
         return fallback
 
 
+def _dynamic_clarification_enabled() -> bool:
+    raw = os.getenv("AGENT_DYNAMIC_CLARIFICATION_ENABLED", "true")
+    return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    raw = str(text or "").strip()
+    raw = re.sub(r"^```(?:json)?", "", raw).strip()
+    raw = re.sub(r"```$", "", raw).strip()
+    candidates = [raw]
+    match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+    if match:
+        candidates.append(match.group(0))
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except Exception:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _sanitize_clarification_text(text: str, *, max_chars: int) -> str:
+    cleaned = str(text or "").strip()
+    cleaned = re.sub(r"https?://[^\s)\]]+", "", cleaned).strip()
+    cleaned = re.sub(r"\[(?:\d{1,3}|[^\]\n]{1,80})\]", "", cleaned).strip()
+    cleaned = re.sub(r"^[\-*•\d\.\s]+", "", cleaned).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned[:max_chars].strip()
+
+
+def _coerce_dynamic_hints(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    hints: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        hint = _sanitize_clarification_text(str(item or ""), max_chars=90)
+        key = hint.lower()
+        if not hint or key in seen:
+            continue
+        seen.add(key)
+        hints.append(hint)
+        if len(hints) >= 3:
+            break
+    return hints
+
+
+def _build_dynamic_clarification_payload(
+    user_message: str,
+    *,
+    reason: str | None = None,
+    context: dict[str, Any] | None = None,
+) -> ClarificationPayload:
+    """Build an LLM-guided clarification payload, with deterministic fallback."""
+    fallback = build_clarification_payload(user_message, reason=reason, context=context)
+    if fallback.reason != "insufficient_evidence" or not _dynamic_clarification_enabled():
+        return fallback
+
+    context_preview = {
+        "reason": fallback.reason,
+        "tool_calls": (context or {}).get("tool_calls", []),
+        "policy_reason": (context or {}).get("policy_reason", ""),
+        "candidate_answer_preview": str((context or {}).get("candidate_answer", ""))[:300],
+        "fallback_hints": fallback.hints[:4],
+    }
+    prompt = (
+        "You are a clarification assistant for a tech-news intelligence agent.\n"
+        "The retrieval step found insufficient reliable evidence for the user's exact request.\n"
+        "Generate a tailored clarification that helps the user continue successfully.\n\n"
+        "Return JSON only with this schema:\n"
+        '{"question":"...","hints":["...","..."]}\n\n'
+        "Rules:\n"
+        "1) Use the same language as the user.\n"
+        "2) The question must directly mention the user's topic/entity/event when present.\n"
+        "3) Do not use a generic template such as only asking for time/source/dimension.\n"
+        "4) Ask for the smallest useful missing detail: timeframe, source, exact company/product/event, "
+        "original URL, or whether to broaden the search terms.\n"
+        "5) Hints must be concrete options tailored to the user's request; 2-3 hints max.\n"
+        "6) Do not include URLs, citation markers, markdown tables, or explanations.\n\n"
+        f"User question: {user_message}\n"
+        f"Context: {context_preview}\n"
+    )
+    try:
+        model = _build_chat_model()
+        result = model.invoke([HumanMessage(content=prompt)])
+        parsed = _extract_json_object(_coerce_to_text(getattr(result, "content", result)))
+        if not parsed:
+            return fallback
+        question = _sanitize_clarification_text(str(parsed.get("question") or ""), max_chars=220)
+        hints = _coerce_dynamic_hints(parsed.get("hints"))
+        if not question:
+            return fallback
+        return ClarificationPayload(
+            question=question,
+            hints=hints or fallback.hints[:2],
+            reason=fallback.reason,
+            kind=fallback.kind,
+            original_question=fallback.original_question,
+        )
+    except Exception as exc:
+        print(f"[Agent][Warn] dynamic clarification generation failed: {type(exc).__name__}: {exc}")
+        return fallback
+
+
 # ---------------------------------------------------------------------------
 # Core generation
 # ---------------------------------------------------------------------------
@@ -335,6 +442,17 @@ def _generate_response_core(
         )
         if graph_result.clarification:
             payload = graph_result.clarification
+            if str(payload.get("reason") or "").strip().lower() == "insufficient_evidence":
+                raise ClarificationRequiredError(
+                    _build_dynamic_clarification_payload(
+                        user_message,
+                        reason=str(payload.get("reason") or ""),
+                        context={
+                            "graph_payload": payload,
+                            "policy_reason": payload.get("policy_reason", ""),
+                        },
+                    )
+                )
             fallback = build_clarification_payload(user_message)
             raise ClarificationRequiredError(
                 ClarificationPayload(
@@ -363,10 +481,13 @@ def _generate_response_core(
                     sorted(tool_calls),
                 )
             )
-            clarification = build_clarification_payload(
+            clarification = _build_dynamic_clarification_payload(
                 user_message=user_message,
                 reason=reason,
-                context={"tool_calls": sorted(tool_calls)},
+                context={
+                    "tool_calls": sorted(tool_calls),
+                    "candidate_answer": result,
+                },
             )
             raise ClarificationRequiredError(clarification)
 

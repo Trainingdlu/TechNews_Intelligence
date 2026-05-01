@@ -319,7 +319,7 @@
             ? clarification.hints.map((item) => String(item || '').trim()).filter(Boolean)
             : [];
         const clarificationText = hints.length
-            ? `${question}\n\n你可以补充以下任意一项：\n${hints.map((hint) => `- ${hint}`).join('\n')}`
+            ? `${question}\n\n${hints.map((hint) => `- ${hint}`).join('\n')}`
             : question;
 
         history.push({ role: 'user', parts: [{ text }] });

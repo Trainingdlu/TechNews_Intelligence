@@ -16,6 +16,7 @@ from .core.intent import (
     is_conflict_resolution_intent,
     is_roundup_listing_intent,
 )
+from .core.evidence import extract_urls as _extract_urls, normalize_url_for_match as _normalize_url_for_match
 
 CLARIFICATION_KIND = "clarification_required"
 CLARIFICATION_REASON_INSUFFICIENT_EVIDENCE = "insufficient_evidence"
@@ -152,6 +153,17 @@ _COMPARE_REQUEST_RE = re.compile(
     r"(?:对比|比较|compare|comparison|vs|versus)",
     re.IGNORECASE,
 )
+_SOURCE_CITATION_LINE_RE = re.compile(r"^\s*(?:-\s*)?\[(\d{1,3})\]\s+(.+?)\s*$")
+_MARKDOWN_LINK_RE = re.compile(r"\[([^\]\n]{1,240})\]\((https?://[^\s)]+)\)", re.IGNORECASE)
+_EXPLICIT_SOURCE_REF_RE = re.compile(
+    r"(?:第\s*(\d{1,3})\s*(?:条|篇|则|个|项|条新闻|个来源)|\[(\d{1,3})\])",
+    re.IGNORECASE,
+)
+_DETAIL_FOLLOWUP_RE = re.compile(
+    r"(?:详细|展开|说说|讲讲|介绍|详情|这条|这篇|这个|原文|报道|"
+    r"detail|deep\s*dive|tell\s+me\s+more|more\s+about)",
+    re.IGNORECASE,
+)
 
 
 def _tokenize_for_overlap(text: str) -> set[str]:
@@ -263,18 +275,33 @@ def evaluate_followup_confidence(
     entity_continuity = _entity_continuity_score(text, prev_user, prev_model)
     reference_dependency = 1.0 if _FOLLOWUP_REFERENCE_RE.search(text) else 0.0
     standalone_inverse = _standalone_inverse_score(text)
+    current_scope = _query_scope_signals(text)
+    previous_scope = _query_scope_signals(prev_user)
+    carryover_hits = 0
+    if entity_continuity >= 0.6 or semantic_continuity >= 0.35:
+        if (not bool(current_scope.get("has_time"))) and bool(previous_scope.get("has_time")):
+            carryover_hits += 1
+        if (not bool(current_scope.get("has_source"))) and bool(previous_scope.get("has_source")):
+            carryover_hits += 1
+        if (not bool(current_scope.get("has_dimension"))) and bool(previous_scope.get("has_dimension")):
+            carryover_hits += 1
+    carryover_dependency = min(1.0, 0.45 + 0.25 * carryover_hits) if carryover_hits > 0 else 0.0
 
     score = (
-        0.25 * semantic_continuity
+        0.23 * semantic_continuity
         + 0.20 * entity_continuity
-        + 0.35 * reference_dependency
-        + 0.20 * standalone_inverse
+        + 0.33 * reference_dependency
+        + 0.12 * carryover_dependency
+        + 0.12 * standalone_inverse
     )
     if reference_dependency >= 1.0 and (prev_user or prev_model):
         score = max(score, 0.62)
-        scope = _query_scope_signals(text)
-        if not bool(scope.get("has_time")) and not bool(scope.get("has_source")):
+        if not bool(current_scope.get("has_time")) and not bool(current_scope.get("has_source")):
             score = max(score, 0.74)
+    elif carryover_dependency > 0 and (prev_user or prev_model):
+        score = max(score, 0.56)
+        if carryover_dependency >= 0.9:
+            score = max(score, 0.64)
     score = max(0.0, min(1.0, score))
 
     if score >= 0.72:
@@ -291,12 +318,259 @@ def evaluate_followup_confidence(
             "semantic_continuity": round(semantic_continuity, 4),
             "entity_continuity": round(entity_continuity, 4),
             "reference_dependency": round(reference_dependency, 4),
+            "carryover_dependency": round(carryover_dependency, 4),
+            "carryover_hits": int(carryover_hits),
             "standalone_inverse": round(standalone_inverse, 4),
         },
         "previous_user": prev_user,
         "previous_model": prev_model,
         "augmented": False,
     }
+
+
+def _latest_answer_history_item(history: list[dict] | None) -> dict[str, Any] | None:
+    for item in reversed(history or []):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role", "")).strip().lower()
+        if role not in {"model", "assistant"}:
+            continue
+        if str(item.get("kind", "")).strip().lower() == CLARIFICATION_KIND:
+            continue
+        if isinstance(item.get("clarification"), dict):
+            continue
+        return item
+    return None
+
+
+def _history_item_citation_urls(item: dict[str, Any]) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    raw_urls = item.get("citation_urls")
+    if isinstance(raw_urls, list):
+        for raw in raw_urls:
+            url = str(raw or "").strip()
+            normalized = _normalize_url_for_match(url)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                urls.append(url)
+    for raw in _extract_urls(_extract_message_text(item)):
+        normalized = _normalize_url_for_match(raw)
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            urls.append(raw)
+    return urls
+
+
+def _history_item_title_map(item: dict[str, Any]) -> dict[str, str]:
+    raw = item.get("url_title_map")
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        url = str(key or "").strip()
+        title = str(value or "").strip()
+        if url and title:
+            out[url] = title
+    return out
+
+
+def _append_history_evidence_item(
+    items: list[dict[str, Any]],
+    seen: set[str],
+    *,
+    url: str,
+    title: str = "",
+    index: int | None = None,
+) -> None:
+    clean_url = str(url or "").strip()
+    normalized = _normalize_url_for_match(clean_url)
+    if not normalized or normalized in seen:
+        if normalized:
+            for item in items:
+                if _normalize_url_for_match(str(item.get("url") or "")) == normalized:
+                    if title and not str(item.get("title") or "").strip():
+                        item["title"] = title
+                    if index is not None and item.get("index") is None:
+                        item["index"] = index
+                    break
+        return
+    seen.add(normalized)
+    items.append({"index": index, "title": str(title or "").strip(), "url": clean_url})
+
+
+def _source_line_title_and_url(rest: str) -> tuple[str, str]:
+    text = str(rest or "").strip()
+    markdown = _MARKDOWN_LINK_RE.search(text)
+    if markdown:
+        return str(markdown.group(1) or "").strip(), str(markdown.group(2) or "").strip()
+    urls = _extract_urls(text)
+    url = urls[0] if urls else ""
+    title = text
+    if url:
+        title = title.replace(url, "").strip(" -|:：")
+    return title.strip(), url
+
+
+def _extract_history_evidence_items(history: list[dict] | None) -> list[dict[str, Any]]:
+    item = _latest_answer_history_item(history)
+    if not item:
+        return []
+
+    text = _extract_message_text(item)
+    citation_urls = _history_item_citation_urls(item)
+    title_map = _history_item_title_map(item)
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for line in text.splitlines():
+        match = _SOURCE_CITATION_LINE_RE.match(line)
+        if not match:
+            continue
+        try:
+            index = int(match.group(1))
+        except Exception:
+            index = None
+        title, url = _source_line_title_and_url(match.group(2))
+        if not url and index is not None and 1 <= index <= len(citation_urls):
+            url = citation_urls[index - 1]
+        if url and not title:
+            title = title_map.get(url, "")
+        if url:
+            _append_history_evidence_item(items, seen, url=url, title=title, index=index)
+
+    for idx, url in enumerate(citation_urls, 1):
+        _append_history_evidence_item(items, seen, url=url, title=title_map.get(url, ""), index=idx)
+
+    return items
+
+
+def _explicit_source_refs(text: str) -> set[int]:
+    refs: set[int] = set()
+    for match in _EXPLICIT_SOURCE_REF_RE.finditer(str(text or "")):
+        raw = match.group(1) or match.group(2)
+        try:
+            value = int(raw)
+        except Exception:
+            continue
+        if 1 <= value <= 999:
+            refs.add(value)
+    return refs
+
+
+def _compact_for_substring_match(text: str) -> str:
+    compact = re.sub(r"https?://\S+", "", str(text or "").lower())
+    compact = re.sub(r"[\s\W_]+", "", compact, flags=re.UNICODE)
+    compact = re.sub(r"(详细|展开|说说|讲讲|介绍|详情|这个|这条|这篇|一下)", "", compact)
+    return compact
+
+
+def _has_meaningful_substring_overlap(question: str, candidate: str) -> bool:
+    q = _compact_for_substring_match(question)
+    c = _compact_for_substring_match(candidate)
+    if len(q) < 4 or len(c) < 4:
+        return False
+    max_size = min(14, len(q))
+    for size in range(max_size, 3, -1):
+        for start in range(0, len(q) - size + 1):
+            if q[start : start + size] in c:
+                return True
+    return False
+
+
+def _evidence_overlap_features(question: str, item: dict[str, Any]) -> tuple[float, int]:
+    target = " ".join([str(item.get("title") or ""), str(item.get("url") or "")])
+    question_tokens = _tokenize_for_overlap(question) - _GENERIC_TOPIC_TOKENS - _GENERIC_ENTITY_TOKENS
+    target_tokens = _tokenize_for_overlap(target) - _GENERIC_TOPIC_TOKENS - _GENERIC_ENTITY_TOKENS
+    if not question_tokens or not target_tokens:
+        return (0.0, 0)
+    hits = question_tokens & target_tokens
+    hit_count = len(hits)
+    score = hit_count / max(1, min(len(question_tokens), len(target_tokens)))
+    if _has_meaningful_substring_overlap(question, target):
+        score = max(score, 0.75)
+        hit_count = max(hit_count, 2)
+    return score, hit_count
+
+
+def _select_relevant_history_evidence(
+    history: list[dict] | None,
+    user_message: str,
+    *,
+    max_items: int = 4,
+) -> list[dict[str, Any]]:
+    items = _extract_history_evidence_items(history)
+    if not items:
+        return []
+
+    explicit_refs = _explicit_source_refs(user_message)
+    if explicit_refs:
+        selected = [
+            item for item in items
+            if isinstance(item.get("index"), int) and int(item["index"]) in explicit_refs
+        ]
+        return selected[:max_items]
+
+    scored: list[tuple[float, int, dict[str, Any]]] = []
+    detail_hit = bool(_DETAIL_FOLLOWUP_RE.search(str(user_message or "")))
+    for item in items:
+        score, hit_count = _evidence_overlap_features(user_message, item)
+        if hit_count >= 2 or score >= 0.55 or (detail_hit and score >= 0.35):
+            scored.append((score, hit_count, item))
+    scored.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    return [item for _, _, item in scored[:max_items]]
+
+
+def _format_followup_evidence_context(items: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for item in items:
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        title = str(item.get("title") or "").strip() or "previous cited source"
+        index = item.get("index")
+        if isinstance(index, int):
+            lines.append(f"- [{index}] {title} | {url}")
+        else:
+            lines.append(f"- {title} | {url}")
+    return "\n".join(lines)
+
+
+def _previous_model_excerpt_for_followup(
+    previous_model: str,
+    evidence_items: list[dict[str, Any]],
+    *,
+    max_chars: int = 700,
+) -> str:
+    text = str(previous_model or "").strip()
+    if not text:
+        return ""
+    if evidence_items:
+        needles: list[str] = []
+        for item in evidence_items:
+            title = str(item.get("title") or "").strip()
+            url = str(item.get("url") or "").strip()
+            index = item.get("index")
+            if title:
+                needles.append(title)
+            if url:
+                needles.append(url)
+            if isinstance(index, int):
+                needles.append(f"[{index}]")
+        lines: list[str] = []
+        for line in text.splitlines():
+            clean = line.strip()
+            if not clean:
+                continue
+            if any(needle and needle in clean for needle in needles):
+                lines.append(clean)
+        if lines:
+            return "\n".join(lines)[:max_chars].strip()
+    if len(text) <= max_chars:
+        return text
+    head = text[: max_chars // 2].strip()
+    tail = text[-max_chars // 2 :].strip()
+    return f"{head}\n...\n{tail}".strip()
 
 
 def resolve_user_message_with_followup_context(
@@ -312,13 +586,17 @@ def resolve_user_message_with_followup_context(
 
     previous_user = str(profile.get("previous_user", "")).strip()
     previous_model = str(profile.get("previous_model", "")).strip()
-    previous_model_short = previous_model[:480].strip()
+    evidence_items = _select_relevant_history_evidence(history, text)
+    evidence_context = _format_followup_evidence_context(evidence_items)
+    previous_model_short = _previous_model_excerpt_for_followup(previous_model, evidence_items)
+    evidence_block = f"\nPrevious evidence URLs:\n{evidence_context}\n" if evidence_context else "\n"
 
     if decision == "followup_strong":
         augmented = (
             f"Current user follow-up question: {text}\n"
             f"Previous user question: {previous_user}\n"
             f"Previous assistant answer: {previous_model_short}\n"
+            f"{evidence_block}"
             "Instruction: resolve references in the follow-up using prior context, "
             "then answer with concrete entities and evidence."
         )
@@ -326,10 +604,13 @@ def resolve_user_message_with_followup_context(
         augmented = (
             f"User question: {text}\n"
             f"Related previous context: {previous_user}\n"
+            f"Related previous answer excerpt: {previous_model_short}\n"
+            f"{evidence_block}"
             "Instruction: if this question depends on previous context, resolve it before retrieval."
         )
 
     profile["augmented"] = True
+    profile["context_evidence_count"] = len(evidence_items)
     profile["effective_message_preview"] = augmented[:220]
     return augmented, profile
 
@@ -501,11 +782,20 @@ def build_clarification_payload(
             question += "你更希望看最近 7 天还是 30 天？"
         hints = missing_hints
     else:
-        question = (
-            "目前证据不足，先补充一个更具体的分析范围后我再继续。"
-            "你可以补充时间范围、来源范围、具体主题，或想看的分析维度（趋势/对比/时间线/格局）。"
-        )
-        hints = missing_hints
+        focus_entities = entities or _extract_entity_candidates(text)
+        focus = " / ".join(focus_entities[:3])
+        if not focus:
+            focus = text[:36].strip() or "这个问题"
+        question = f"我暂时没找到足够支撑“{focus}”的可靠新闻证据。你希望我先按哪个线索继续查？"
+        hints = []
+        if not bool(scope.get("has_time")):
+            hints.append(f"时间窗口：围绕“{focus}”看最近 7 天、14 天或 30 天")
+        if not bool(scope.get("has_source")):
+            hints.append("来源线索：提供原文 URL，或限定 HackerNews / TechCrunch / 全部来源")
+        if not bool(scope.get("has_dimension")):
+            hints.append(f"回答重点：聚焦“{focus}”的事件经过、影响、争议或时间线")
+        if not hints:
+            hints = missing_hints
 
     return ClarificationPayload(
         reason=reason_value,

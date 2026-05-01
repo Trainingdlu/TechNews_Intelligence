@@ -26,6 +26,26 @@ def test_extract_user_intent_text_strips_clarification_wrapper() -> None:
     assert "直接给我今天发生的新闻" in text
 
 
+def test_extract_user_intent_text_strips_followup_wrapper_and_keeps_useful_context() -> None:
+    wrapped = (
+        "Current user follow-up question: 详细说说OpenAI联手Yubico推出了ChatGPT高级账户安全计划\n"
+        "Previous user question: 对比openai和谷歌最近30天的事件\n"
+        "Previous assistant answer: 过去30天内两家公司在产品和商业化方面表现如下...\n"
+        "Previous evidence URLs:\n"
+        "- [7] [AI] OpenAI联手Yubico推出ChatGPT高级账户安全计划 | https://example.com/openai-yubico\n"
+        "Instruction: resolve references in the follow-up using prior context."
+    )
+    text = extract_user_intent_text(wrapped)
+    assert "Current user follow-up question" not in text
+    assert "Previous user question" not in text
+    assert "Previous assistant answer" not in text
+    assert "Previous evidence URLs" not in text
+    assert "Instruction:" not in text
+    assert "详细说说OpenAI联手Yubico推出了ChatGPT高级账户安全计划" in text
+    assert "对比openai和谷歌最近30天的事件" in text
+    assert "https://example.com/openai-yubico" in text
+
+
 def test_classify_user_intent_for_smalltalk() -> None:
     assert is_smalltalk_or_capability_intent("你好") is True
     assert classify_user_intent("hello, what can you do") == "smalltalk_or_capability"

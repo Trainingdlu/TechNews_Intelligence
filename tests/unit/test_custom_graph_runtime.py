@@ -8,7 +8,7 @@ from unittest.mock import patch
 from agent.core.runtime_factories import build_default_tool_runtime
 from agent.core.tool_contracts import ToolEnvelope, ToolEvidence
 from agent.graph.builder import invoke_custom_graph
-from agent.graph.nodes import GraphDependencies, GraphNodeRunner
+from agent.graph.nodes import GraphDependencies, GraphNodeRunner, _heuristic_tool_calls
 from agent.graph.state import GraphModelHandle, GraphModels, GraphRuntimeConfig
 
 pytestmark = pytest.mark.usefixtures("agent_dependency_stubs")
@@ -92,3 +92,22 @@ def test_output_guard_keeps_only_evidence_urls_and_adds_source_url() -> None:
     assert "https://unknown.example.com/x" not in update["final_text"]
     assert "https://example.com/source" in update["final_text"]
     assert update["valid_urls"] == ["https://example.com/source"]
+
+
+def test_followup_evidence_url_drives_single_article_read() -> None:
+    wrapped = (
+        "User question: 详细说说OpenAI联手Yubico推出了ChatGPT高级账户安全计划\n"
+        "Related previous context: 对比openai和谷歌最近30天的事件\n"
+        "Previous evidence URLs:\n"
+        "- [7] [AI] OpenAI联手Yubico推出ChatGPT高级账户安全计划 | https://example.com/openai-yubico\n"
+        "Instruction: if this question depends on previous context, resolve it before retrieval."
+    )
+
+    calls = _heuristic_tool_calls(
+        user_message=wrapped,
+        intent={"intent_type": "article_read"},
+        selected_tools=["read_news_content", "fulltext_batch", "search_news"],
+        tool_results=[],
+    )
+
+    assert calls == [{"name": "read_news_content", "args": {"url": "https://example.com/openai-yubico"}}]
