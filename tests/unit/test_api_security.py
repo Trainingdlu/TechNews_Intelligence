@@ -187,6 +187,25 @@ def test_quota_exhausted_admin_send_failure_does_not_notify_user_or_mark(api_mod
     assert not any("SET notified = TRUE" in sql for sql, _params in conn.executed)
 
 
+def test_reserve_quota_403_triggers_exhausted_notification_retry(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    calls: list[tuple[dict, dict]] = []
+
+    def _raise_quota_exhausted(_token_info):  # noqa: ANN001
+        raise api_mod.HTTPException(status_code=403, detail="quota_exhausted")
+
+    monkeypatch.setattr(api_mod, "_reserve_quota_or_403", _raise_quota_exhausted)
+    monkeypatch.setattr(
+        api_mod,
+        "_maybe_send_quota_exhausted_notifications",
+        lambda token_info, reservation: calls.append((token_info, reservation)),
+    )
+
+    with pytest.raises(api_mod.HTTPException):
+        api_mod._reserve_quota_or_notify_403({"id": 7, "email": "user@example.com"})  # pylint: disable=protected-access
+
+    assert calls == [({"id": 7, "email": "user@example.com"}, {"remaining": 0})]
+
+
 def test_rate_limiter_cache_evicts_oldest_key(api_state) -> None:  # noqa: ANN001
     api_state.RATE_LIMIT = 10
     api_state.RATE_WINDOW = 60

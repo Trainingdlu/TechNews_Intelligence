@@ -554,6 +554,15 @@ def _reserve_quota_or_403(token_info: dict) -> dict:
         put_conn(conn)
 
 
+def _reserve_quota_or_notify_403(token_info: dict) -> dict:
+    try:
+        return _reserve_quota_or_403(token_info)
+    except HTTPException as exc:
+        if exc.status_code == 403 and exc.detail == "quota_exhausted":
+            _maybe_send_quota_exhausted_notifications(token_info, {"remaining": 0})
+        raise
+
+
 def _refund_reserved_quota(token_info: dict):
     """Best-effort quota refund used when generation fails after reservation."""
     conn = get_conn()
@@ -938,7 +947,7 @@ async def chat(
     request_id = uuid.uuid4().hex
     thread_id = _normalize_request_thread_id(body.thread_id)
     history = _load_thread_history_or_404(thread_id, token_id=int(token_info["id"])) if thread_id else []
-    reservation = _reserve_quota_or_403(token_info)
+    reservation = _reserve_quota_or_notify_403(token_info)
 
     logger.info(
         "[%s] 对话: request_id=%s message=%s...",
@@ -1052,7 +1061,7 @@ async def chat_stream(
     request_id = uuid.uuid4().hex
     thread_id = _normalize_request_thread_id(body.thread_id)
     history = _load_thread_history_or_404(thread_id, token_id=int(token_info["id"])) if thread_id else []
-    reservation = _reserve_quota_or_403(token_info)
+    reservation = _reserve_quota_or_notify_403(token_info)
 
     logger.info(
         "[%s] 对话(流式): request_id=%s message=%s...",
