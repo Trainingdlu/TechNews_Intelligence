@@ -39,6 +39,7 @@ from .core.metrics import (
 from .core.run_context import (
     agent_run_context,
     emit_progress as _emit_progress,
+    get_tool_call_chain as _get_accumulated_tool_call_chain,
     get_tool_calls as _get_accumulated_tool_calls,
     set_request_metadata as _set_request_metadata,
 )
@@ -171,6 +172,19 @@ def _extract_citation_urls_from_text(text: str) -> list[str]:
     if not citation_map:
         return []
     return [citation_map[idx] for idx in sorted(citation_map.keys())]
+
+
+def _ordered_tool_calls_for_eval(trace_summary: dict[str, Any] | None) -> list[str]:
+    if isinstance(trace_summary, dict):
+        chain = trace_summary.get("tool_call_chain")
+        if isinstance(chain, list):
+            ordered = [str(item).strip() for item in chain if str(item).strip()]
+            if ordered:
+                return ordered
+    chain = _get_accumulated_tool_call_chain()
+    if chain:
+        return [str(item).strip() for item in chain if str(item).strip()]
+    return sorted(_get_accumulated_tool_calls())
 
 def _contains_cjk(text: str) -> bool:
     return _contains_cjk_core(text)
@@ -786,7 +800,7 @@ def generate_response_eval_payload(
                 _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
                 _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
                 final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
-                tool_calls = sorted(_get_accumulated_tool_calls())
+                tool_calls = _ordered_tool_calls_for_eval(None)
                 trace_summary = _finalize_request_trace(
                     final_status="success",
                     evidence_count=len(valid_urls),
@@ -797,6 +811,7 @@ def generate_response_eval_payload(
                         "tool_count": len(tool_calls),
                     },
                 )
+                tool_calls = _ordered_tool_calls_for_eval(trace_summary)
                 payload: dict[str, Any] = {
                     "text": final_text,
                     "valid_urls": sorted(valid_urls),

@@ -85,6 +85,24 @@ def normalize_url_for_match(url: str) -> str:
     return urlunsplit((scheme, netloc, path, query, ""))
 
 
+def _normalized_valid_urls(valid_urls: list[str] | set[str] | None) -> set[str]:
+    normalized: set[str] = set()
+    if not valid_urls:
+        return normalized
+    for item in valid_urls:
+        normalized_url = normalize_url_for_match(str(item))
+        if normalized_url:
+            normalized.add(normalized_url)
+    return normalized
+
+
+def _url_allowed(url: str, normalized_valid: set[str]) -> bool:
+    normalized_url = normalize_url_for_match(url)
+    if not normalized_url:
+        return False
+    return normalized_url in normalized_valid
+
+
 def strip_existing_source_section(text: str) -> str:
     lines = (text or "").splitlines()
     start = None
@@ -275,12 +293,15 @@ def compact_citations_and_urls(
     if not refs:
         return cited_body, ordered_urls
 
+    normalized_valid = _normalized_valid_urls(valid_urls)
     compact_urls: list[str] = []
     index_map: dict[int, int] = {}
     for old_idx in refs:
         if 1 <= old_idx <= len(ordered_urls):
             url = ordered_urls[old_idx - 1]
-            if valid_urls is not None and url not in valid_urls:
+            if valid_urls is not None and not normalized_valid:
+                continue
+            if normalized_valid and not _url_allowed(url, normalized_valid):
                 continue
             index_map[old_idx] = len(compact_urls) + 1
             compact_urls.append(url)
@@ -364,8 +385,11 @@ def decorate_response_with_sources(
     compact_body, compact_urls = compact_citations_and_urls(cited_body, ordered_urls, valid_urls=valid_urls)
     final_urls = compact_urls if compact_urls else ordered_urls
 
-    if valid_urls is not None:
-        final_urls = [u for u in final_urls if u in valid_urls]
+    normalized_valid = _normalized_valid_urls(valid_urls)
+    if valid_urls is not None and not normalized_valid:
+        final_urls = []
+    elif normalized_valid:
+        final_urls = [u for u in final_urls if _url_allowed(u, normalized_valid)]
 
     if not final_urls:
         return _cleanup_citation_artifacts(compact_body).rstrip(), title_map
@@ -403,4 +427,3 @@ def ensure_evidence_section(answer: str, source_output: str, user_message: str, 
         effective_max = max(max_urls, required_urls)
     lines = [f"{url}" for url in source_urls[:effective_max]]
     return f"{answer.rstrip()}\n\n{header}\n" + "\n".join(lines)
-

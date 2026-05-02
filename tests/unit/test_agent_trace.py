@@ -114,6 +114,28 @@ def test_generate_response_finalizes_blocked_trace() -> None:
     assert summary["error_code"] == "graph_inline_citation_missing"
 
 
+def test_generate_response_eval_payload_preserves_tool_call_sequence() -> None:
+    from agent.agent import generate_response_eval_payload
+
+    expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
+    tool_chain = ["search_news", "query_news", "search_news"]
+    with (
+        patch(
+            "agent.agent._generate_response_core",
+            return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}),
+        ),
+        patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})),
+        patch(
+            "agent.agent._finalize_request_trace",
+            return_value={"tool_call_chain": tool_chain},
+        ),
+        patch("agent.agent._get_accumulated_tool_call_chain", return_value=tool_chain),
+    ):
+        payload = generate_response_eval_payload([], "summarize recent ai updates")
+
+    assert payload["tool_calls"] == tool_chain
+
+
 def test_finalize_request_trace_reentry_does_not_persist_twice(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

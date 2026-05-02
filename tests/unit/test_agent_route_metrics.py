@@ -98,6 +98,15 @@ class TestEvidence:
         assert idx_b != -1 and idx_a != -1
         assert idx_b < idx_a
 
+    def test_decorate_valid_urls_match_by_normalized_url(self):
+        from agent.core.evidence import decorate_response_with_sources
+
+        text = "Evidence URL: https://a.example.com:443/path/."
+        valid_urls = ["https://a.example.com/path"]
+        result, _ = decorate_response_with_sources(text, "test question", valid_urls=valid_urls)
+
+        assert "- [1] https://a.example.com:443/path/" in result
+
     def test_normalize_parenthesized_citation(self):
         from agent.core.evidence import normalize_inline_citation_styles
 

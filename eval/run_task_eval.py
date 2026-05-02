@@ -40,14 +40,14 @@ def _load_eval_env(env_file: Path | None) -> None:
         os.environ["AGENT_MODEL_PROVIDER"] = "vertex"
 
 
-def _bootstrap_agent() -> tuple[Any, Any]:
+def _bootstrap_agent() -> Any:
     project_root = Path(__file__).resolve().parents[1]
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
     from agent import generate_response_eval_payload  # pylint: disable=import-outside-toplevel
 
-    return generate_response_eval_payload, extract_urls
+    return generate_response_eval_payload
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -94,11 +94,23 @@ def _tool_calls_detailed_from_trace(summary: dict[str, Any] | None) -> list[dict
         tool = str(event.get("tool_name", "")).strip()
         if not tool:
             continue
-        payload = event.get("input_summary", {})
+        has_raw_payload = "input_payload" in event
+        payload = event.get("input_payload")
+        if not has_raw_payload or not isinstance(payload, dict):
+            payload = event.get("input_summary", {})
         if not isinstance(payload, dict):
             payload = {}
         out.append({"tool": tool, "args": payload})
     return out
+
+
+def _collect_retrieved_urls(
+    payload: dict[str, Any],
+    trace_summary: dict[str, Any] | None,
+) -> list[str]:
+    payload_urls = [str(item).strip() for item in payload.get("valid_urls", []) if str(item).strip()]
+    trace_urls = _retrieved_urls_from_trace(trace_summary)
+    return _dedupe(payload_urls + trace_urls)
 
 
 def _invoke_eval_payload(
@@ -219,7 +231,7 @@ def main() -> int:
     if not cases:
         raise ValueError("No cases selected.")
 
-    generate_response_eval_payload, extract_urls_fn = _bootstrap_agent()
+    generate_response_eval_payload = _bootstrap_agent()
     started = time.time()
     case_rows: list[dict[str, Any]] = []
 
@@ -269,10 +281,7 @@ def main() -> int:
             if not error_text and final_answer.startswith("[EVAL_ERROR]"):
                 error_text = final_answer
 
-            payload_urls = [str(item).strip() for item in payload.get("valid_urls", []) if str(item).strip()]
-            trace_urls = _retrieved_urls_from_trace(trace_summary)
-            output_urls = extract_urls_fn(final_answer)
-            retrieved_urls = _dedupe(payload_urls + trace_urls + output_urls)
+            retrieved_urls = _collect_retrieved_urls(payload, trace_summary)
             citations = _dedupe(extract_urls(final_answer))
 
             latency_ms = 0.0

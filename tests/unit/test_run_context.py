@@ -10,6 +10,7 @@ from agent.core.run_context import (
     agent_run_context,
     get_evidence_urls,
     get_request_metadata,
+    get_tool_call_chain,
     get_tool_calls,
     set_request_metadata,
 )
@@ -51,3 +52,13 @@ def test_request_metadata_roundtrip() -> None:
     assert metadata["request_id"] == "req-001"
     assert metadata["thread_id"] == "thread-abc"
     assert metadata["user_message"] == "latest ai updates"
+
+
+def test_tool_call_chain_preserves_order_and_duplicates() -> None:
+    with agent_run_context():
+        add_tool_call("search_news")
+        add_tool_call("query_news")
+        add_tool_call("search_news")
+
+        assert get_tool_calls() == {"search_news", "query_news"}
+        assert get_tool_call_chain() == ["search_news", "query_news", "search_news"]

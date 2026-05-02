@@ -284,6 +284,7 @@ class AgentToolEvent:
 
     event_index: int
     tool_name: str
+    input_payload: dict[str, Any]
     input_summary: Any
     started_at_ms: int
     status: str = "started"
@@ -299,6 +300,7 @@ class AgentToolEvent:
             "event_index": self.event_index,
             "tool_name": self.tool_name,
             "status": self.status,
+            "input_payload": copy.deepcopy(self.input_payload),
             "input_summary": self.input_summary,
             "output_summary": self.output_summary,
             "latency_ms": self.latency_ms,
@@ -337,6 +339,7 @@ class AgentRequestTrace:
         event = AgentToolEvent(
             event_index=event_index,
             tool_name=str(tool_name or "").strip(),
+            input_payload=copy.deepcopy(payload),
             input_summary=summarize_payload(payload),
             started_at_ms=_now_ms(),
         )

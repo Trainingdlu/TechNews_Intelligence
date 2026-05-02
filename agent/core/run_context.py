@@ -15,6 +15,7 @@ ProgressCallback = Callable[[dict[str, Any]], None]
 class AgentRunState:
     evidence_urls: list[str] = field(default_factory=list)
     tool_calls: list[str] = field(default_factory=list)
+    tool_call_chain: list[str] = field(default_factory=list)
     progress_callback: ProgressCallback | None = None
     request_id: str | None = None
     thread_id: str | None = None
@@ -126,6 +127,7 @@ def add_tool_call(tool_name: str) -> None:
     name = str(tool_name or "").strip()
     if not name:
         return
+    state.tool_call_chain.append(name)
     if name not in state.tool_calls:
         state.tool_calls.append(name)
 
@@ -135,6 +137,13 @@ def get_tool_calls() -> set[str]:
     if state is None:
         return set()
     return set(state.tool_calls)
+
+
+def get_tool_call_chain() -> list[str]:
+    state = _get_state(create_if_missing=False)
+    if state is None:
+        return []
+    return list(state.tool_call_chain)
 
 
 def add_evidence_urls(urls: list[str]) -> None:
