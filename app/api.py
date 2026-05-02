@@ -597,9 +597,9 @@ def _maybe_send_quota_exhausted_notifications(token_info: dict, reservation: dic
         cur.execute(
             """
             UPDATE access_tokens
-            SET status = 'exhausted', notified = TRUE
-            WHERE id = %s AND notified = FALSE AND used >= quota
-            RETURNING email
+            SET status = 'exhausted'
+            WHERE id = %s AND used >= quota
+            RETURNING email, notified
             """,
             (token_info["id"],),
         )
@@ -617,16 +617,51 @@ def _maybe_send_quota_exhausted_notifications(token_info: dict, reservation: dic
         return
 
     email = str(row[0] or token_info["email"])
+    already_notified = bool(row[1])
+    if already_notified:
+        return
+
+    admin_email = ADMIN_EMAIL.strip()
+    if not admin_email:
+        logger.error("ADMIN_EMAIL 未配置，无法发送管理员审批邮件；notified 保持 false: %s", email)
+        return
+
     approve_url = _build_signed_approve_url(token_info["id"])
+    if not approve_url:
+        logger.error("APPROVE_LINK_SECRET 未配置，无法发送管理员审批邮件；notified 保持 false: %s", email)
+        return
+
+    admin_sent = send_quota_exhausted_to_admin(admin_email, email, token_info["id"], approve_url)
+    if not admin_sent:
+        logger.error("管理员审批邮件发送失败；notified 保持 false: admin=%s user=%s", admin_email, email)
+        return
+
+    user_sent = send_quota_exhausted_to_user(email)
+    if not user_sent:
+        logger.error("用户等待审批通知邮件发送失败: %s", email)
+    _mark_quota_exhausted_notified(token_info["id"])
+    logger.info("额度耗尽审批邮件已发送: admin=%s user=%s", admin_email, email)
+
+
+def _mark_quota_exhausted_notified(record_id: int) -> None:
+    conn = get_conn()
     try:
-        if approve_url:
-            send_quota_exhausted_to_admin(ADMIN_EMAIL, email, token_info["id"], approve_url)
-        else:
-            logger.error("APPROVE_LINK_SECRET 未配置，跳过管理员审批邮件发送")
-        send_quota_exhausted_to_user(email)
-        logger.info(f"额度耗尽通知已发送: {email}")
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE access_tokens
+            SET notified = TRUE
+            WHERE id = %s AND used >= quota
+            """,
+            (record_id,),
+        )
+        conn.commit()
+        cur.close()
     except Exception as e:
-        logger.error(f"[{email}] 额度耗尽邮件发送失败: {e}")
+        conn.rollback()
+        logger.error("标记额度耗尽通知成功状态失败: %s", e)
+    finally:
+        put_conn(conn)
 
 
 # ---------------------------------------------------------------------------

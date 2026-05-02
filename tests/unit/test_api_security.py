@@ -73,6 +73,120 @@ def test_confirmation_page_uses_post_form(api_state) -> None:  # noqa: ANN001
     assert '/approve/9?exp=123456&sig=abc123' in html_doc
 
 
+class _QuotaNotifyCursor:
+    def __init__(self, conn):  # noqa: ANN001
+        self.conn = conn
+        self.row = None
+
+    def execute(self, sql, params):  # noqa: ANN001
+        self.conn.executed.append((str(sql), tuple(params or ())))
+        if "RETURNING email, notified" in str(sql):
+            self.row = self.conn.first_row
+        else:
+            self.row = None
+
+    def fetchone(self):  # noqa: ANN001
+        return self.row
+
+    def close(self) -> None:
+        self.conn.closed_cursors += 1
+
+
+class _QuotaNotifyConn:
+    def __init__(self, first_row):  # noqa: ANN001
+        self.first_row = first_row
+        self.executed: list[tuple[str, tuple]] = []
+        self.commits = 0
+        self.rollbacks = 0
+        self.closed_cursors = 0
+
+    def cursor(self):  # noqa: ANN001
+        return _QuotaNotifyCursor(self)
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+
+
+def _install_quota_notify_conn(api_mod, monkeypatch: pytest.MonkeyPatch, first_row):  # noqa: ANN001
+    conn = _QuotaNotifyConn(first_row)
+    monkeypatch.setattr(api_mod, "get_conn", lambda: conn)
+    monkeypatch.setattr(api_mod, "put_conn", lambda _conn: None)
+    return conn
+
+
+def test_quota_exhausted_sends_admin_then_marks_notified(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    conn = _install_quota_notify_conn(api_mod, monkeypatch, ("user@example.com", False))
+    calls: list[tuple[str, str]] = []
+    api_mod.ADMIN_EMAIL = "admin@example.com"
+    monkeypatch.setattr(api_mod, "_build_signed_approve_url", lambda _record_id: "https://api.example.com/approve/7")
+    monkeypatch.setattr(
+        api_mod,
+        "send_quota_exhausted_to_admin",
+        lambda admin, user, _record_id, _url: calls.append(("admin", f"{admin}|{user}")) or True,
+    )
+    monkeypatch.setattr(
+        api_mod,
+        "send_quota_exhausted_to_user",
+        lambda user: calls.append(("user", user)) or True,
+    )
+
+    api_mod._maybe_send_quota_exhausted_notifications(  # pylint: disable=protected-access
+        {"id": 7, "email": "fallback@example.com"},
+        {"remaining": 0},
+    )
+
+    assert calls == [
+        ("admin", "admin@example.com|user@example.com"),
+        ("user", "user@example.com"),
+    ]
+    assert any("SET notified = TRUE" in sql for sql, _params in conn.executed)
+
+
+def test_quota_exhausted_missing_admin_does_not_mark_notified(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    conn = _install_quota_notify_conn(api_mod, monkeypatch, ("user@example.com", False))
+    api_mod.ADMIN_EMAIL = ""
+    monkeypatch.setattr(api_mod, "_build_signed_approve_url", lambda _record_id: "https://api.example.com/approve/7")
+    monkeypatch.setattr(
+        api_mod,
+        "send_quota_exhausted_to_admin",
+        lambda *_args, **_kwargs: pytest.fail("admin email should not be attempted"),
+    )
+    monkeypatch.setattr(
+        api_mod,
+        "send_quota_exhausted_to_user",
+        lambda *_args, **_kwargs: pytest.fail("user waiting email should not be sent without admin email"),
+    )
+
+    api_mod._maybe_send_quota_exhausted_notifications(  # pylint: disable=protected-access
+        {"id": 7, "email": "fallback@example.com"},
+        {"remaining": 0},
+    )
+
+    assert not any("SET notified = TRUE" in sql for sql, _params in conn.executed)
+
+
+def test_quota_exhausted_admin_send_failure_does_not_notify_user_or_mark(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    conn = _install_quota_notify_conn(api_mod, monkeypatch, ("user@example.com", False))
+    api_mod.ADMIN_EMAIL = "admin@example.com"
+    monkeypatch.setattr(api_mod, "_build_signed_approve_url", lambda _record_id: "https://api.example.com/approve/7")
+    monkeypatch.setattr(api_mod, "send_quota_exhausted_to_admin", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        api_mod,
+        "send_quota_exhausted_to_user",
+        lambda *_args, **_kwargs: pytest.fail("user waiting email should not be sent when admin mail fails"),
+    )
+
+    api_mod._maybe_send_quota_exhausted_notifications(  # pylint: disable=protected-access
+        {"id": 7, "email": "fallback@example.com"},
+        {"remaining": 0},
+    )
+
+    assert not any("SET notified = TRUE" in sql for sql, _params in conn.executed)
+
+
 def test_rate_limiter_cache_evicts_oldest_key(api_state) -> None:  # noqa: ANN001
     api_state.RATE_LIMIT = 10
     api_state.RATE_WINDOW = 60

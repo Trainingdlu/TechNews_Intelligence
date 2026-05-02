@@ -18,16 +18,21 @@ def _get_smtp_config() -> dict:
     }
 
 
-def _send(to: str, subject: str, html_body: str):
+def _send(to: str, subject: str, html_body: str) -> bool:
     """发送 HTML 邮件。"""
+    recipient = str(to or "").strip()
+    if not recipient:
+        logger.error("邮件收件人为空，跳过发送: %s", subject)
+        return False
+
     cfg = _get_smtp_config()
     if not cfg["user"] or not cfg["password"]:
         logger.warning("SMTP 未配置，跳过邮件发送")
-        return
+        return False
 
     msg = MIMEMultipart("alternative")
     msg["From"] = cfg["user"]
-    msg["To"] = to
+    msg["To"] = recipient
     msg["Subject"] = subject
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
@@ -35,15 +40,17 @@ def _send(to: str, subject: str, html_body: str):
         with smtplib.SMTP(cfg["host"], cfg["port"]) as server:
             server.starttls()
             server.login(cfg["user"], cfg["password"])
-            server.sendmail(cfg["user"], to, msg.as_string())
-        logger.info("邮件已发送至 %s: %s", to, subject)
+            server.sendmail(cfg["user"], recipient, msg.as_string())
+        logger.info("邮件已发送至 %s: %s", recipient, subject)
+        return True
     except Exception as e:
-        logger.error("邮件发送失败 (%s): %s", to, e)
+        logger.error("邮件发送失败 (%s): %s", recipient, e)
+        return False
 
 
-def send_token_email(to: str, token: str, quota: int):
+def send_token_email(to: str, token: str, quota: int) -> bool:
     """向访客发送 Token。"""
-    _send(
+    return _send(
         to,
         "TechNews Agent - 您的访问 Token",
         f"""
@@ -62,9 +69,9 @@ def send_token_email(to: str, token: str, quota: int):
     )
 
 
-def send_quota_exhausted_to_admin(admin_email: str, user_email: str, request_id: int, approve_url: str):
+def send_quota_exhausted_to_admin(admin_email: str, user_email: str, request_id: int, approve_url: str) -> bool:
     """向管理员发送审批邮件。"""
-    _send(
+    return _send(
         admin_email,
         f"TechNews Agent - 限额审批请求 ({user_email})",
         f"""
@@ -84,9 +91,9 @@ def send_quota_exhausted_to_admin(admin_email: str, user_email: str, request_id:
     )
 
 
-def send_quota_exhausted_to_user(to: str):
+def send_quota_exhausted_to_user(to: str) -> bool:
     """向访客发送等待审批通知。"""
-    _send(
+    return _send(
         to,
         "TechNews Agent - 额度已用完，等待审批",
         """
@@ -99,9 +106,9 @@ def send_quota_exhausted_to_user(to: str):
     )
 
 
-def send_quota_upgraded(to: str, new_quota: int):
+def send_quota_upgraded(to: str, new_quota: int) -> bool:
     """向访客发送审批通过通知。"""
-    _send(
+    return _send(
         to,
         "TechNews Agent - 额度已提升",
         f"""
