@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.git/
+.env
+agent/.env
+
+trace_dashboard/node_modules/
+trace_dashboard/dist/
+trace_dashboard/.npm-cache/
+
+eval/reports/
+tests/reports/
+deployment/data/
+docker-data/

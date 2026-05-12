@@ -306,7 +306,7 @@
         history.push({ role: 'user', parts: [{ text }] });
         history.push({ role: 'model', parts: [{ text: reply }] });
 
-        appendMessage('agent', reply, { citationUrls, reveal: true });
+        appendMessage('agent', reply, { citationUrls });
         const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
         const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
         updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
@@ -679,10 +679,6 @@
         if (role === 'agent') {
             const citationUrls = Array.isArray(meta.citationUrls) ? meta.citationUrls : [];
             content.innerHTML = marked.parse(_prepareAgentMarkdown(text, citationUrls));
-            if (meta.reveal) {
-                msg.classList.add('answer-reveal-msg');
-                applyAnswerReveal(content);
-            }
         } else {
             content.textContent = text;
         }
@@ -699,22 +695,6 @@
         });
     }
 
-    function applyAnswerReveal(content) {
-        const blocks = Array.from(content.children).filter((el) => {
-            const tag = el.tagName.toLowerCase();
-            return ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'blockquote', 'pre', 'table', 'hr'].includes(tag);
-        });
-        if (!blocks.length) return;
-
-        const stepMs = 25;
-        const maxDelayMs = 450;
-        content.classList.add('answer-reveal-content');
-        blocks.forEach((block, index) => {
-            block.classList.add('answer-reveal-block');
-            block.style.setProperty('--answer-reveal-delay', `${Math.min(index * stepMs, maxDelayMs)}ms`);
-        });
-    }
-
     // == Typing Indicator ==
     function showTyping(statusText = defaultLoadingStatus) {
         const el = document.createElement('div');
@@ -723,7 +703,6 @@
         const indicator = document.createElement('div');
         indicator.className = 'typing-indicator';
         indicator.innerHTML = `
-            <span class="typing-spinner" aria-hidden="true"></span>
             <div class="typing-copy">
                 <div class="typing-label" role="status" aria-live="polite" data-text="${statusText}">${statusText}</div>
                 <div class="typing-detail" data-text="" data-empty="true" aria-hidden="true"></div>

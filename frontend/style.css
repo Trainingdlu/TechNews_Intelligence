@@ -987,26 +987,6 @@ body {
     }
 }
 
-@keyframes answerMessageReveal {
-    from {
-        opacity: 0;
-        transform: translateY(6px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes answerBlockReveal {
-    to {
-        opacity: 1;
-        filter: blur(0);
-        transform: translateY(0);
-    }
-}
-
 .msg.user {
     align-self: flex-end;
 }
@@ -1030,18 +1010,6 @@ body {
     padding: 4px 0;
     border-radius: 0;
     text-align: left;
-}
-
-.msg.answer-reveal-msg {
-    animation: answerMessageReveal 0.22s ease-out both;
-}
-
-.answer-reveal-content>.answer-reveal-block {
-    opacity: 0;
-    filter: blur(2px);
-    transform: translateY(4px);
-    animation: answerBlockReveal 0.21s ease-out forwards;
-    animation-delay: var(--answer-reveal-delay, 0ms);
 }
 
 .msg.user .msg-content {
@@ -1119,7 +1087,7 @@ body {
 .typing-indicator {
     display: inline-flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: 0;
     padding: 2px 0;
     min-width: 0;
     border: none;
@@ -1129,17 +1097,6 @@ body {
 
 .typing-msg {
     max-width: 100%;
-}
-
-.typing-spinner {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid color-mix(in srgb, var(--text-tertiary) 45%, transparent);
-    border-top-color: var(--primary-blue);
-    animation: typingSpin 1.6s linear infinite;
-    flex-shrink: 0;
-    opacity: 0.58;
 }
 
 .typing-label {
@@ -1220,12 +1177,6 @@ body {
     white-space: nowrap;
 }
 
-@keyframes typingSpin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 @keyframes thinkingTextSweep {
     0% {
         background-position: 100% 0;
@@ -1237,18 +1188,6 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .typing-spinner {
-        animation: none;
-    }
-
-    .msg.answer-reveal-msg,
-    .answer-reveal-content>.answer-reveal-block {
-        animation: none;
-        filter: none;
-        opacity: 1;
-        transform: none;
-    }
-
     .typing-msg .typing-label,
     .typing-msg .typing-detail {
         animation: none;

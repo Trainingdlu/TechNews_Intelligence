@@ -145,6 +145,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      target: python-runtime
     container_name: tech_news_bot
     restart: always
     command: [ "python", "-m", "app.bot" ]
@@ -173,6 +174,7 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      target: python-runtime
     container_name: tech_news_api
     restart: always
     command: [ "uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000" ]
@@ -194,6 +196,38 @@ services:
       API_BASE_URL: ${API_BASE_URL:-http://localhost:8000}
     volumes:
       - ${GCP_SA_PATH}:/run/secrets/gcp-sa.json:ro
+    networks:
+      - app_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  trace:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: trace-runtime
+    container_name: tech_news_trace
+    restart: always
+    command: [ "uvicorn", "app.trace_api:app", "--host", "0.0.0.0", "--port", "8010" ]
+    ports:
+      - "127.0.0.1:${TRACE_DASHBOARD_PORT:-8010}:8010"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASS: ${POSTGRES_PASSWORD}
+      TRACE_DASHBOARD_TOKEN: ${TRACE_DASHBOARD_TOKEN}
+      TRACE_DASHBOARD_ADMIN_EMAIL: ${TRACE_DASHBOARD_ADMIN_EMAIL}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT}
+      LANGCHAIN_ENDPOINT: ${LANGCHAIN_ENDPOINT}
+      LANGCHAIN_TRACING: ${LANGCHAIN_TRACING}
+      LANGCHAIN_TRACING_V2: ${LANGCHAIN_TRACING_V2}
+      LANGCHAIN_PROJECT: ${LANGCHAIN_PROJECT}
     networks:
       - app_network
     depends_on:

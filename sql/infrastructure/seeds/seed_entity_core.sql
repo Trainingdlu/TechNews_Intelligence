@@ -142,7 +142,6 @@ seed_aliases(canonical_name, alias, language, alias_type, weight, is_exact) AS (
         ('Apple', 'Apple Intelligence', 'en', 'product_family', 0.950, TRUE),
         ('Apple', 'AAPL', 'en', 'ticker', 0.800, TRUE),
         ('NVIDIA', 'NVIDIA', 'en', 'official', 1.000, TRUE),
-        ('NVIDIA', 'Nvidia', 'en', 'official', 1.000, TRUE),
         ('NVIDIA', 'NVDA', 'en', 'ticker', 0.900, TRUE),
         ('NVIDIA', '英伟达', 'zh', 'translated', 1.000, TRUE),
         ('TSMC', 'TSMC', 'en', 'official', 1.000, TRUE),
@@ -210,7 +209,6 @@ seed_aliases(canonical_name, alias, language, alias_type, weight, is_exact) AS (
         ('Snowflake', 'Snowflake', 'en', 'official', 0.750, TRUE),
         ('Snowflake', 'Snowflake AI', 'en', 'product_family', 0.750, TRUE),
         ('Arm Holdings', 'Arm Holdings', 'en', 'official', 0.950, TRUE),
-        ('Arm Holdings', 'ARM Holdings', 'en', 'official', 0.950, TRUE),
         ('Arm Holdings', 'Arm Neoverse', 'en', 'product_family', 0.850, TRUE),
         ('ASML', 'ASML', 'en', 'official', 0.950, TRUE),
         ('ASML', '阿斯麦', 'zh', 'translated', 0.900, TRUE),
@@ -224,7 +222,6 @@ seed_aliases(canonical_name, alias, language, alias_type, weight, is_exact) AS (
         ('Samsung Electronics', 'Samsung', 'en', 'official', 0.800, TRUE),
         ('Samsung Electronics', '三星', 'zh', 'translated', 0.900, TRUE),
         ('SK hynix', 'SK hynix', 'en', 'official', 0.950, TRUE),
-        ('SK hynix', 'SK Hynix', 'en', 'official', 0.950, TRUE),
         ('SK hynix', '海力士', 'zh', 'translated', 0.850, TRUE),
         ('Micron', 'Micron', 'en', 'official', 0.950, TRUE),
         ('Micron', 'Micron Technology', 'en', 'official', 0.950, TRUE),
@@ -290,6 +287,23 @@ seed_aliases(canonical_name, alias, language, alias_type, weight, is_exact) AS (
         ('Data center', 'datacenter', 'en', 'topic', 0.850, TRUE),
         ('Semiconductor equipment', 'semiconductor equipment', 'en', 'topic', 0.900, TRUE),
         ('Semiconductor equipment', 'chipmaking equipment', 'en', 'topic', 0.800, TRUE)
+),
+deduped_aliases AS (
+    SELECT DISTINCT ON (canonical_name, LOWER(alias))
+        canonical_name,
+        alias,
+        language,
+        alias_type,
+        weight,
+        is_exact
+    FROM seed_aliases
+    ORDER BY
+        canonical_name,
+        LOWER(alias),
+        CASE WHEN alias = canonical_name THEN 0 ELSE 1 END,
+        weight DESC,
+        is_exact DESC,
+        alias
 )
 INSERT INTO public.entity_alias (
     entity_id,
@@ -317,4 +331,5 @@ WHERE NOT EXISTS (
     FROM public.entity_alias existing
     WHERE existing.entity_id = e.entity_id
       AND LOWER(existing.alias) = LOWER(a.alias)
-);
+)
+ON CONFLICT (entity_id, LOWER(alias)) DO NOTHING;
