@@ -43,7 +43,7 @@ jobs:
             OLD_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' pgvector/pgvector:pg15 2>/dev/null || echo "none")
 
             docker compose -f "$COMPOSE_FILE" pull postgres n8n metabase
-            docker compose -f "$COMPOSE_FILE" build --pull bot api
+            docker compose -f "$COMPOSE_FILE" build --pull bot api trace
             docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
             docker image prune -f
 
@@ -57,7 +57,7 @@ jobs:
             fi
 
             echo "Checking container health..."
-            for svc in postgres n8n bot api; do
+            for svc in postgres n8n bot api trace; do
               if ! docker compose -f "$COMPOSE_FILE" ps "$svc" | grep -q "Up"; then
                 echo "Service $svc is not healthy/up"
                 docker compose -f "$COMPOSE_FILE" ps "$svc"
