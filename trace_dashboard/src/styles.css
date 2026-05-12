@@ -91,7 +91,7 @@ button {
   margin: 0 0 18px;
   color: var(--muted);
   font-size: 12px;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0;
 }
 
@@ -102,22 +102,18 @@ button {
   font-weight: 650;
 }
 
-.auth-copy {
-  margin: 12px 0 24px;
-  color: var(--muted);
-  line-height: 1.7;
-}
-
 .auth-form {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   gap: 10px;
+  margin-top: 24px;
 }
 
 .auth-form input,
 .filterbar input,
 .filterbar select {
   min-width: 0;
+  width: 100%;
   height: 34px;
   border: 1px solid var(--line-strong);
   border-radius: 3px;
@@ -142,6 +138,13 @@ button {
   color: var(--paper);
   padding: 0 14px;
   font-size: 13px;
+}
+
+.auth-form button {
+  width: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
 }
 
 .toolbar-button.secondary,

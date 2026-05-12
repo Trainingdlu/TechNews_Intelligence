@@ -281,17 +281,16 @@ onMounted(() => {
 <template>
   <main v-if="!hasToken" class="auth-page">
     <section class="auth-panel">
-      <p class="eyebrow">TechNews Trace Console</p>
+      <p class="eyebrow">technews trace console</p>
       <h1>输入访问 Token</h1>
-      <p class="auth-copy">该面板会读取完整模型输入输出，仅限管理员排查链路问题。</p>
       <form class="auth-form" @submit.prevent="submitToken">
         <input
           v-model="tokenInput"
           type="password"
           autocomplete="current-password"
-          placeholder="TRACE_DASHBOARD_TOKEN"
+          placeholder="请输入token"
         />
-        <button type="submit">进入面板</button>
+        <button type="submit">进入</button>
       </form>
       <p v-if="authError" class="inline-error">{{ authError }}</p>
     </section>
