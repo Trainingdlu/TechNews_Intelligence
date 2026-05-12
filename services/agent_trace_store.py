@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def persist_request_trace(summary: dict[str, Any] | None) -> bool:
-    """Persist one request trace and its tool events.
+    """Persist one request trace and its span/model I/O rows.
 
     Returns:
         True if at least the `agent_runs` upsert succeeded, otherwise False.
@@ -63,36 +63,7 @@ def persist_request_trace(summary: dict[str, Any] | None) -> bool:
                 run_params,
             )
 
-            tool_rows = _build_tool_event_params(summary)
-            if tool_rows:
-                cur.executemany(
-                    """
-                    INSERT INTO public.agent_tool_events (
-                        request_id,
-                        event_index,
-                        tool_name,
-                        status,
-                        latency_ms,
-                        input_summary,
-                        output_summary,
-                        error_code,
-                        error_message,
-                        exception_chain
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (request_id, event_index) DO UPDATE
-                    SET
-                        tool_name = EXCLUDED.tool_name,
-                        status = EXCLUDED.status,
-                        latency_ms = EXCLUDED.latency_ms,
-                        input_summary = EXCLUDED.input_summary,
-                        output_summary = EXCLUDED.output_summary,
-                        error_code = EXCLUDED.error_code,
-                        error_message = EXCLUDED.error_message,
-                        exception_chain = EXCLUDED.exception_chain
-                    """,
-                    tool_rows,
-                )
+        _persist_span_and_model_io(summary, request_id)
         return True
     except Exception as exc:
         logger.warning(
@@ -101,6 +72,98 @@ def persist_request_trace(summary: dict[str, Any] | None) -> bool:
             exc,
         )
         return False
+
+
+def _persist_span_and_model_io(summary: dict[str, Any], request_id: str) -> None:
+    span_rows = _build_span_params(summary)
+    model_io_rows = _build_model_io_params(summary)
+    if not span_rows and not model_io_rows:
+        return
+
+    if span_rows:
+        try:
+            with db_transaction() as (_, cur):
+                cur.executemany(
+                    """
+                    INSERT INTO public.agent_trace_spans (
+                        request_id,
+                        span_id,
+                        parent_span_id,
+                        span_type,
+                        name,
+                        status,
+                        started_at_ms,
+                        finished_at_ms,
+                        latency_ms,
+                        input_summary,
+                        output_summary,
+                        error_code,
+                        error_message,
+                        exception_chain,
+                        metadata
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (request_id, span_id) DO UPDATE
+                    SET
+                        parent_span_id = EXCLUDED.parent_span_id,
+                        span_type = EXCLUDED.span_type,
+                        name = EXCLUDED.name,
+                        status = EXCLUDED.status,
+                        started_at_ms = EXCLUDED.started_at_ms,
+                        finished_at_ms = EXCLUDED.finished_at_ms,
+                        latency_ms = EXCLUDED.latency_ms,
+                        input_summary = EXCLUDED.input_summary,
+                        output_summary = EXCLUDED.output_summary,
+                        error_code = EXCLUDED.error_code,
+                        error_message = EXCLUDED.error_message,
+                        exception_chain = EXCLUDED.exception_chain,
+                        metadata = EXCLUDED.metadata
+                    """,
+                    span_rows,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "persist_request_trace spans skipped: request_id=%s error=%s",
+                request_id,
+                exc,
+            )
+            return
+
+    if model_io_rows:
+        try:
+            with db_transaction() as (_, cur):
+                cur.executemany(
+                    """
+                    INSERT INTO public.agent_model_io (
+                        request_id,
+                        span_id,
+                        node,
+                        provider,
+                        model,
+                        input_messages,
+                        raw_output,
+                        parsed_output,
+                        token_usage
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (request_id, span_id) DO UPDATE
+                    SET
+                        node = EXCLUDED.node,
+                        provider = EXCLUDED.provider,
+                        model = EXCLUDED.model,
+                        input_messages = EXCLUDED.input_messages,
+                        raw_output = EXCLUDED.raw_output,
+                        parsed_output = EXCLUDED.parsed_output,
+                        token_usage = EXCLUDED.token_usage
+                    """,
+                    model_io_rows,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "persist_request_trace model_io skipped: request_id=%s error=%s",
+                request_id,
+                exc,
+            )
 
 
 def _build_agent_run_params(summary: dict[str, Any]) -> tuple[Any, ...]:
@@ -144,35 +207,68 @@ def _build_agent_run_params(summary: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def _build_tool_event_params(summary: dict[str, Any]) -> list[tuple[Any, ...]]:
+def _build_span_params(summary: dict[str, Any]) -> list[tuple[Any, ...]]:
     request_id = str(summary.get("request_id", "")).strip()
     rows: list[tuple[Any, ...]] = []
-    for item in summary.get("tool_events", []) or []:
+    for item in summary.get("spans", []) or []:
         if not isinstance(item, dict):
             continue
-        event_index = _to_non_negative_int(item.get("event_index"))
-        if event_index <= 0:
+        span_id = _optional_text(item.get("span_id"))
+        if not span_id:
             continue
         rows.append(
             (
                 request_id,
-                event_index,
-                str(item.get("tool_name", "")),
+                span_id,
+                _optional_text(item.get("parent_span_id")),
+                str(item.get("span_type", "postprocess")),
+                str(item.get("name", "")),
                 str(item.get("status", "unknown")),
+                _to_non_negative_int(item.get("started_at_ms")),
+                _to_non_negative_int(item.get("finished_at_ms"), nullable=True),
                 _to_non_negative_int(item.get("latency_ms"), nullable=True),
                 Json(_coerce_json_object(item.get("input_summary"))),
                 Json(_coerce_json_object(item.get("output_summary"))),
                 _optional_text(item.get("error_code")),
                 _optional_text(item.get("error_message")),
                 Json(_coerce_json_list(item.get("exception_chain"))),
+                Json(_coerce_json_object(item.get("metadata"))),
+            )
+        )
+    return rows
+
+
+def _build_model_io_params(summary: dict[str, Any]) -> list[tuple[Any, ...]]:
+    request_id = str(summary.get("request_id", "")).strip()
+    rows: list[tuple[Any, ...]] = []
+    for item in summary.get("model_io", []) or []:
+        if not isinstance(item, dict):
+            continue
+        span_id = _optional_text(item.get("span_id"))
+        if not span_id:
+            continue
+        rows.append(
+            (
+                request_id,
+                span_id,
+                str(item.get("node", "")),
+                str(item.get("provider", "")),
+                str(item.get("model", "")),
+                Json(copy.deepcopy(item.get("input_messages") if item.get("input_messages") is not None else [])),
+                Json(copy.deepcopy(item.get("raw_output"))),
+                Json(copy.deepcopy(item.get("parsed_output"))) if item.get("parsed_output") is not None else None,
+                Json(copy.deepcopy(item.get("token_usage"))) if isinstance(item.get("token_usage"), dict) else None,
             )
         )
     return rows
 
 
 def _build_trace_payload(summary: dict[str, Any]) -> dict[str, Any]:
+    payload_summary = copy.deepcopy(summary)
+    payload_summary.pop("spans", None)
+    payload_summary.pop("model_io", None)
     payload = {
-        "summary": copy.deepcopy(summary),
+        "summary": payload_summary,
         "final_answer_metadata": copy.deepcopy(summary.get("final_answer_metadata") or {}),
         "runtime": copy.deepcopy(summary.get("runtime") or {}),
     }

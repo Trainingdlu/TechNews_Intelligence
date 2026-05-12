@@ -1,9 +1,8 @@
 """Tests for semantic pool — replacement for the old topic-expansion config tests.
 
-The original test_topic_config.py validated hardcoded dictionary loading from
-``sql_builders.py``.  That module has been deprecated in favour of
-``semantic_pool.fetch_semantic_url_pool``.  These tests verify the new
-semantic infrastructure at a unit level (mocked embedding API).
+The original test_topic_config.py validated hardcoded topic-expansion config.
+These tests verify the semantic infrastructure at a unit level with a mocked
+embedding API.
 """
 
 from __future__ import annotations

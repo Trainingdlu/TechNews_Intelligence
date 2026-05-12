@@ -6,6 +6,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from functools import wraps
 from typing import Any
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -26,10 +27,8 @@ from agent.core.tool_runtime import (
 )
 from agent.core.trace import (
     extract_token_usage,
-    record_graph_model_event,
-    record_graph_node_event,
-    record_tool_policy_block,
     set_request_token_usage,
+    trace_span,
 )
 from agent.memory_policy import build_llm_input_messages
 from agent.prompts import SYSTEM_INSTRUCTION
@@ -46,29 +45,74 @@ class GraphDependencies:
     config: GraphRuntimeConfig
 
 
+def _graph_node_span(name: str):
+    def _decorator(func):
+        @wraps(func)
+        def _wrapped(self: "GraphNodeRunner", state: AgentGraphState) -> dict[str, Any]:
+            with trace_span(
+                "graph_node",
+                name,
+                input_summary=_graph_state_summary(state),
+                metadata={"node": name},
+            ) as span:
+                result = func(self, state)
+                span.set_output(_graph_update_summary(result))
+                return result
+
+        return _wrapped
+
+    return _decorator
+
+
+def _graph_state_summary(state: AgentGraphState) -> dict[str, Any]:
+    return {
+        "user_message_chars": len(str(state.get("user_message") or "")),
+        "history_count": len(state.get("history") or []),
+        "llm_input_count": len(state.get("llm_input_messages") or []),
+        "selected_tools": list(state.get("selected_tools") or []),
+        "pending_tool_count": len(state.get("pending_tool_calls") or []),
+        "tool_result_count": len(state.get("tool_results") or []),
+        "tool_round": int(state.get("tool_round") or 0),
+        "evidence_count": len(state.get("evidence_urls") or state.get("valid_urls") or []),
+        "next_step": state.get("next_step"),
+    }
+
+
+def _graph_update_summary(update: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(update, dict):
+        return {"type": type(update).__name__}
+    return {
+        "keys": sorted(update.keys()),
+        "intent_route": (update.get("intent") or {}).get("route") if isinstance(update.get("intent"), dict) else None,
+        "pending_tool_count": len(update.get("pending_tool_calls") or []),
+        "tool_result_count": len(update.get("tool_results") or []),
+        "evidence_count": len(update.get("evidence_urls") or update.get("valid_urls") or []),
+        "final_text_chars": len(str(update.get("final_text") or "")),
+        "next_step": update.get("next_step"),
+    }
+
+
 class GraphNodeRunner:
     def __init__(self, deps: GraphDependencies) -> None:
         self.deps = deps
         self.registry = build_default_registry()
 
+    @_graph_node_span("prepare_context")
     def prepare_context(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("prepare_context", "start")
         emit_graph_progress("understanding", "正在理解问题", detail="")
         messages = _history_to_messages(state.get("history") or [])
         user_message = str(state.get("user_message") or "")
         messages.append(HumanMessage(content=user_message))
         llm_input = build_llm_input_messages(messages)
-        _audit("prepare_context", "finish", {"message_count": len(llm_input)})
         return {
             "llm_input_messages": llm_input,
             "tool_results": list(state.get("tool_results") or []),
             "tool_round": int(state.get("tool_round") or 0),
             "max_tool_rounds": int(state.get("max_tool_rounds") or self.deps.config.max_tool_rounds),
-            "node_audit": _append_node_audit(state, "prepare_context", "finish"),
         }
 
+    @_graph_node_span("intent_router")
     def intent_router(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("intent_router", "start")
         user_message = str(state.get("user_message") or "")
         context_snippet = _recent_context_snippet(state.get("history") or [])
         intent = _heuristic_intent(user_message)
@@ -94,25 +138,21 @@ class GraphNodeRunner:
         elif intent.get("route") == "direct_answer":
             detail = "可以直接回答"
         emit_graph_progress("understanding", "正在理解问题", detail=detail)
-        _audit("intent_router", "finish", {"route": intent.get("route"), "intent_type": intent.get("intent_type")})
         return {
             "intent": intent,
-            "node_audit": _append_node_audit(state, "intent_router", "finish", {"route": intent.get("route")}),
         }
 
+    @_graph_node_span("tool_selection")
     def tool_selection(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("tool_selection", "start")
         intent = state.get("intent") or {}
         selected = _select_tools(intent)
         emit_graph_progress("selecting_tools", "正在调用工具")
-        _audit("tool_selection", "finish", {"selected_tools": selected})
         return {
             "selected_tools": selected,
-            "node_audit": _append_node_audit(state, "tool_selection", "finish", {"selected_tools": selected}),
         }
 
+    @_graph_node_span("tool_worker")
     def tool_worker(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("tool_worker", "start")
         selected_tools = list(state.get("selected_tools") or [])
         user_message = str(state.get("user_message") or "")
         context_snippet = _recent_context_snippet(state.get("history") or [])
@@ -120,15 +160,8 @@ class GraphNodeRunner:
         existing_calls = _normalize_tool_calls({"tool_calls": state.get("pending_tool_calls") or []})
         if existing_calls:
             emit_graph_progress("selecting_tools", "正在调用工具")
-            _audit("tool_worker", "finish", {"tool_calls": existing_calls, "source": "state"})
             return {
                 "pending_tool_calls": existing_calls,
-                "node_audit": _append_node_audit(
-                    state,
-                    "tool_worker",
-                    "finish",
-                    {"tool_calls": existing_calls, "source": "state"},
-                ),
             }
         schema_brief = _tool_schema_brief(selected_tools)
         model_plan = _invoke_json_model(
@@ -156,14 +189,12 @@ class GraphNodeRunner:
                 tool_results=tool_results,
             )
         emit_graph_progress("selecting_tools", "正在调用工具")
-        _audit("tool_worker", "finish", {"tool_calls": calls})
         return {
             "pending_tool_calls": calls,
-            "node_audit": _append_node_audit(state, "tool_worker", "finish", {"tool_calls": calls}),
         }
 
+    @_graph_node_span("tool_policy")
     def tool_policy(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("tool_policy", "start")
         selected_tools = set(state.get("selected_tools") or [])
         input_schemas = {name: self.registry.input_schema(name) for name in selected_tools}
         user_messages = _human_texts(state.get("llm_input_messages") or [])
@@ -176,26 +207,39 @@ class GraphNodeRunner:
             user_messages=user_messages,
             previous_tool_calls=previous_tool_calls,
         )
+        with trace_span(
+            "guard",
+            "tool_policy",
+            input_summary={
+                "pending_tool_count": len(state.get("pending_tool_calls") or []),
+                "selected_tools": sorted(selected_tools),
+                "previous_tool_calls": previous_tool_calls,
+            },
+            metadata={"node": "tool_policy"},
+        ) as guard_span:
+            guard_span.set_output(
+                {
+                    "allowed": decision.allowed,
+                    "reason": decision.reason,
+                    "details": decision.details or {},
+                }
+            )
+            if not decision.allowed:
+                guard_span.status = "blocked"
         if decision.allowed:
-            _audit("tool_policy", "finish", {"decision": "allow"})
-            return {
-                "node_audit": _append_node_audit(state, "tool_policy", "finish", {"decision": "allow"}),
-            }
+            return {}
 
-        record_tool_policy_block(reason=decision.reason, details=decision.details)
         clarification = build_clarification_payload(
             str(state.get("user_message") or ""),
             reason=infer_clarification_reason(str(state.get("user_message") or "")),
             context={"policy_reason": decision.reason, "policy_details": decision.details or {}},
         ).to_dict()
-        _audit("tool_policy", "blocked", {"reason": decision.reason})
         return {
             "clarification": clarification,
-            "node_audit": _append_node_audit(state, "tool_policy", "blocked", {"reason": decision.reason}),
         }
 
+    @_graph_node_span("tool_executor")
     def tool_executor(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("tool_executor", "start")
         results = list(state.get("tool_results") or [])
         evidence_urls = list(state.get("evidence_urls") or [])
         seen_urls = {normalize_url_for_match(url) for url in evidence_urls}
@@ -216,43 +260,36 @@ class GraphNodeRunner:
                     seen_urls.add(normalized)
             emit_graph_evidence(envelope, limit=self.deps.config.max_evidence_events)
 
-        _audit("tool_executor", "finish", {"tool_count": len(results), "evidence_count": len(evidence_urls)})
         return {
             "tool_results": results,
             "evidence_urls": evidence_urls,
             "tool_round": int(state.get("tool_round") or 0) + 1,
             "pending_tool_calls": [],
-            "node_audit": _append_node_audit(
-                state,
-                "tool_executor",
-                "finish",
-                {"tool_count": len(results), "evidence_count": len(evidence_urls)},
-            ),
         }
 
+    @_graph_node_span("evidence_normalizer")
     def evidence_normalizer(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("evidence_normalizer", "start")
         results = list(state.get("tool_results") or [])
-        evidence_urls, brief = _normalize_evidence(results)
+        with trace_span(
+            "postprocess",
+            "evidence_normalizer",
+            input_summary={"tool_result_count": len(results)},
+            metadata={"node": "evidence_normalizer"},
+        ) as post_span:
+            evidence_urls, brief = _normalize_evidence(results)
+            post_span.set_output({"evidence_count": len(evidence_urls), "brief_chars": len(brief)})
         items = evidence_status_items(results, limit=self.deps.config.max_status_items)
         if items:
             emit_graph_progress("retrieving", f"已找到 {len(evidence_urls)} 篇相关报道", items=items)
         emit_graph_progress("analyzing", "正在整理信息")
-        _audit("evidence_normalizer", "finish", {"evidence_count": len(evidence_urls)})
         return {
             "evidence_urls": evidence_urls,
             "valid_urls": evidence_urls,
             "evidence_brief": brief,
-            "node_audit": _append_node_audit(
-                state,
-                "evidence_normalizer",
-                "finish",
-                {"evidence_count": len(evidence_urls)},
-            ),
         }
 
+    @_graph_node_span("tool_loop_decider")
     def tool_loop_decider(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("tool_loop_decider", "start")
         results = list(state.get("tool_results") or [])
         evidence_urls = list(state.get("evidence_urls") or [])
         max_rounds = int(state.get("max_tool_rounds") or self.deps.config.max_tool_rounds)
@@ -261,16 +298,9 @@ class GraphNodeRunner:
             fallback_calls = _empty_evidence_fallback_calls(state)
             if tool_round < max_rounds and fallback_calls:
                 next_step = "more_tools"
-                _audit("tool_loop_decider", "finish", {"next_step": next_step, "reason": "empty_evidence_fallback"})
                 return {
                     "next_step": next_step,
                     "pending_tool_calls": fallback_calls,
-                    "node_audit": _append_node_audit(
-                        state,
-                        "tool_loop_decider",
-                        "finish",
-                        {"next_step": next_step, "reason": "empty_evidence_fallback"},
-                    ),
                 }
             next_step = "insufficient_evidence"
         elif tool_round < max_rounds and _should_read_after_search(results, state):
@@ -279,18 +309,15 @@ class GraphNodeRunner:
             return {
                 "next_step": next_step,
                 "pending_tool_calls": read_calls,
-                "node_audit": _append_node_audit(state, "tool_loop_decider", "finish", {"next_step": next_step}),
             }
         else:
             next_step = "enough_evidence"
-        _audit("tool_loop_decider", "finish", {"next_step": next_step})
         return {
             "next_step": next_step,
-            "node_audit": _append_node_audit(state, "tool_loop_decider", "finish", {"next_step": next_step}),
         }
 
+    @_graph_node_span("final_synthesizer")
     def final_synthesizer(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("final_synthesizer", "start")
         emit_graph_progress("synthesizing", "正在生成分析", detail="输出结论、依据")
         results = list(state.get("tool_results") or [])
         user_message = str(state.get("user_message") or "")
@@ -314,55 +341,56 @@ class GraphNodeRunner:
         )
         if not text:
             text = _fallback_final_text(user_message, state)
-        _audit("final_synthesizer", "finish", {"chars": len(text)})
         return {
             "final_text": text,
-            "node_audit": _append_node_audit(state, "final_synthesizer", "finish", {"chars": len(text)}),
         }
 
+    @_graph_node_span("output_guard")
     def output_guard(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("output_guard", "start")
         text = str(state.get("final_text") or "").strip()
         valid_urls = list(state.get("evidence_urls") or state.get("valid_urls") or [])
-        guarded_text, guard_metadata = _guard_output_urls(text, valid_urls)
-        _audit("output_guard", "finish", {"valid_url_count": len(valid_urls), **guard_metadata})
+        with trace_span(
+            "postprocess",
+            "output_guard",
+            input_summary={"text_chars": len(text), "valid_url_count": len(valid_urls)},
+            metadata={"node": "output_guard"},
+        ) as guard_span:
+            guarded_text, guard_metadata = _guard_output_urls(text, valid_urls)
+            guard_span.set_output({"guarded_text_chars": len(guarded_text), **guard_metadata})
         return {
             "final_text": guarded_text,
             "valid_urls": valid_urls,
-            "node_audit": _append_node_audit(
-                state,
-                "output_guard",
-                "finish",
-                {"valid_url_count": len(valid_urls), **guard_metadata},
-            ),
         }
 
+    @_graph_node_span("clarification_response")
     def clarification_response(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("clarification_response", "start")
         payload = state.get("clarification")
         if not isinstance(payload, dict):
             payload = build_clarification_payload(str(state.get("user_message") or "")).to_dict()
+        with trace_span(
+            "guard",
+            "clarification_response",
+            input_summary={"reason": payload.get("reason")},
+            metadata={"node": "clarification_response"},
+        ) as guard_span:
+            guard_span.set_output({"question_chars": len(str(payload.get("question") or ""))})
         emit_graph_progress("clarification_required", "需要补充信息", detail=str(payload.get("question") or ""))
-        _audit("clarification_response", "finish", {"reason": payload.get("reason")})
         return {
             "clarification": payload,
             "final_text": str(payload.get("question") or ""),
             "valid_urls": [],
-            "node_audit": _append_node_audit(state, "clarification_response", "finish", {"reason": payload.get("reason")}),
         }
 
+    @_graph_node_span("insufficient_evidence_response")
     def insufficient_evidence_response(self, state: AgentGraphState) -> dict[str, Any]:
-        _audit("insufficient_evidence_response", "start")
         text = (
             "目前没有找到足够可靠的相关新闻证据支撑这个分析结论。"
             "请缩小时间范围、补充更具体的实体或提供相关 URL 后我再继续。"
         )
         emit_graph_progress("analyzing", "正在整理信息", detail="当前证据不足")
-        _audit("insufficient_evidence_response", "finish")
         return {
             "final_text": text,
             "valid_urls": [],
-            "node_audit": _append_node_audit(state, "insufficient_evidence_response", "finish"),
         }
 
 
@@ -401,24 +429,6 @@ def _human_texts(messages: list[BaseMessage]) -> list[str]:
     ]
 
 
-def _audit(node: str, status: str, metadata: dict[str, Any] | None = None) -> None:
-    record_graph_node_event(node=node, status=status, metadata=metadata)
-
-
-def _append_node_audit(
-    state: AgentGraphState,
-    node: str,
-    status: str,
-    metadata: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    items = list(state.get("node_audit") or [])
-    entry: dict[str, Any] = {"node": node, "status": status}
-    if metadata:
-        entry["metadata"] = metadata
-    items.append(entry)
-    return items
-
-
 def _invoke_json_model(handle: GraphModelHandle, *, node: str, messages: list[BaseMessage]) -> dict[str, Any] | None:
     text = _invoke_text_model(handle, node=node, messages=messages)
     if not text:
@@ -427,30 +437,59 @@ def _invoke_json_model(handle: GraphModelHandle, *, node: str, messages: list[Ba
 
 
 def _invoke_text_model(handle: GraphModelHandle, *, node: str, messages: list[BaseMessage]) -> str:
-    record_graph_model_event(
-        node=node,
-        provider=handle.provider,
-        model=handle.model,
-        fallback=handle.fallback,
-        error=handle.error,
-    )
-    if handle.client is None:
-        return ""
-    try:
-        result = handle.client.invoke(messages)
-        usage = extract_token_usage([result])
-        if usage:
-            set_request_token_usage(usage)
-        return _coerce_to_text(getattr(result, "content", result)).strip()
-    except Exception as exc:  # noqa: BLE001
-        record_graph_model_event(
-            node=node,
-            provider=handle.provider,
-            model=handle.model,
-            fallback=True,
-            error=str(exc),
-        )
-        return ""
+    with trace_span(
+        "model_call",
+        node,
+        input_summary={"message_count": len(messages)},
+        metadata={
+            "node": node,
+            "provider": handle.provider,
+            "model": handle.model,
+            "fallback": handle.fallback,
+            "handle_error": handle.error,
+        },
+    ) as span:
+        if handle.client is None:
+            span.set_output({"status": "skipped", "reason": "missing_client"})
+            span.set_model_io(
+                node=node,
+                provider=handle.provider,
+                model=handle.model,
+                input_messages=messages,
+                raw_output={"status": "skipped", "reason": "missing_client"},
+            )
+            return ""
+        try:
+            result = handle.client.invoke(messages)
+            usage = extract_token_usage([result])
+            if usage:
+                set_request_token_usage(usage)
+            text = _coerce_to_text(getattr(result, "content", result)).strip()
+            span.set_output({"status": "success", "output_chars": len(text), "token_usage": usage})
+            span.set_model_io(
+                node=node,
+                provider=handle.provider,
+                model=handle.model,
+                input_messages=messages,
+                raw_output=result,
+                token_usage=usage,
+            )
+            return text
+        except Exception as exc:  # noqa: BLE001
+            span.set_error(
+                error_code=f"model_{type(exc).__name__.lower()}",
+                error_message=str(exc),
+                error=exc,
+            )
+            span.set_output({"status": "error", "fallback": True, "error": str(exc)})
+            span.set_model_io(
+                node=node,
+                provider=handle.provider,
+                model=handle.model,
+                input_messages=messages,
+                raw_output={"error": str(exc), "exception_type": type(exc).__name__},
+            )
+            return ""
 
 
 def _coerce_to_text(content: Any) -> str:

@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from agent.core.trace import record_tool_policy_block
-from agent.core.trace import finalize_request_trace, request_trace_context
+from agent.core.trace import finalize_request_trace, request_trace_context, trace_span
 from agent.memory_policy import build_llm_input_messages
-from agent.tool_policy import evaluate_pending_tool_calls, evaluate_tool_calls
+from agent.tool_policy import evaluate_pending_tool_calls
+
+
+def _pending_call(name: str, args: dict) -> list[dict]:
+    return [{"id": "call-1", "name": name, "args": args}]
 
 
 def test_memory_policy_uses_llm_input_messages_without_overwriting_state() -> None:
@@ -46,22 +49,8 @@ def test_tool_policy_blocks_out_of_range_numeric_args() -> None:
             },
         }
     }
-    messages = [
-        HumanMessage(content="latest AI"),
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "call-1",
-                    "name": "query_news",
-                    "args": {"query": "AI", "days": 999, "limit": 5},
-                }
-            ],
-        ),
-    ]
-
-    decision = evaluate_tool_calls(
-        messages,
+    decision = evaluate_pending_tool_calls(
+        _pending_call("query_news", {"query": "AI", "days": 999, "limit": 5}),
         allowed_tool_names={"query_news"},
         input_schemas=schemas,
     )
@@ -82,22 +71,8 @@ def test_tool_policy_allows_valid_tool_call() -> None:
             },
         }
     }
-    messages = [
-        HumanMessage(content="latest OpenAI updates"),
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "call-1",
-                    "name": "query_news",
-                    "args": {"query": "OpenAI", "days": 7, "limit": 5},
-                }
-            ],
-        ),
-    ]
-
-    decision = evaluate_tool_calls(
-        messages,
+    decision = evaluate_pending_tool_calls(
+        _pending_call("query_news", {"query": "OpenAI", "days": 7, "limit": 5}),
         allowed_tool_names={"query_news"},
         input_schemas=schemas,
     )
@@ -122,14 +97,34 @@ def test_pending_tool_policy_records_trace_block_for_invalid_tool_call() -> None
             allowed_tool_names={"query_news"},
             input_schemas=schemas,
         )
-        record_tool_policy_block(reason=decision.reason, details=decision.details)
+        with trace_span(
+            "guard",
+            "tool_policy",
+            input_summary={"pending_tool_count": len(pending), "selected_tools": ["query_news"]},
+            metadata={"node": "tool_policy"},
+        ) as span:
+            span.set_output(
+                {
+                    "allowed": decision.allowed,
+                    "reason": decision.reason,
+                    "details": decision.details,
+                }
+            )
+            if not decision.allowed:
+                span.status = "blocked"
         summary = finalize_request_trace(
             final_status="clarification_required",
             error_code=f"tool_policy_{decision.reason}",
         )
 
     assert not decision.allowed
-    assert summary["runtime"]["tool_policy_blocks"][0]["reason"] == "tool_arg_out_of_range"
+    guard_spans = [
+        item
+        for item in summary["spans"]
+        if item["span_type"] == "guard" and item["name"] == "tool_policy"
+    ]
+    assert guard_spans[0]["status"] == "blocked"
+    assert guard_spans[0]["output_summary"]["reason"] == "tool_arg_out_of_range"
 
 
 def test_tool_policy_uses_schema_specific_bounds() -> None:
@@ -142,22 +137,8 @@ def test_tool_policy_uses_schema_specific_bounds() -> None:
             },
         }
     }
-    messages = [
-        HumanMessage(content="build timeline"),
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "call-1",
-                    "name": "build_timeline",
-                    "args": {"topic": "OpenAI", "days": 365, "limit": 12},
-                }
-            ],
-        ),
-    ]
-
-    decision = evaluate_tool_calls(
-        messages,
+    decision = evaluate_pending_tool_calls(
+        _pending_call("build_timeline", {"topic": "OpenAI", "days": 365, "limit": 12}),
         allowed_tool_names={"build_timeline"},
         input_schemas=schemas,
     )
@@ -177,40 +158,13 @@ def test_tool_policy_uses_schema_required_and_min_length() -> None:
             },
         }
     }
-    missing_messages = [
-        HumanMessage(content="search"),
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "call-1",
-                    "name": "search_news",
-                    "args": {"days": 7},
-                }
-            ],
-        ),
-    ]
-    short_messages = [
-        HumanMessage(content="search"),
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "call-2",
-                    "name": "search_news",
-                    "args": {"query": "", "days": 7},
-                }
-            ],
-        ),
-    ]
-
-    missing = evaluate_tool_calls(
-        missing_messages,
+    missing = evaluate_pending_tool_calls(
+        _pending_call("search_news", {"days": 7}),
         allowed_tool_names={"search_news"},
         input_schemas=schemas,
     )
-    short = evaluate_tool_calls(
-        short_messages,
+    short = evaluate_pending_tool_calls(
+        _pending_call("search_news", {"query": "", "days": 7}),
         allowed_tool_names={"search_news"},
         input_schemas=schemas,
     )
@@ -221,24 +175,11 @@ def test_tool_policy_uses_schema_required_and_min_length() -> None:
 
 
 def test_tool_policy_blocks_read_news_content_without_context_urls() -> None:
-    messages = [
-        HumanMessage(content="please read this article"),
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "call-1",
-                    "name": "read_news_content",
-                    "args": {"url": "https://example.com/hallucinated"},
-                }
-            ],
-        ),
-    ]
-
-    decision = evaluate_tool_calls(
-        messages,
+    decision = evaluate_pending_tool_calls(
+        _pending_call("read_news_content", {"url": "https://example.com/hallucinated"}),
         allowed_tool_names={"read_news_content"},
         evidence_urls=[],
+        user_messages=["please read this article"],
     )
 
     assert not decision.allowed
@@ -247,24 +188,11 @@ def test_tool_policy_blocks_read_news_content_without_context_urls() -> None:
 
 def test_tool_policy_allows_read_news_content_when_user_message_contains_same_url() -> None:
     url = "https://example.com/a"
-    messages = [
-        HumanMessage(content=f"please read this article: {url}"),
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "call-1",
-                    "name": "read_news_content",
-                    "args": {"url": url},
-                }
-            ],
-        ),
-    ]
-
-    decision = evaluate_tool_calls(
-        messages,
+    decision = evaluate_pending_tool_calls(
+        _pending_call("read_news_content", {"url": url}),
         allowed_tool_names={"read_news_content"},
         evidence_urls=[],
+        user_messages=[f"please read this article: {url}"],
     )
 
     assert decision.allowed
@@ -272,48 +200,22 @@ def test_tool_policy_allows_read_news_content_when_user_message_contains_same_ur
 
 def test_tool_policy_allows_read_news_content_when_evidence_contains_same_url() -> None:
     url = "https://example.com/a"
-    messages = [
-        HumanMessage(content="continue the analysis"),
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "call-1",
-                    "name": "read_news_content",
-                    "args": {"url": url},
-                }
-            ],
-        ),
-    ]
-
-    decision = evaluate_tool_calls(
-        messages,
+    decision = evaluate_pending_tool_calls(
+        _pending_call("read_news_content", {"url": url}),
         allowed_tool_names={"read_news_content"},
         evidence_urls=[url],
+        user_messages=["continue the analysis"],
     )
 
     assert decision.allowed
 
 
 def test_tool_policy_blocks_read_news_content_when_url_not_in_context() -> None:
-    messages = [
-        HumanMessage(content="read this one https://example.com/a"),
-        AIMessage(
-            content="",
-            tool_calls=[
-                {
-                    "id": "call-1",
-                    "name": "read_news_content",
-                    "args": {"url": "https://example.com/b"},
-                }
-            ],
-        ),
-    ]
-
-    decision = evaluate_tool_calls(
-        messages,
+    decision = evaluate_pending_tool_calls(
+        _pending_call("read_news_content", {"url": "https://example.com/b"}),
         allowed_tool_names={"read_news_content"},
         evidence_urls=[],
+        user_messages=["read this one https://example.com/a"],
     )
 
     assert not decision.allowed

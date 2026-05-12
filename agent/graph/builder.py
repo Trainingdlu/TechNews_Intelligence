@@ -102,8 +102,6 @@ def invoke_custom_graph(
         "valid_urls": [],
         "tool_round": 0,
         "max_tool_rounds": runtime_config.max_tool_rounds,
-        "node_audit": [],
-        "model_usage": {},
     }
     final_state = graph.invoke(initial)
     clarification = final_state.get("clarification")

@@ -405,25 +405,3 @@ def decorate_response_with_sources(
     merged = f"{compact_body.rstrip()}\n\n{source_section}".strip()
     return merged, title_map
 
-
-def ensure_evidence_section(answer: str, source_output: str, user_message: str, max_urls: int = 0) -> str:
-    """Ensure answer includes an evidence URL section based on source output."""
-    if not answer:
-        return answer
-    source_urls = extract_urls(source_output)
-    if not source_urls:
-        return answer
-
-    answer_urls = extract_urls(answer)
-    has_section = bool(_SOURCE_HEADER_RE.search(answer))
-    if has_section and answer_urls:
-        return answer
-
-    header = "## 来源" if contains_cjk(user_message) else "## Sources"
-    required_urls = max_inline_citation_index(answer)
-    if max_urls <= 0:
-        effective_max = max(len(source_urls), required_urls)
-    else:
-        effective_max = max(max_urls, required_urls)
-    lines = [f"{url}" for url in source_urls[:effective_max]]
-    return f"{answer.rstrip()}\n\n{header}\n" + "\n".join(lines)

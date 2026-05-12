@@ -6,8 +6,8 @@
 DB_RUNTIME_READY=0
 POSTGRES_USER="${POSTGRES_USER:-}"
 POSTGRES_DB="${POSTGRES_DB:-}"
-DEPLOY_DIR=""
-REPO_ROOT=""
+DEPLOY_DIR="${DEPLOY_DIR:-}"
+REPO_ROOT="${REPO_ROOT:-}"
 COMPOSE_CMD=()
 
 db_die() {
@@ -69,7 +69,7 @@ db_init_runtime() {
   DEPLOY_DIR="${REPO_ROOT}/deployment"
 
   if [[ ! -f "${DEPLOY_DIR}/.env" ]]; then
-    db_die "Missing deployment/.env. Please copy from .env.example and fill DB credentials first."
+    db_die "Missing deployment/.env at ${DEPLOY_DIR}/.env. Please copy from .env.example and fill DB credentials first."
   fi
 
   if [[ -z "${POSTGRES_USER:-}" ]]; then

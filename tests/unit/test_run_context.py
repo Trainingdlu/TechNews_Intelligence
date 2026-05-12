@@ -5,53 +5,32 @@ from __future__ import annotations
 import threading
 
 from agent.core.run_context import (
-    add_evidence_urls,
     add_tool_call,
     agent_run_context,
-    get_evidence_urls,
-    get_request_metadata,
     get_tool_call_chain,
     get_tool_calls,
-    set_request_metadata,
 )
 
 
 def test_agent_run_context_isolated_between_threads() -> None:
     barrier = threading.Barrier(2)
-    results: dict[str, tuple[set[str], list[str]]] = {}
+    results: dict[str, set[str]] = {}
 
-    def _worker(name: str, tool: str, url: str) -> None:
+    def _worker(name: str, tool: str) -> None:
         with agent_run_context():
             add_tool_call(tool)
-            add_evidence_urls([url])
             barrier.wait()
-            results[name] = (get_tool_calls(), get_evidence_urls())
+            results[name] = get_tool_calls()
 
-    t1 = threading.Thread(target=_worker, args=("t1", "query_news", "https://a.example.com"), daemon=True)
-    t2 = threading.Thread(target=_worker, args=("t2", "trend_analysis", "https://b.example.com"), daemon=True)
+    t1 = threading.Thread(target=_worker, args=("t1", "query_news"), daemon=True)
+    t2 = threading.Thread(target=_worker, args=("t2", "trend_analysis"), daemon=True)
     t1.start()
     t2.start()
     t1.join(timeout=5)
     t2.join(timeout=5)
 
-    assert results["t1"][0] == {"query_news"}
-    assert results["t1"][1] == ["https://a.example.com"]
-    assert results["t2"][0] == {"trend_analysis"}
-    assert results["t2"][1] == ["https://b.example.com"]
-
-
-def test_request_metadata_roundtrip() -> None:
-    with agent_run_context():
-        set_request_metadata(
-            request_id="req-001",
-            thread_id="thread-abc",
-            user_message="latest ai updates",
-        )
-        metadata = get_request_metadata()
-
-    assert metadata["request_id"] == "req-001"
-    assert metadata["thread_id"] == "thread-abc"
-    assert metadata["user_message"] == "latest ai updates"
+    assert results["t1"] == {"query_news"}
+    assert results["t2"] == {"trend_analysis"}
 
 
 def test_tool_call_chain_preserves_order_and_duplicates() -> None:

@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
 from pydantic import BaseModel, Field
 
+from agent.core.trace import finalize_request_trace, request_trace_context
 from agent.core.run_context import agent_run_context
 from agent.core.role_policy import assert_tool_allowed
 from agent.core.tool_contracts import (
     ToolEnvelope,
+    ToolEvidence,
     build_tool_empty_envelope,
     build_tool_error_envelope,
 )
@@ -123,6 +126,41 @@ def test_tool_runtime_execute_returns_ok_envelope() -> None:
     assert envelope.status == "ok"
     assert envelope.tool == "dummy_tool"
     assert envelope.data["double"] == 8
+
+
+def test_tool_runtime_execute_records_tool_call_span(monkeypatch: pytest.MonkeyPatch) -> None:
+    def evidence_handler(payload: _DummyInput) -> ToolEnvelope:
+        return ToolEnvelope(
+            tool="dummy_tool",
+            status="ok",
+            request=payload.model_dump(mode="python"),
+            data={"records": [{"url": "https://a.example.com", "title": "A"}]},
+            evidence=[ToolEvidence(url="https://a.example.com")],
+            diagnostics={"source": "unit"},
+        )
+
+    monkeypatch.setattr("agent.core.trace._persist_request_trace", lambda _summary: True)
+    registry = ToolRegistry()
+    registry.register("dummy_tool", _DummyInput, evidence_handler, "test tool")
+    runtime = ToolRuntime(registry=registry, hooks=ToolRuntimeHooks())
+
+    with request_trace_context(user_message="trace tool", request_id="req-tool-span"):
+        envelope = runtime.execute(
+            "dummy_tool",
+            {"value": 4},
+            ToolRuntimeContext(trace=True, emit_progress_events=False),
+        )
+        summary = finalize_request_trace(final_status="success", evidence_count=len(envelope.evidence))
+
+    assert summary is not None
+    spans = [span for span in summary["spans"] if span["span_type"] == "tool_call"]
+    assert len(spans) == 1
+    assert spans[0]["name"] == "dummy_tool"
+    assert spans[0]["status"] == "success"
+    assert spans[0]["input_summary"]["args"]["value"] == 4
+    assert spans[0]["output_summary"]["evidence_count"] == 1
+    assert spans[0]["output_summary"]["evidence_urls"] == ["https://a.example.com"]
+    assert spans[0]["output_summary"]["diagnostics"] == {"source": "unit"}
 
 
 def test_tool_runtime_progress_uses_actual_executed_tool_name() -> None:

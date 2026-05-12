@@ -34,8 +34,6 @@ class AgentGraphState(TypedDict, total=False):
     clarification: dict[str, Any] | None
     error: dict[str, Any] | None
 
-    node_audit: list[dict[str, Any]]
-    model_usage: dict[str, Any]
     next_step: str
 
 

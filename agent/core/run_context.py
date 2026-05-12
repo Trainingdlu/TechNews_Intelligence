@@ -13,13 +13,9 @@ ProgressCallback = Callable[[dict[str, Any]], None]
 
 @dataclass
 class AgentRunState:
-    evidence_urls: list[str] = field(default_factory=list)
     tool_calls: list[str] = field(default_factory=list)
     tool_call_chain: list[str] = field(default_factory=list)
     progress_callback: ProgressCallback | None = None
-    request_id: str | None = None
-    thread_id: str | None = None
-    user_message: str | None = None
 
 
 _RUN_STATE: ContextVar[AgentRunState | None] = ContextVar("agent_run_state", default=None)
@@ -43,40 +39,6 @@ def agent_run_context(progress_callback: ProgressCallback | None = None) -> Iter
         yield
     finally:
         _RUN_STATE.reset(token)
-
-
-def set_progress_callback(callback: ProgressCallback | None) -> None:
-    state = _get_state(create_if_missing=True)
-    if state is not None:
-        state.progress_callback = callback
-
-
-def set_request_metadata(
-    request_id: str | None = None,
-    thread_id: str | None = None,
-    user_message: str | None = None,
-) -> None:
-    state = _get_state(create_if_missing=True)
-    if state is None:
-        return
-    state.request_id = str(request_id) if request_id else None
-    state.thread_id = str(thread_id) if thread_id else None
-    state.user_message = str(user_message) if user_message else None
-
-
-def get_request_metadata() -> dict[str, str | None]:
-    state = _get_state(create_if_missing=False)
-    if state is None:
-        return {
-            "request_id": None,
-            "thread_id": None,
-            "user_message": None,
-        }
-    return {
-        "request_id": state.request_id,
-        "thread_id": state.thread_id,
-        "user_message": state.user_message,
-    }
 
 
 def emit_progress(
@@ -145,19 +107,3 @@ def get_tool_call_chain() -> list[str]:
         return []
     return list(state.tool_call_chain)
 
-
-def add_evidence_urls(urls: list[str]) -> None:
-    state = _get_state(create_if_missing=True)
-    if state is None:
-        return
-    for url in urls:
-        clean = str(url or "").strip()
-        if clean and clean not in state.evidence_urls:
-            state.evidence_urls.append(clean)
-
-
-def get_evidence_urls() -> list[str]:
-    state = _get_state(create_if_missing=False)
-    if state is None:
-        return []
-    return list(state.evidence_urls)

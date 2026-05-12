@@ -10,18 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .run_context import (
-    add_evidence_urls,
-    add_tool_call,
-    emit_progress,
-)
+from .run_context import add_tool_call, emit_progress
 from .tool_contracts import ToolEnvelope, build_tool_error_envelope
 from .tool_registry import ToolRegistry
 from .tool_runtime_hooks import ToolRuntimeHooks
+from .metrics import metrics_inc
 from .trace import (
-    trace_tool_finish_error,
-    trace_tool_finish_with_envelope,
-    trace_tool_start,
+    summarize_envelope,
+    summarize_payload,
+    trace_span,
 )
 
 
@@ -31,7 +28,6 @@ class ToolRuntimeContext:
 
     trace: bool = True
     emit_progress_events: bool = True
-    accumulate_evidence: bool = True
     accumulate_tool_call: bool = True
 
 
@@ -51,11 +47,17 @@ class ToolRuntime:
         runtime_context = context or ToolRuntimeContext()
         request_payload = dict(payload or {})
         normalized_name = str(tool_name or "").strip()
-        trace_event_index = (
-            trace_tool_start(normalized_name, request_payload)
+        span_cm = (
+            trace_span(
+                "tool_call",
+                normalized_name,
+                input_summary={"tool": normalized_name, "args": request_payload},
+                metadata={"tool_name": normalized_name},
+            )
             if runtime_context.trace
             else None
         )
+        tool_span = span_cm.__enter__() if span_cm is not None else None
 
         try:
             pre = self.hooks.pre_tool_use(normalized_name, request_payload)
@@ -72,17 +74,15 @@ class ToolRuntime:
                         **pre.diagnostics,
                     },
                 )
-                if runtime_context.trace:
-                    trace_tool_finish_with_envelope(
-                        trace_event_index,
-                        envelope,
-                        status_override="blocked",
-                        error_code=envelope.error_code,
-                        error_message=reason,
-                    )
+                if tool_span is not None:
+                    tool_span.set_output(_tool_span_output(envelope, status="blocked"))
+                    tool_span.status = "blocked"
+                _record_tool_trace_metrics("blocked", enabled=runtime_context.trace)
                 return envelope
 
             effective_payload = pre.updated_payload if pre.updated_payload is not None else request_payload
+            if tool_span is not None and effective_payload != request_payload:
+                tool_span.metadata["effective_payload"] = summarize_payload(effective_payload)
             if runtime_context.emit_progress_events:
                 emit_progress(
                     _progress_stage(normalized_name),
@@ -112,14 +112,10 @@ class ToolRuntime:
                     },
                     data=envelope.data,
                 )
-                if runtime_context.trace:
-                    trace_tool_finish_with_envelope(
-                        trace_event_index,
-                        blocked,
-                        status_override="blocked",
-                        error_code=blocked.error_code,
-                        error_message=reason,
-                    )
+                if tool_span is not None:
+                    tool_span.set_output(_tool_span_output(blocked, status="blocked"))
+                    tool_span.status = "blocked"
+                _record_tool_trace_metrics("blocked", enabled=runtime_context.trace)
                 return blocked
 
             if post.action == "warn":
@@ -131,26 +127,22 @@ class ToolRuntime:
                     if isinstance(hook_diagnostics, dict):
                         hook_diagnostics.update(post.diagnostics)
 
-            if runtime_context.accumulate_evidence:
-                evidence_urls = [
-                    str(item.url).strip()
-                    for item in (envelope.evidence or [])
-                    if str(item.url or "").strip()
-                ]
-                add_evidence_urls(evidence_urls)
-
-            if runtime_context.trace:
-                trace_tool_finish_with_envelope(trace_event_index, envelope)
+            if tool_span is not None:
+                tool_span.set_output(_tool_span_output(envelope))
+                tool_span.status = "success" if envelope.status == "ok" else envelope.status
+            _record_tool_trace_metrics(
+                "success" if envelope.status == "ok" else envelope.status,
+                enabled=runtime_context.trace,
+            )
             return envelope
         except Exception as exc:  # noqa: BLE001
-            if runtime_context.trace:
-                trace_tool_finish_error(
-                    trace_event_index,
+            if tool_span is not None:
+                tool_span.set_error(
                     error_code=f"tool_{type(exc).__name__.lower()}",
                     error_message=str(exc),
                     error=exc,
                 )
-            return build_tool_error_envelope(
+            envelope = build_tool_error_envelope(
                 tool=normalized_name,
                 request=request_payload,
                 error="tool_runtime_failed",
@@ -160,12 +152,50 @@ class ToolRuntime:
                     "exception_message": str(exc),
                 },
             )
+            if tool_span is not None:
+                tool_span.set_output(_tool_span_output(envelope, status="error"))
+            _record_tool_trace_metrics("error", enabled=runtime_context.trace)
+            return envelope
+        finally:
+            if span_cm is not None:
+                span_cm.__exit__(None, None, None)
 
 
 def _progress_stage(tool_name: str) -> str:
     if tool_name in {"compare_sources", "compare_topics", "build_timeline", "analyze_landscape"}:
         return "analyzing"
     return "retrieving"
+
+
+def _record_tool_trace_metrics(status: str, *, enabled: bool) -> None:
+    if not enabled:
+        return
+    metrics_inc("trace_tool_calls_total")
+    if status == "success":
+        metrics_inc("trace_tool_success")
+    elif status == "empty":
+        metrics_inc("trace_tool_empty")
+    elif status in {"error", "blocked"}:
+        metrics_inc("trace_tool_error")
+
+
+def _tool_span_output(envelope: ToolEnvelope, *, status: str | None = None) -> dict[str, Any]:
+    evidence_urls = [
+        str(item.url).strip()
+        for item in (envelope.evidence or [])
+        if str(item.url or "").strip()
+    ]
+    summary = summarize_envelope(envelope)
+    summary.update(
+        {
+            "tool": envelope.tool,
+            "status": status or ("success" if envelope.status == "ok" else envelope.status),
+            "error_code": envelope.error_code,
+            "evidence_urls": evidence_urls,
+            "diagnostics": envelope.diagnostics or {},
+        }
+    )
+    return summary
 
 
 def format_tool_envelope_for_model(envelope: ToolEnvelope) -> str:

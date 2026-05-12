@@ -41,7 +41,6 @@ from .core.run_context import (
     emit_progress as _emit_progress,
     get_tool_call_chain as _get_accumulated_tool_call_chain,
     get_tool_calls as _get_accumulated_tool_calls,
-    set_request_metadata as _set_request_metadata,
 )
 from .core.trace import (
     finalize_request_trace as _finalize_request_trace,
@@ -612,11 +611,6 @@ def _run_generation_core(
 ) -> tuple[str, list[str]]:
     """Run core generation with optional progress callback lifecycle."""
     with agent_run_context(progress_callback=progress_callback):
-        _set_request_metadata(
-            request_id=_get_current_request_id(),
-            thread_id=_get_current_thread_id(),
-            user_message=user_message,
-        )
         _emit_progress("understanding")
         core_text, valid_urls = _generate_response_core(
             history,
@@ -785,11 +779,6 @@ def generate_response_eval_payload(
     ):
         try:
             with agent_run_context():
-                _set_request_metadata(
-                    request_id=_get_current_request_id(),
-                    thread_id=_get_current_thread_id(),
-                    user_message=user_message,
-                )
                 eval_request_id = _get_current_request_id()
 
                 core_text, valid_urls = _generate_response_core(
@@ -809,6 +798,8 @@ def generate_response_eval_payload(
                         "answer_chars": len(final_text),
                         "source_count": len(valid_urls),
                         "tool_count": len(tool_calls),
+                        "case_id": str(case_id or ""),
+                        "experiment_group": str(experiment_group or ""),
                     },
                 )
                 tool_calls = _ordered_tool_calls_for_eval(trace_summary)
@@ -830,6 +821,11 @@ def generate_response_eval_payload(
             _finalize_request_trace(
                 final_status=_resolve_trace_final_status(exc),
                 evidence_count=evidence_count,
+                final_answer_metadata={
+                    "response_kind": "eval_payload",
+                    "case_id": str(case_id or ""),
+                    "experiment_group": str(experiment_group or ""),
+                },
                 error_code=_resolve_trace_error_code(exc),
                 error_message=str(exc),
                 error=exc,

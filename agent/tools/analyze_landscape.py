@@ -807,11 +807,6 @@ def _analyze_landscape_structured(
             put_conn(conn)
 
 
-def analyze_ai_landscape(days: int = 30, entities: str = "", limit_per_entity: int = 3) -> str:
-    """Analyze AI landscape. Alias for analyze_landscape(topic='AI')."""
-    return analyze_landscape(topic="AI", days=days, entities=entities, limit_per_entity=limit_per_entity)
-
-
 def analyze_landscape_tool(payload: AnalyzeLandscapeToolInput) -> ToolEnvelope:
     request = payload.model_dump(mode="python")
     result = _analyze_landscape_structured(

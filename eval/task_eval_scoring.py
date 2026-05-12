@@ -132,12 +132,6 @@ def _ordered_tool_matches(actual_tools: list[str], expected_tools: list[str]) ->
     return cursor
 
 
-def _path_match(actual_tools: list[str], expected_tools: list[str]) -> bool:
-    if not expected_tools:
-        return True
-    return _ordered_tool_matches(actual_tools, expected_tools) == len(expected_tools)
-
-
 def _align_expected_path_to_actual(
     expected_path: list[dict[str, Any]],
     actual_detailed_calls: list[dict[str, Any]],

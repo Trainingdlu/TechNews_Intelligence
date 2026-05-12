@@ -47,7 +47,6 @@ class ToolDefinition:
     capability: str
     tool_group: str
     requires_evidence: bool
-    allowed_for_intents: tuple[str, ...]
     mcp_name: str | None = None
     expose_in_mcp: bool = True
 
@@ -64,7 +63,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="news_retrieval",
         tool_group="retrieval",
         requires_evidence=True,
-        allowed_for_intents=("roundup_listing", "analysis", "conflict_resolution", "generic"),
         mcp_name="query_news_vector",
     ),
     ToolDefinition(
@@ -78,7 +76,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="trend_analysis",
         tool_group="analysis",
         requires_evidence=True,
-        allowed_for_intents=("analysis", "conflict_resolution"),
     ),
     ToolDefinition(
         name="search_news",
@@ -91,7 +88,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="hybrid_search",
         tool_group="retrieval",
         requires_evidence=True,
-        allowed_for_intents=("roundup_listing", "analysis", "conflict_resolution", "generic"),
     ),
     ToolDefinition(
         name="compare_sources",
@@ -104,7 +100,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="source_comparison",
         tool_group="analysis",
         requires_evidence=True,
-        allowed_for_intents=("analysis", "conflict_resolution"),
     ),
     ToolDefinition(
         name="compare_topics",
@@ -117,7 +112,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="topic_comparison",
         tool_group="analysis",
         requires_evidence=True,
-        allowed_for_intents=("analysis", "conflict_resolution"),
     ),
     ToolDefinition(
         name="build_timeline",
@@ -130,7 +124,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="timeline",
         tool_group="analysis",
         requires_evidence=True,
-        allowed_for_intents=("analysis", "roundup_listing", "conflict_resolution"),
     ),
     ToolDefinition(
         name="analyze_landscape",
@@ -143,7 +136,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="landscape_analysis",
         tool_group="analysis",
         requires_evidence=True,
-        allowed_for_intents=("analysis", "conflict_resolution"),
     ),
     ToolDefinition(
         name="fulltext_batch",
@@ -156,7 +148,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="fulltext_retrieval",
         tool_group="content",
         requires_evidence=True,
-        allowed_for_intents=("analysis", "conflict_resolution", "generic"),
     ),
     ToolDefinition(
         name="get_db_stats",
@@ -166,7 +157,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="database_metadata",
         tool_group="metadata",
         requires_evidence=False,
-        allowed_for_intents=("smalltalk_or_capability", "generic"),
         expose_in_mcp=False,
     ),
     ToolDefinition(
@@ -177,7 +167,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="topic_distribution",
         tool_group="metadata",
         requires_evidence=False,
-        allowed_for_intents=("roundup_listing", "analysis", "generic"),
         expose_in_mcp=False,
     ),
     ToolDefinition(
@@ -191,7 +180,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         capability="article_reader",
         tool_group="content",
         requires_evidence=True,
-        allowed_for_intents=("analysis", "conflict_resolution", "generic"),
         expose_in_mcp=False,
     ),
 )

@@ -16,5 +16,5 @@ langchain-google-vertexai>=3.2.2,<4
 # Evaluation / observability
 langsmith>=0.7.30,<0.8
 datasets>=2.18,<4
-rapidfuzz
+rapidfuzz>=3.13,<4
 hdbscan>=0.8.33

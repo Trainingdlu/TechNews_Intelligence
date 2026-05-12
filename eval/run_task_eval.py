@@ -66,21 +66,24 @@ def _retrieved_urls_from_trace(summary: dict[str, Any] | None) -> list[str]:
     if not isinstance(summary, dict):
         return []
     urls: list[str] = []
-    for event in summary.get("tool_events", []) or []:
-        if not isinstance(event, dict):
+    for span in summary.get("spans", []) or []:
+        if not isinstance(span, dict) or span.get("span_type") != "tool_call":
             continue
-        out_summary = event.get("output_summary", {})
+        out_summary = span.get("output_summary", {})
         if not isinstance(out_summary, dict):
             continue
+        for url in out_summary.get("evidence_urls", []) or []:
+            text = str(url).strip()
+            if text:
+                urls.append(text)
         context_docs = out_summary.get("context_docs", [])
-        if not isinstance(context_docs, list):
-            continue
-        for doc in context_docs:
-            if not isinstance(doc, dict):
-                continue
-            url = str(doc.get("url", "")).strip()
-            if url:
-                urls.append(url)
+        if isinstance(context_docs, list):
+            for doc in context_docs:
+                if not isinstance(doc, dict):
+                    continue
+                url = str(doc.get("url", "")).strip()
+                if url:
+                    urls.append(url)
     return _dedupe(urls)
 
 
@@ -88,19 +91,75 @@ def _tool_calls_detailed_from_trace(summary: dict[str, Any] | None) -> list[dict
     if not isinstance(summary, dict):
         return []
     out: list[dict[str, Any]] = []
-    for event in summary.get("tool_events", []) or []:
-        if not isinstance(event, dict):
-            continue
-        tool = str(event.get("tool_name", "")).strip()
+    spans = [
+        item
+        for item in summary.get("spans", []) or []
+        if isinstance(item, dict) and item.get("span_type") == "tool_call"
+    ]
+    for span in sorted(spans, key=lambda item: int(item.get("started_at_ms") or 0)):
+        tool = str(span.get("name", "")).strip()
         if not tool:
             continue
-        has_raw_payload = "input_payload" in event
-        payload = event.get("input_payload")
-        if not has_raw_payload or not isinstance(payload, dict):
-            payload = event.get("input_summary", {})
-        if not isinstance(payload, dict):
-            payload = {}
-        out.append({"tool": tool, "args": payload})
+        input_summary = span.get("input_summary", {})
+        args: dict[str, Any] = {}
+        if isinstance(input_summary, dict):
+            nested_args = input_summary.get("args")
+            if isinstance(nested_args, dict):
+                args = nested_args
+            else:
+                args = {key: value for key, value in input_summary.items() if key not in {"tool"}}
+        out.append({"tool": tool, "args": args})
+    return out
+
+
+def _model_calls_from_trace(summary: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(summary, dict):
+        return []
+    model_io_by_span = {
+        str(item.get("span_id", "")): item
+        for item in summary.get("model_io", []) or []
+        if isinstance(item, dict)
+    }
+    out: list[dict[str, Any]] = []
+    spans = [
+        item
+        for item in summary.get("spans", []) or []
+        if isinstance(item, dict) and item.get("span_type") == "model_call"
+    ]
+    for span in sorted(spans, key=lambda item: int(item.get("started_at_ms") or 0)):
+        span_id = str(span.get("span_id", ""))
+        model_io = model_io_by_span.get(span_id, {})
+        out.append(
+            {
+                "span_id": span_id,
+                "node": str(model_io.get("node") or span.get("name") or ""),
+                "provider": str(model_io.get("provider") or (span.get("metadata") or {}).get("provider") or ""),
+                "model": str(model_io.get("model") or (span.get("metadata") or {}).get("model") or ""),
+                "status": str(span.get("status", "")),
+                "latency_ms": span.get("latency_ms"),
+                "token_usage": model_io.get("token_usage") or (span.get("output_summary") or {}).get("token_usage"),
+                "has_full_io": bool(model_io),
+            }
+        )
+    return out
+
+
+def _guard_events_from_trace(summary: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(summary, dict):
+        return []
+    out: list[dict[str, Any]] = []
+    for span in summary.get("spans", []) or []:
+        if not isinstance(span, dict) or span.get("span_type") not in {"guard", "postprocess"}:
+            continue
+        out.append(
+            {
+                "span_id": span.get("span_id"),
+                "type": span.get("span_type"),
+                "name": span.get("name"),
+                "status": span.get("status"),
+                "output_summary": span.get("output_summary") or {},
+            }
+        )
     return out
 
 
@@ -291,6 +350,8 @@ def main() -> int:
                 final_status = str(trace_summary.get("final_status", "")).strip().lower()
 
             tool_calls_detailed = _tool_calls_detailed_from_trace(trace_summary)
+            model_calls = _model_calls_from_trace(trace_summary)
+            guard_events = _guard_events_from_trace(trace_summary)
             predicted_intent_label = tool_calls[0] if tool_calls else "none"
             clarification_triggered = final_status == "clarification_required"
 
@@ -300,6 +361,8 @@ def main() -> int:
                 "final_answer": final_answer,
                 "tool_calls": tool_calls,
                 "tool_calls_detailed": tool_calls_detailed,
+                "model_calls": model_calls,
+                "guard_events": guard_events,
                 "predicted_intent_label": predicted_intent_label,
                 "retrieved_urls": retrieved_urls,
                 "citations": citations,
@@ -317,11 +380,12 @@ def main() -> int:
                     # Collect tool output context for faithfulness check
                     tool_context = ""
                     if isinstance(trace_summary, dict):
-                        for event in trace_summary.get("tool_events", []) or []:
-                            if isinstance(event, dict):
-                                out_text = str(event.get("output_summary", ""))
-                                if out_text:
-                                    tool_context += out_text + "\n"
+                        for span in trace_summary.get("spans", []) or []:
+                            if not isinstance(span, dict) or span.get("span_type") != "tool_call":
+                                continue
+                            out_text = str(span.get("output_summary", ""))
+                            if out_text:
+                                tool_context += out_text + "\n"
                     if tool_context.strip():
                         judge_result = judge.judge_both(
                             question=question,

@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
+import re
 import time
 import uuid
 from contextlib import contextmanager
@@ -25,9 +27,48 @@ _MAX_ERROR_CHAIN = 6
 _MAX_CONTEXT_DOCS = 8
 logger = logging.getLogger(__name__)
 
+_SPAN_TYPES = {"graph_node", "model_call", "tool_call", "guard", "postprocess"}
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)\b(bearer\s+)[a-z0-9._~+/=-]{12,}"),
+    re.compile(
+        r"(?i)\b([a-z0-9_.-]*(?:api[_-]?key|x-api-key|access[_-]?token|refresh[_-]?token|smtp[_-]?password|password))"
+        r"\s*[:=]\s*['\"]?([^'\"\s,;]{8,})"
+    ),
+    re.compile(r"(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^\s'\"<>]+"),
+)
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
+
+
+def _env_flag(name: str, *, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def full_model_io_enabled() -> bool:
+    """Return whether full model input/output persistence is enabled."""
+    return _env_flag("AGENT_TRACE_FULL_MODEL_IO", default=True)
+
+
+def secret_redaction_enabled() -> bool:
+    """Return whether credential-like values should be redacted before storage."""
+    return _env_flag("AGENT_TRACE_SECRET_REDACTION", default=True)
+
+
+def _langsmith_metadata() -> dict[str, Any]:
+    enabled = any(
+        _env_flag(name, default=False)
+        for name in ("LANGSMITH_TRACING", "LANGCHAIN_TRACING", "LANGCHAIN_TRACING_V2")
+    )
+    return {
+        "enabled": enabled,
+        "project": os.getenv("LANGSMITH_PROJECT") or os.getenv("LANGCHAIN_PROJECT") or "",
+        "endpoint": os.getenv("LANGSMITH_ENDPOINT") or os.getenv("LANGCHAIN_ENDPOINT") or "",
+    }
 
 
 def _truncate_text(value: str, max_len: int = _MAX_STR_LEN) -> str:
@@ -68,6 +109,89 @@ def summarize_payload(value: Any, *, depth: int = _MAX_SUMMARY_DEPTH) -> Any:
         return summarized
 
     return _truncate_text(repr(value))
+
+
+def _json_safe_full(value: Any, *, seen: set[int] | None = None) -> Any:
+    """Build a JSON-safe copy without truncating business text."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+
+    if seen is None:
+        seen = set()
+    obj_id = id(value)
+    if obj_id in seen:
+        return f"<circular:{type(value).__name__}>"
+    seen.add(obj_id)
+
+    if isinstance(value, dict):
+        return {str(key): _json_safe_full(item, seen=seen) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe_full(item, seen=seen) for item in value]
+
+    try:
+        json.dumps(value, ensure_ascii=False)
+        return value
+    except Exception:
+        return repr(value)
+
+
+def _redact_text(text: str) -> str:
+    redacted = text
+    redacted = _SECRET_PATTERNS[0].sub(r"\1[REDACTED]", redacted)
+    redacted = _SECRET_PATTERNS[1].sub(r"\1=[REDACTED]", redacted)
+    redacted = _SECRET_PATTERNS[2].sub("[REDACTED_DB_URL]", redacted)
+    return redacted
+
+
+def _redact_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return _redact_text(value)
+    if isinstance(value, list):
+        return [_redact_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _redact_value(item) for key, item in value.items()}
+    return value
+
+
+def _redact_if_enabled(value: Any) -> Any:
+    safe = _json_safe_full(value)
+    if not secret_redaction_enabled():
+        return safe
+    return _redact_value(safe)
+
+
+def _serialize_message_full(message: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "type": str(getattr(message, "type", type(message).__name__)),
+        "class": type(message).__name__,
+        "content": _json_safe_full(getattr(message, "content", message)),
+    }
+    for attr in (
+        "name",
+        "id",
+        "additional_kwargs",
+        "response_metadata",
+        "usage_metadata",
+        "tool_calls",
+        "invalid_tool_calls",
+    ):
+        if hasattr(message, attr):
+            value = getattr(message, attr)
+            if value not in (None, "", [], {}):
+                payload[attr] = _json_safe_full(value)
+    return payload
+
+
+def _serialize_messages_full(messages: Any) -> Any:
+    if isinstance(messages, (list, tuple)):
+        return [_serialize_message_full(item) for item in messages]
+    return _json_safe_full(messages)
+
+
+def _serialize_raw_model_output(raw_output: Any) -> Any:
+    if hasattr(raw_output, "content") or hasattr(raw_output, "response_metadata"):
+        return _serialize_message_full(raw_output)
+    return _json_safe_full(raw_output)
 
 
 def _extract_context_docs(data: Any) -> list[dict[str, Any]]:
@@ -279,37 +403,142 @@ def extract_token_usage(messages: list[Any]) -> dict[str, int] | None:
 
 
 @dataclass
-class AgentToolEvent:
-    """Trace entry for a single tool call."""
+class TraceSpan:
+    """Trace entry for one graph, model, tool, guard, or postprocess step."""
 
-    event_index: int
-    tool_name: str
-    input_payload: dict[str, Any]
-    input_summary: Any
+    span_id: str
+    parent_span_id: str | None
+    request_id: str
+    span_type: str
+    name: str
     started_at_ms: int
-    status: str = "started"
+    status: str = "running"
     finished_at_ms: int | None = None
     latency_ms: int | None = None
+    input_summary: Any = field(default_factory=dict)
     output_summary: Any = field(default_factory=dict)
     error_code: str | None = None
     error_message: str | None = None
     exception_chain: list[dict[str, str]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def set_output(self, output_summary: Any) -> None:
+        summarized = summarize_payload(output_summary)
+        if isinstance(output_summary, dict) and isinstance(summarized, dict):
+            evidence_urls = output_summary.get("evidence_urls")
+            if isinstance(evidence_urls, list):
+                summarized["evidence_urls"] = [
+                    str(item).strip()
+                    for item in evidence_urls
+                    if str(item).strip()
+                ]
+            diagnostics = output_summary.get("diagnostics")
+            if self.span_type == "tool_call" and isinstance(diagnostics, dict):
+                summarized["diagnostics"] = _redact_if_enabled(diagnostics)
+        self.output_summary = summarized
+
+    def set_error(
+        self,
+        *,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        error: BaseException | None = None,
+    ) -> None:
+        self.status = "error"
+        self.error_code = str(error_code) if error_code else self.error_code
+        message = error_message if error_message is not None else (str(error) if error else None)
+        self.error_message = _truncate_text(message, max_len=400) if message else self.error_message
+        if error is not None:
+            self.exception_chain = build_exception_chain(error)
+
+    def finish(self, *, status: str | None = None) -> None:
+        if self.finished_at_ms is not None:
+            return
+        self.finished_at_ms = _now_ms()
+        self.latency_ms = max(0, self.finished_at_ms - self.started_at_ms)
+        if status:
+            self.status = str(status)
+        elif self.status == "running":
+            self.status = "success"
+
+    def set_model_io(
+        self,
+        *,
+        node: str,
+        provider: str,
+        model: str,
+        input_messages: Any,
+        raw_output: Any,
+        parsed_output: Any | None = None,
+        token_usage: dict[str, int] | None = None,
+    ) -> None:
+        set_model_io(
+            span_id=self.span_id,
+            node=node,
+            provider=provider,
+            model=model,
+            input_messages=input_messages,
+            raw_output=raw_output,
+            parsed_output=parsed_output,
+            token_usage=token_usage,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "event_index": self.event_index,
-            "tool_name": self.tool_name,
+            "span_id": self.span_id,
+            "parent_span_id": self.parent_span_id,
+            "request_id": self.request_id,
+            "span_type": self.span_type,
+            "name": self.name,
             "status": self.status,
-            "input_payload": copy.deepcopy(self.input_payload),
-            "input_summary": self.input_summary,
-            "output_summary": self.output_summary,
+            "started_at_ms": self.started_at_ms,
+            "finished_at_ms": self.finished_at_ms,
             "latency_ms": self.latency_ms,
+            "input_summary": copy.deepcopy(self.input_summary),
+            "output_summary": copy.deepcopy(self.output_summary),
             "error_code": self.error_code,
             "error_message": self.error_message,
             "exception_chain": copy.deepcopy(self.exception_chain),
-            "started_at_ms": self.started_at_ms,
-            "finished_at_ms": self.finished_at_ms,
+            "metadata": copy.deepcopy(self.metadata),
         }
+
+
+class NullTraceSpan:
+    """No-op span used when tracing is not bound."""
+
+    span_id = ""
+    status = "success"
+
+    def __init__(self) -> None:
+        self.metadata: dict[str, Any] = {}
+
+    def set_output(self, output_summary: Any) -> None:
+        return None
+
+    def set_error(
+        self,
+        *,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        error: BaseException | None = None,
+    ) -> None:
+        return None
+
+    def finish(self, *, status: str | None = None) -> None:
+        return None
+
+    def set_model_io(
+        self,
+        *,
+        node: str,
+        provider: str,
+        model: str,
+        input_messages: Any,
+        raw_output: Any,
+        parsed_output: Any | None = None,
+        token_usage: dict[str, int] | None = None,
+    ) -> None:
+        return None
 
 
 @dataclass
@@ -328,53 +557,76 @@ class AgentRequestTrace:
     error_code: str | None = None
     error_message: str | None = None
     exception_chain: list[dict[str, str]] = field(default_factory=list)
-    tool_events: list[AgentToolEvent] = field(default_factory=list)
+    spans: list[TraceSpan] = field(default_factory=list)
+    model_io: list[dict[str, Any]] = field(default_factory=list)
     tool_call_chain: list[str] = field(default_factory=list)
     final_answer_metadata: dict[str, Any] = field(default_factory=dict)
     runtime: dict[str, Any] = field(default_factory=dict)
     _finalized: bool = False
 
-    def start_tool(self, tool_name: str, payload: dict[str, Any]) -> int:
-        event_index = len(self.tool_events) + 1
-        event = AgentToolEvent(
-            event_index=event_index,
-            tool_name=str(tool_name or "").strip(),
-            input_payload=copy.deepcopy(payload),
-            input_summary=summarize_payload(payload),
-            started_at_ms=_now_ms(),
-        )
-        self.tool_events.append(event)
-        self.tool_call_chain.append(event.tool_name)
-        return event_index
-
-    def finish_tool(
+    def start_span(
         self,
-        event_index: int,
         *,
-        status: str,
-        output_summary: Any = None,
-        error_code: str | None = None,
-        error_message: str | None = None,
-        error: BaseException | None = None,
-    ) -> None:
-        if event_index <= 0 or event_index > len(self.tool_events):
-            return
-        event = self.tool_events[event_index - 1]
-        event.finished_at_ms = _now_ms()
-        event.latency_ms = max(0, event.finished_at_ms - event.started_at_ms)
-        event.status = str(status or "unknown")
-        event.output_summary = summarize_payload(output_summary)
-        event.error_code = str(error_code) if error_code else None
-        event.error_message = _truncate_text(error_message) if error_message else None
-        event.exception_chain = build_exception_chain(error) if error is not None else []
+        span_type: str,
+        name: str,
+        parent_span_id: str | None = None,
+        input_summary: Any = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> TraceSpan:
+        normalized_type = str(span_type or "").strip()
+        if normalized_type not in _SPAN_TYPES:
+            normalized_type = "postprocess"
+        summarized_input = summarize_payload(input_summary)
+        if (
+            normalized_type == "tool_call"
+            and isinstance(input_summary, dict)
+            and isinstance(summarized_input, dict)
+            and isinstance(input_summary.get("args"), dict)
+        ):
+            summarized_input["args"] = _redact_if_enabled(input_summary.get("args"))
+        clean_name = str(name or "").strip() or normalized_type
+        span = TraceSpan(
+            span_id=uuid.uuid4().hex,
+            parent_span_id=str(parent_span_id).strip() if parent_span_id else None,
+            request_id=self.request_id,
+            span_type=normalized_type,
+            name=clean_name,
+            started_at_ms=_now_ms(),
+            input_summary=summarized_input,
+            metadata=summarize_payload(metadata) if isinstance(metadata, dict) else {},
+        )
+        self.spans.append(span)
+        if normalized_type == "tool_call" and clean_name:
+            self.tool_call_chain.append(clean_name)
+        return span
 
-        if isinstance(output_summary, dict):
-            maybe_evidence = output_summary.get("evidence_count")
-            try:
-                if maybe_evidence is not None:
-                    self.evidence_count += max(0, int(maybe_evidence))
-            except (TypeError, ValueError):
-                pass
+    def add_model_io(
+        self,
+        *,
+        span_id: str,
+        node: str,
+        provider: str,
+        model: str,
+        input_messages: Any,
+        raw_output: Any,
+        parsed_output: Any | None = None,
+        token_usage: dict[str, int] | None = None,
+    ) -> None:
+        if not full_model_io_enabled():
+            return
+        row: dict[str, Any] = {
+            "request_id": self.request_id,
+            "span_id": str(span_id or "").strip(),
+            "node": str(node or "").strip(),
+            "provider": str(provider or "").strip(),
+            "model": str(model or "").strip(),
+            "input_messages": _redact_if_enabled(_serialize_messages_full(input_messages)),
+            "raw_output": _redact_if_enabled(_serialize_raw_model_output(raw_output)),
+            "parsed_output": _redact_if_enabled(parsed_output) if parsed_output is not None else None,
+            "token_usage": copy.deepcopy(token_usage) if isinstance(token_usage, dict) else None,
+            "created_at_ms": _now_ms(),
+        }
+        self.model_io.append(row)
 
     def finalize(
         self,
@@ -420,7 +672,8 @@ class AgentRequestTrace:
             "exception_chain": copy.deepcopy(self.exception_chain),
             "token_usage": copy.deepcopy(self.token_usage),
             "tool_call_chain": list(self.tool_call_chain),
-            "tool_events": [event.to_dict() for event in self.tool_events],
+            "spans": [span.to_dict() for span in self.spans],
+            "model_io": copy.deepcopy(self.model_io),
             "started_at_ms": self.started_at_ms,
             "finished_at_ms": self.finished_at_ms,
             "final_answer_metadata": copy.deepcopy(self.final_answer_metadata),
@@ -432,6 +685,7 @@ _TRACE_STATE: ContextVar[AgentRequestTrace | None] = ContextVar(
     "agent_request_trace_state",
     default=None,
 )
+_SPAN_STACK: ContextVar[tuple[str, ...]] = ContextVar("agent_trace_span_stack", default=())
 _LAST_TRACE_LOCK = Lock()
 _LAST_TRACE_SUMMARY: dict[str, Any] | None = None
 
@@ -441,7 +695,13 @@ def _new_request_id() -> str:
 
 
 def _build_runtime_metadata() -> dict[str, Any]:
-    return agent_runtime_metadata()
+    metadata = dict(agent_runtime_metadata())
+    metadata["trace"] = {
+        "full_model_io_enabled": full_model_io_enabled(),
+        "secret_redaction_enabled": secret_redaction_enabled(),
+    }
+    metadata["langsmith"] = _langsmith_metadata()
+    return metadata
 
 
 @contextmanager
@@ -459,9 +719,11 @@ def request_trace_context(
         runtime=_build_runtime_metadata(),
     )
     token: Token[AgentRequestTrace | None] = _TRACE_STATE.set(trace)
+    span_token: Token[tuple[str, ...]] = _SPAN_STACK.set(())
     try:
         yield trace
     finally:
+        _SPAN_STACK.reset(span_token)
         _TRACE_STATE.reset(token)
 
 
@@ -479,146 +741,69 @@ def get_current_thread_id() -> str | None:
     return trace.thread_id if trace else None
 
 
-def record_tool_policy_block(
+@contextmanager
+def trace_span(
+    span_type: str,
+    name: str,
     *,
-    reason: str,
-    details: dict[str, Any] | None = None,
-) -> None:
-    """Record a pre-execution tool policy block in the current request trace."""
-    trace = get_current_request_trace()
-    if trace is None:
-        return
-    blocks = trace.runtime.setdefault("tool_policy_blocks", [])
-    if not isinstance(blocks, list):
-        blocks = []
-        trace.runtime["tool_policy_blocks"] = blocks
-    blocks.append(
-        summarize_payload(
-            {
-                "reason": str(reason or "").strip(),
-                "details": details if isinstance(details, dict) else {},
-            }
-        )
-    )
-
-
-def record_graph_node_event(
-    *,
-    node: str,
-    status: str,
+    input_summary: Any = None,
     metadata: dict[str, Any] | None = None,
-) -> None:
-    """Record a compact graph-node audit event in the current request trace."""
+) -> Iterator[TraceSpan | NullTraceSpan]:
+    """Create a child span under the current request trace."""
     trace = get_current_request_trace()
     if trace is None:
+        yield NullTraceSpan()
         return
-    events = trace.runtime.setdefault("graph_nodes", [])
-    if not isinstance(events, list):
-        events = []
-        trace.runtime["graph_nodes"] = events
-    events.append(
-        summarize_payload(
-            {
-                "node": str(node or "").strip(),
-                "status": str(status or "").strip(),
-                "at_ms": _now_ms(),
-                "metadata": metadata if isinstance(metadata, dict) else {},
-            }
-        )
+
+    stack = _SPAN_STACK.get()
+    parent_span_id = stack[-1] if stack else None
+    span = trace.start_span(
+        span_type=span_type,
+        name=name,
+        parent_span_id=parent_span_id,
+        input_summary=input_summary,
+        metadata=metadata,
     )
+    token = _SPAN_STACK.set((*stack, span.span_id))
+    try:
+        yield span
+    except Exception as exc:
+        span.set_error(
+            error_code=f"{span.span_type}_{type(exc).__name__.lower()}",
+            error_message=str(exc),
+            error=exc,
+        )
+        raise
+    finally:
+        span.finish()
+        _SPAN_STACK.reset(token)
 
 
-def record_graph_model_event(
+def set_model_io(
     *,
+    span_id: str,
     node: str,
     provider: str,
     model: str,
-    fallback: bool = False,
-    error: str | None = None,
+    input_messages: Any,
+    raw_output: Any,
+    parsed_output: Any | None = None,
+    token_usage: dict[str, int] | None = None,
 ) -> None:
-    """Record which model a graph node used, including fallback decisions."""
+    """Persist full model input/output payload for the current request."""
     trace = get_current_request_trace()
     if trace is None:
         return
-    events = trace.runtime.setdefault("model_events", [])
-    if not isinstance(events, list):
-        events = []
-        trace.runtime["model_events"] = events
-    payload: dict[str, Any] = {
-        "node": str(node or "").strip(),
-        "provider": str(provider or "").strip(),
-        "model": str(model or "").strip(),
-        "fallback": bool(fallback),
-        "at_ms": _now_ms(),
-    }
-    if error:
-        payload["error"] = str(error)
-    events.append(summarize_payload(payload))
-
-
-def trace_tool_start(tool_name: str, payload: dict[str, Any]) -> int | None:
-    trace = get_current_request_trace()
-    if trace is None:
-        return None
-    return trace.start_tool(tool_name, payload)
-
-
-def trace_tool_finish_with_envelope(
-    event_index: int | None,
-    envelope: ToolEnvelope,
-    *,
-    status_override: str | None = None,
-    error_code: str | None = None,
-    error_message: str | None = None,
-) -> None:
-    trace = get_current_request_trace()
-    if trace is None or event_index is None:
-        return
-
-    status = status_override or ("success" if envelope.status == "ok" else envelope.status)
-    trace.finish_tool(
-        event_index,
-        status=status,
-        output_summary=summarize_envelope(envelope),
-        error_code=error_code,
-        error_message=error_message,
+    trace.add_model_io(
+        span_id=span_id,
+        node=node,
+        provider=provider,
+        model=model,
+        input_messages=input_messages,
+        raw_output=raw_output,
+        parsed_output=parsed_output,
+        token_usage=token_usage,
     )
-
-    from .metrics import metrics_inc
-
-    metrics_inc("trace_tool_calls_total")
-    if status == "success":
-        metrics_inc("trace_tool_success")
-    elif status == "empty":
-        metrics_inc("trace_tool_empty")
-    elif status in {"error", "blocked"}:
-        metrics_inc("trace_tool_error")
-
-
-def trace_tool_finish_error(
-    event_index: int | None,
-    *,
-    error_code: str,
-    error_message: str,
-    error: BaseException,
-) -> None:
-    trace = get_current_request_trace()
-    if trace is None or event_index is None:
-        return
-
-    trace.finish_tool(
-        event_index,
-        status="error",
-        output_summary={},
-        error_code=error_code,
-        error_message=error_message,
-        error=error,
-    )
-
-    from .metrics import metrics_inc
-
-    metrics_inc("trace_tool_calls_total")
-    metrics_inc("trace_tool_error")
 
 
 def set_request_token_usage(token_usage: dict[str, int] | None) -> None:
@@ -653,13 +838,14 @@ def finalize_request_trace(
         error_message=error_message,
         error=error,
     )
+    public_summary = _compact_trace_summary(summary)
 
     with _LAST_TRACE_LOCK:
         global _LAST_TRACE_SUMMARY
-        _LAST_TRACE_SUMMARY = copy.deepcopy(summary)
+        _LAST_TRACE_SUMMARY = copy.deepcopy(public_summary)
 
     if was_finalized:
-        return summary
+        return public_summary
 
     from .metrics import metrics_inc
 
@@ -682,8 +868,8 @@ def finalize_request_trace(
             exc,
         )
 
-    print(f"[AgentTrace] {json.dumps(summary, ensure_ascii=False)}")
-    return summary
+    print(f"[AgentTrace] {json.dumps(public_summary, ensure_ascii=False)}")
+    return public_summary
 
 
 def get_last_trace_summary() -> dict[str, Any] | None:
@@ -691,6 +877,25 @@ def get_last_trace_summary() -> dict[str, Any] | None:
         if _LAST_TRACE_SUMMARY is None:
             return None
         return copy.deepcopy(_LAST_TRACE_SUMMARY)
+
+
+def _compact_trace_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """Return a public trace summary without full model prompts/outputs."""
+    compact = copy.deepcopy(summary)
+    model_io = compact.get("model_io")
+    if isinstance(model_io, list):
+        compact["model_io"] = [
+            {
+                "span_id": item.get("span_id"),
+                "node": item.get("node"),
+                "provider": item.get("provider"),
+                "model": item.get("model"),
+                "token_usage": item.get("token_usage"),
+            }
+            for item in model_io
+            if isinstance(item, dict)
+        ]
+    return compact
 
 
 def _persist_request_trace(summary: dict[str, Any]) -> bool:

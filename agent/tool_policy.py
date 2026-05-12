@@ -6,8 +6,6 @@ import os
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-
 from .core.evidence import extract_urls, normalize_url_for_match
 
 ToolPolicyAction = Literal["allow", "clarify"]
@@ -26,31 +24,6 @@ class ToolPolicyDecision:
 
 def allow_tool_use() -> ToolPolicyDecision:
     return ToolPolicyDecision(action="allow")
-
-
-def evaluate_tool_calls(
-    messages: list[BaseMessage] | tuple[BaseMessage, ...],
-    *,
-    allowed_tool_names: set[str],
-    input_schemas: dict[str, dict[str, Any]] | None = None,
-    evidence_urls: list[str] | set[str] | None = None,
-) -> ToolPolicyDecision:
-    """Validate pending tool calls before the LangGraph tools node runs."""
-    pending_calls = _pending_tool_calls(messages)
-    user_messages = [
-        str(getattr(message, "content", "") or "")
-        for message in messages
-        if str(getattr(message, "type", "")).strip().lower() == "human"
-    ]
-    previous_tool_calls = _tool_call_names_from_messages(messages)
-    return evaluate_pending_tool_calls(
-        pending_calls,
-        allowed_tool_names=allowed_tool_names,
-        input_schemas=input_schemas,
-        evidence_urls=evidence_urls,
-        user_messages=user_messages,
-        previous_tool_calls=previous_tool_calls,
-    )
 
 
 def evaluate_pending_tool_calls(
@@ -194,44 +167,6 @@ def _validate_schema_args(
     return allow_tool_use()
 
 
-def _pending_tool_calls(messages: list[BaseMessage] | tuple[BaseMessage, ...]) -> list[dict[str, Any]]:
-    if not messages:
-        return []
-    answered_tool_ids = {
-        str(getattr(message, "tool_call_id", "")).strip()
-        for message in messages
-        if isinstance(message, ToolMessage)
-    }
-    for message in reversed(messages):
-        if not isinstance(message, AIMessage):
-            continue
-        calls = list(getattr(message, "tool_calls", None) or [])
-        return [
-            call
-            for call in calls
-            if isinstance(call, dict)
-            and str(call.get("id", "")).strip() not in answered_tool_ids
-        ]
-    return []
-
-
-def _tool_call_names_from_messages(messages: list[BaseMessage] | tuple[BaseMessage, ...]) -> list[str]:
-    names: list[str] = []
-    for message in messages:
-        if isinstance(message, AIMessage):
-            for call in getattr(message, "tool_calls", None) or []:
-                if not isinstance(call, dict):
-                    continue
-                name = str(call.get("name", "")).strip()
-                if name:
-                    names.append(name)
-        elif isinstance(message, ToolMessage):
-            name = str(getattr(message, "name", "")).strip()
-            if name:
-                names.append(name)
-    return names
-
-
 def _validate_numeric_args(
     tool_name: str,
     args: dict[str, Any],
@@ -336,19 +271,6 @@ def _validate_fulltext_batch(args: dict[str, Any]) -> ToolPolicyDecision:
     return allow_tool_use()
 
 
-def _validate_read_news_content(
-    messages: list[BaseMessage] | tuple[BaseMessage, ...],
-    args: dict[str, Any],
-    evidence_urls: list[str] | set[str] | None,
-) -> ToolPolicyDecision:
-    user_messages = [
-        str(getattr(message, "content", "") or "")
-        for message in messages
-        if str(getattr(message, "type", "")).strip().lower() == "human"
-    ]
-    return _validate_read_news_content_context(args, evidence_urls, user_messages)
-
-
 def _validate_read_news_content_context(
     args: dict[str, Any],
     evidence_urls: list[str] | set[str] | None,
@@ -409,28 +331,6 @@ def _validate_pending_tool_loop(
                 reason="tool_call_loop_detected",
                 details={"tool": name, "count": counts[name], "maximum": max_repeats},
             )
-    return allow_tool_use()
-
-
-def _validate_tool_loop(messages: list[BaseMessage] | tuple[BaseMessage, ...]) -> ToolPolicyDecision:
-    max_repeats = _env_int("AGENT_TOOL_MAX_REPEATS_PER_RUN", 6, minimum=1)
-    counts: dict[str, int] = {}
-    for message in messages:
-        if not isinstance(message, AIMessage):
-            continue
-        for call in getattr(message, "tool_calls", None) or []:
-            if not isinstance(call, dict):
-                continue
-            name = str(call.get("name", "")).strip()
-            if not name:
-                continue
-            counts[name] = counts.get(name, 0) + 1
-            if counts[name] > max_repeats:
-                return ToolPolicyDecision(
-                    action="clarify",
-                    reason="tool_call_loop_detected",
-                    details={"tool": name, "count": counts[name], "maximum": max_repeats},
-                )
     return allow_tool_use()
 
 

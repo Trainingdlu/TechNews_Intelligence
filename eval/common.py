@@ -133,22 +133,3 @@ def run_subprocess(
         print(completed.stderr, end="", file=sys.stderr)
     return completed
 
-
-def run_subprocess_checked(
-    command: list[str],
-    *,
-    cwd: Path,
-    env: dict[str, str] | None = None,
-    log_prefix: str | None = None,
-    error_prefix: str = "Command failed",
-) -> None:
-    completed = run_subprocess(
-        command,
-        cwd=cwd,
-        env=env,
-        log_prefix=log_prefix,
-    )
-    if completed.returncode != 0:
-        raise RuntimeError(
-            f"{error_prefix} (exit_code={completed.returncode}): {' '.join(command)}"
-        )

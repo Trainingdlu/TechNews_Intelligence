@@ -71,7 +71,6 @@ def test_tool_catalog_exposes_graph_ready_metadata() -> None:
         assert definition.capability.strip()
         assert definition.tool_group.strip()
         assert isinstance(definition.requires_evidence, bool)
-        assert definition.allowed_for_intents
 
 
 def test_build_default_tool_runtime_hooks_is_singleton() -> None:

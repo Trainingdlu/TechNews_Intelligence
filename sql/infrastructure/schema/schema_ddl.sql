@@ -280,22 +280,49 @@ CREATE TABLE IF NOT EXISTS public.agent_runs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS public.agent_tool_events (
+CREATE TABLE IF NOT EXISTS public.agent_trace_spans (
     id BIGSERIAL PRIMARY KEY,
     request_id VARCHAR(64) NOT NULL,
-    event_index INTEGER NOT NULL,
-    tool_name VARCHAR(128) NOT NULL,
+    span_id VARCHAR(64) NOT NULL,
+    parent_span_id VARCHAR(64),
+    span_type VARCHAR(32) NOT NULL,
+    name VARCHAR(128) NOT NULL,
     status VARCHAR(32) NOT NULL,
+    started_at_ms BIGINT NOT NULL,
+    finished_at_ms BIGINT,
     latency_ms INTEGER,
     input_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
     output_summary JSONB NOT NULL DEFAULT '{}'::jsonb,
     error_code VARCHAR(128),
     error_message TEXT,
-    exception_chain JSONB,
+    exception_chain JSONB NOT NULL DEFAULT '[]'::jsonb,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT fk_agent_tool_events_request
+    CONSTRAINT uq_agent_trace_spans_request_span UNIQUE (request_id, span_id),
+    CONSTRAINT chk_agent_trace_spans_type
+        CHECK (span_type IN ('graph_node', 'model_call', 'tool_call', 'guard', 'postprocess')),
+    CONSTRAINT fk_agent_trace_spans_request
         FOREIGN KEY (request_id)
         REFERENCES public.agent_runs(request_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS public.agent_model_io (
+    id BIGSERIAL PRIMARY KEY,
+    request_id VARCHAR(64) NOT NULL,
+    span_id VARCHAR(64) NOT NULL,
+    node VARCHAR(128) NOT NULL,
+    provider VARCHAR(64),
+    model VARCHAR(160),
+    input_messages JSONB NOT NULL DEFAULT '[]'::jsonb,
+    raw_output JSONB,
+    parsed_output JSONB,
+    token_usage JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_agent_model_io_request_span UNIQUE (request_id, span_id),
+    CONSTRAINT fk_agent_model_io_span
+        FOREIGN KEY (request_id, span_id)
+        REFERENCES public.agent_trace_spans(request_id, span_id)
         ON DELETE CASCADE
 );
 
@@ -321,10 +348,13 @@ CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_created
     ON public.conversation_messages (thread_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_created_at ON public.agent_runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON public.agent_runs(final_status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_tool_events_request ON public.agent_tool_events(request_id, event_index);
-CREATE INDEX IF NOT EXISTS idx_agent_tool_events_status ON public.agent_tool_events(status, created_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_tool_events_request_event_unique
-    ON public.agent_tool_events(request_id, event_index);
+CREATE INDEX IF NOT EXISTS idx_agent_trace_spans_request ON public.agent_trace_spans(request_id, started_at_ms);
+CREATE INDEX IF NOT EXISTS idx_agent_trace_spans_parent ON public.agent_trace_spans(request_id, parent_span_id);
+CREATE INDEX IF NOT EXISTS idx_agent_trace_spans_type ON public.agent_trace_spans(span_type, name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_trace_spans_status ON public.agent_trace_spans(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_model_io_request ON public.agent_model_io(request_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_model_io_span ON public.agent_model_io(span_id);
+CREATE INDEX IF NOT EXISTS idx_agent_model_io_node ON public.agent_model_io(node, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_news_search_tsv ON public.news_search_index
     USING GIN (search_tsv);
 CREATE INDEX IF NOT EXISTS idx_entity_registry_active_type
