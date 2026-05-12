@@ -5,7 +5,8 @@
 ## 推荐执行
 
 ```bash
-bash deployment/scripts/db/apply_source_framework_migration.sh
+bash deployment/scripts/db/apply_schema.sh
+bash deployment/scripts/db/apply_seed.sh
 ```
 
 该命令会执行：
@@ -17,7 +18,7 @@ bash deployment/scripts/db/apply_source_framework_migration.sh
 ## 仅执行官方种子（可选）
 
 ```bash
-bash deployment/scripts/db/apply_source_framework_migration.sh \
+bash deployment/scripts/db/apply_seed.sh \
   --seed-file sql/infrastructure/seeds/seed_source_official.sql
 ```
 

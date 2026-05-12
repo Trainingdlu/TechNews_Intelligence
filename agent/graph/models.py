@@ -38,6 +38,11 @@ def build_graph_models() -> GraphModels:
     """
 
     return GraphModels(
+        context_curator=_build_role_model(
+            role="context",
+            default_provider="vertex",
+            default_model=DEFAULT_VERTEX_MODEL,
+        ),
         intent_router=_build_role_model(
             role="intent",
             default_provider="vertex",

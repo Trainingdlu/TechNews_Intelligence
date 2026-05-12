@@ -9,7 +9,8 @@
 首次部署或升级时执行：
 
 ```bash
-bash deployment/scripts/db/apply_source_framework_migration.sh
+bash deployment/scripts/db/apply_schema.sh
+bash deployment/scripts/db/apply_seed.sh
 ```
 
 这个脚本会执行：
@@ -27,7 +28,7 @@ bash deployment/scripts/db/apply_source_framework_migration.sh
 - 核心 tech 实体种子和别名种子。
 - `view_dashboard_news` 暴露 `search_tsv` 和 `search_index_updated_at`。
 
-日常定时任务默认不重复跑迁移；需要在同一个命令里先跑迁移时，显式加 `--apply-migration`。
+日常定时任务默认不重复跑 schema；需要在同一个命令里先确保 schema/view 时，显式加 `--apply-schema`。
 
 ## 实体种子
 

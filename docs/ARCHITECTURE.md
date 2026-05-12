@@ -487,7 +487,8 @@ Compose 文件通过公共环境变量块注入数据库、模型提供方、Lan
 
 | 脚本 | 用途 |
 | --- | --- |
-| `deployment/scripts/db/apply_source_framework_migration.sh` | 应用 schema、dashboard view 和 seed SQL。 |
+| `deployment/scripts/db/apply_schema.sh` | 应用幂等 schema DDL 和 dashboard view，自动部署会调用。 |
+| `deployment/scripts/db/apply_seed.sh` | 手动应用 seed SQL，自动部署不会调用。 |
 | `deployment/scripts/db/upsert_source.sh` | 校验并写入一条 `source_registry` 来源。 |
 | `deployment/scripts/db/run_data_quality_checks.sh` | 运行只读数据质量检查 SQL。 |
 | `deployment/scripts/db/build_entity_alias_candidates.sh` | 执行离线实体别名候选抽取和可选提升。 |

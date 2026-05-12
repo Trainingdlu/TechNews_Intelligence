@@ -262,7 +262,39 @@ CREATE TABLE IF NOT EXISTS public.conversation_messages (
         ON DELETE CASCADE
 );
 
--- 11. Agent request traces
+-- 11. Thread memory for agent context assembly
+CREATE TABLE IF NOT EXISTS public.thread_memory_summaries (
+    id BIGSERIAL PRIMARY KEY,
+    thread_id VARCHAR(64) NOT NULL UNIQUE,
+    summary_text TEXT NOT NULL DEFAULT '',
+    summary_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    last_summarized_message_id BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_thread_memory_summaries_thread
+        FOREIGN KEY (thread_id)
+        REFERENCES public.conversation_threads(thread_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS public.thread_evidence_index (
+    id BIGSERIAL PRIMARY KEY,
+    thread_id VARCHAR(64) NOT NULL,
+    message_id BIGINT,
+    turn_request_id VARCHAR(64),
+    evidence_url TEXT NOT NULL,
+    title TEXT,
+    source_index INTEGER,
+    excerpt TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_thread_evidence_index_thread_url UNIQUE (thread_id, evidence_url),
+    CONSTRAINT fk_thread_evidence_index_thread
+        FOREIGN KEY (thread_id)
+        REFERENCES public.conversation_threads(thread_id)
+        ON DELETE CASCADE
+);
+
+-- 12. Agent request traces
 CREATE TABLE IF NOT EXISTS public.agent_runs (
     id BIGSERIAL PRIMARY KEY,
     request_id VARCHAR(64) NOT NULL UNIQUE,
@@ -300,7 +332,7 @@ CREATE TABLE IF NOT EXISTS public.agent_trace_spans (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_agent_trace_spans_request_span UNIQUE (request_id, span_id),
     CONSTRAINT chk_agent_trace_spans_type
-        CHECK (span_type IN ('graph_node', 'model_call', 'tool_call', 'guard', 'postprocess')),
+        CHECK (span_type IN ('graph_node', 'model_call', 'tool_call', 'guard', 'postprocess', 'context')),
     CONSTRAINT fk_agent_trace_spans_request
         FOREIGN KEY (request_id)
         REFERENCES public.agent_runs(request_id)
@@ -326,6 +358,12 @@ CREATE TABLE IF NOT EXISTS public.agent_model_io (
         ON DELETE CASCADE
 );
 
+ALTER TABLE public.agent_trace_spans
+    DROP CONSTRAINT IF EXISTS chk_agent_trace_spans_type;
+ALTER TABLE public.agent_trace_spans
+    ADD CONSTRAINT chk_agent_trace_spans_type
+        CHECK (span_type IN ('graph_node', 'model_call', 'tool_call', 'guard', 'postprocess', 'context'));
+
 -- 12. Performance Indexes
 CREATE INDEX IF NOT EXISTS idx_created_at ON public.tech_news(created_at);
 CREATE INDEX IF NOT EXISTS idx_created_at_cn ON public.tech_news ((created_at + '08:00:00'::interval));
@@ -346,6 +384,12 @@ CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_order
     ON public.conversation_messages (thread_id, id);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_thread_created
     ON public.conversation_messages (thread_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_thread_memory_summaries_updated
+    ON public.thread_memory_summaries(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_thread_evidence_index_thread_created
+    ON public.thread_evidence_index(thread_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_thread_evidence_index_message
+    ON public.thread_evidence_index(message_id);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_created_at ON public.agent_runs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_runs_status ON public.agent_runs(final_status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_trace_spans_request ON public.agent_trace_spans(request_id, started_at_ms);

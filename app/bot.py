@@ -22,7 +22,6 @@ from telegram.ext import (
 from agent import AgentGenerationError, generate_response_payload
 from agent.clarification import (
     build_clarification_history_item,
-    resolve_user_message_with_followup_context,
     resolve_user_message_with_history_clarification,
 )
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
@@ -769,18 +768,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id,
                 pending.reason,
             )
-        else:
-            effective_message, followup_profile = resolve_user_message_with_followup_context(
-                history,
-                effective_message,
-            )
-            if bool(followup_profile.get("augmented")):
-                logger.info(
-                    "[chat_id=%s] follow-up context augmented: score=%.3f decision=%s",
-                    chat_id,
-                    float(followup_profile.get("score", 0.0)),
-                    str(followup_profile.get("decision", "fresh")),
-                )
 
         payload = await asyncio.to_thread(generate_response_payload, history, effective_message)
         kind = str(payload.get("kind", "answer")).strip().lower()
@@ -792,7 +779,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             clarification_payload = payload.get("clarification", {})
             history.append(build_clarification_history_item(clarification_payload))
         else:
-            history.append({"role": "model", "parts": [{"text": reply}]})
+            title_map = payload.get("url_title_map", {}) if isinstance(payload, dict) else {}
+            citation_urls = payload.get("citation_urls", []) if isinstance(payload, dict) else []
+            history.append(
+                {
+                    "role": "model",
+                    "parts": [{"text": reply}],
+                    "citation_urls": [
+                        str(url).strip()
+                        for url in citation_urls
+                        if str(url).strip()
+                    ] if isinstance(citation_urls, list) else [],
+                    "url_title_map": title_map if isinstance(title_map, dict) else {},
+                }
+            )
 
         history_limit = chat_history_limits.get(chat_id, MAX_HISTORY_TURNS)
         conversation_histories[chat_id] = _trim_history(history, max_turns=history_limit)

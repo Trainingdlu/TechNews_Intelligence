@@ -26,7 +26,6 @@ from psycopg2.extras import Json
 from agent import AgentGenerationError, generate_response_payload
 from agent.clarification import (
     build_clarification_history_item,
-    resolve_user_message_with_followup_context,
     resolve_user_message_with_history_clarification,
 )
 from services.db import init_db_pool, close_db_pool, get_conn, put_conn
@@ -38,6 +37,7 @@ from services.conversations import (
     load_history,
     load_history_for_token,
 )
+from services.thread_memory import schedule_thread_memory_update
 from services.mail import (
     send_token_email,
     send_quota_exhausted_to_admin,
@@ -452,11 +452,19 @@ def _persist_conversation_turn(
         _user_history_item(user_message),
         metadata=metadata,
     )
-    append_message_for_token(
+    model_message = _model_history_item_from_payload(payload)
+    model_row = append_message_for_token(
         thread_id,
         token_id,
-        _model_history_item_from_payload(payload),
+        model_message,
         metadata=metadata,
+    )
+    schedule_thread_memory_update(
+        thread_id=thread_id,
+        user_message=user_message,
+        model_message=model_message,
+        model_message_id=int(model_row.get("id")) if isinstance(model_row, dict) and model_row.get("id") else None,
+        request_id=request_id,
     )
 
 
@@ -966,19 +974,6 @@ async def chat(
                 request_id,
                 pending.reason,
             )
-        else:
-            effective_message, followup_profile = resolve_user_message_with_followup_context(
-                history,
-                effective_message,
-            )
-            if bool(followup_profile.get("augmented")):
-                logger.info(
-                    "[%s] follow-up context augmented: request_id=%s score=%.3f decision=%s",
-                    token_info["email"],
-                    request_id,
-                    float(followup_profile.get("score", 0.0)),
-                    str(followup_profile.get("decision", "fresh")),
-                )
         payload = await asyncio.to_thread(
             generate_response_payload,
             history,
@@ -1080,19 +1075,6 @@ async def chat_stream(
                 request_id,
                 pending.reason,
             )
-        else:
-            effective_message, followup_profile = resolve_user_message_with_followup_context(
-                history,
-                effective_message,
-            )
-            if bool(followup_profile.get("augmented")):
-                logger.info(
-                    "[%s] follow-up context augmented(stream): request_id=%s score=%.3f decision=%s",
-                    token_info["email"],
-                    request_id,
-                    float(followup_profile.get("score", 0.0)),
-                    str(followup_profile.get("decision", "fresh")),
-                )
     except Exception:
         _refund_reserved_quota(token_info)
         raise

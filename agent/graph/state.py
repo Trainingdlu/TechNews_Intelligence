@@ -18,6 +18,7 @@ class AgentGraphState(TypedDict, total=False):
     user_message: str
     history: list[dict]
     llm_input_messages: list[BaseMessage]
+    context_pack: dict[str, Any]
 
     intent: dict[str, Any]
     selected_tools: list[str]
@@ -57,6 +58,7 @@ class GraphModelHandle:
 
 @dataclass(frozen=True)
 class GraphModels:
+    context_curator: GraphModelHandle
     intent_router: GraphModelHandle
     tool_worker: GraphModelHandle
     final_synthesizer: GraphModelHandle

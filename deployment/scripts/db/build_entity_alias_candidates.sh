@@ -8,13 +8,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 COMMON_LIB="${SCRIPT_DIR}/common.sh"
-FRAMEWORK_SCRIPT="${SCRIPT_DIR}/apply_source_framework_migration.sh"
+SCHEMA_SCRIPT="${SCRIPT_DIR}/apply_schema.sh"
 
 DAYS="30"
 LIMIT="1000"
 USE_DEEPSEEK=false
 DRY_RUN=false
-APPLY_MIGRATION=false
+APPLY_SCHEMA=false
 PROMOTE_APPROVED=true
 INCLUDE_AUTO_APPROVED_PROMOTION=false
 
@@ -28,8 +28,7 @@ Options:
   --limit <int>         Max recent rows to scan. Default: 1000.
   --use-deepseek        Call DeepSeek for merge/disambiguation decisions.
   --dry-run             Print candidates without writing entity_alias_candidate.
-  --apply-migration     Apply schema/view/seeds before extraction.
-  --skip-migration      Compatibility no-op; migration is skipped by default.
+  --apply-schema        Apply schema/view before extraction.
   --skip-promotion      Do not promote previously approved candidates.
   --include-auto-approved-promotion
                         Also promote auto_approved candidates into entity_alias.
@@ -69,12 +68,8 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=true
       shift
       ;;
-    --apply-migration)
-      APPLY_MIGRATION=true
-      shift
-      ;;
-    --skip-migration)
-      APPLY_MIGRATION=false
+    --apply-schema)
+      APPLY_SCHEMA=true
       shift
       ;;
     --skip-promotion)
@@ -106,8 +101,8 @@ if ! [[ "${LIMIT}" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-if [[ "${APPLY_MIGRATION}" == true ]]; then
-  bash "${FRAMEWORK_SCRIPT}"
+if [[ "${APPLY_SCHEMA}" == true ]]; then
+  bash "${SCHEMA_SCRIPT}"
 fi
 
 db_init_runtime "${REPO_ROOT}"

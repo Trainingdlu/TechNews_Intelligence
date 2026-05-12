@@ -36,6 +36,7 @@ const activeLangSmith = computed(() => selectedRun.value?.langsmith || meta.valu
 const isModelSpan = computed(() => activeSpan.value?.span_type === "model_call");
 const isToolSpan = computed(() => activeSpan.value?.span_type === "tool_call");
 const isGuardSpan = computed(() => ["guard", "postprocess"].includes(activeSpan.value?.span_type));
+const isContextSpan = computed(() => activeSpan.value?.span_type === "context");
 
 const evidenceUrls = computed(() => collectUrls(activeSpan.value));
 const diagnostics = computed(() => {
@@ -452,24 +453,36 @@ onMounted(() => {
               <h4>证据 URL</h4>
               <a v-for="url in evidenceUrls" :key="url" :href="url" target="_blank" rel="noreferrer">{{ url }}</a>
             </div>
-            <JsonBlock title="工具输入摘要" :value="activeSpan.input_summary" />
-            <JsonBlock title="工具输出摘要" :value="activeSpan.output_summary" />
+            <JsonBlock title="工具输入摘要（非完整输入）" :value="activeSpan.input_summary" />
+            <JsonBlock title="工具输出摘要（非完整输出）" :value="activeSpan.output_summary" />
             <JsonBlock v-if="diagnostics" title="Diagnostics" :value="diagnostics" />
           </section>
 
           <section v-else-if="isGuardSpan" class="guard-section">
-            <JsonBlock title="检查输入" :value="activeSpan.input_summary" />
-            <JsonBlock title="检查输出" :value="activeSpan.output_summary" />
-            <JsonBlock title="Metadata" :value="activeSpan.metadata" />
+            <JsonBlock title="检查输入摘要" :value="activeSpan.input_summary" />
+            <JsonBlock title="检查输出摘要" :value="activeSpan.output_summary" />
+            <JsonBlock title="调试元数据" :value="activeSpan.metadata" />
+          </section>
+
+          <section v-else-if="isContextSpan" class="context-section">
+            <div class="kv-grid">
+              <span>策略</span><strong>{{ activeSpan.output_summary?.strategy || "-" }}</strong>
+              <span>选中历史</span><strong>{{ activeSpan.output_summary?.selected_turn_count ?? "-" }}</strong>
+              <span>选中证据</span><strong>{{ activeSpan.output_summary?.selected_evidence_count ?? "-" }}</strong>
+              <span>依赖历史</span><strong>{{ activeSpan.output_summary?.depends_on_history ?? "-" }}</strong>
+            </div>
+            <JsonBlock title="上下文输入摘要" :value="activeSpan.input_summary" />
+            <JsonBlock title="上下文输出摘要" :value="activeSpan.output_summary" />
+            <JsonBlock title="调试元数据" :value="activeSpan.metadata" />
           </section>
 
           <section v-else class="generic-section">
             <JsonBlock title="输入摘要" :value="activeSpan.input_summary" />
             <JsonBlock title="输出摘要" :value="activeSpan.output_summary" />
-            <JsonBlock title="Metadata" :value="activeSpan.metadata" />
+            <JsonBlock title="调试元数据" :value="activeSpan.metadata" />
           </section>
 
-          <JsonBlock title="当前节点 raw JSON" :value="activeSpan" :open="false" />
+          <JsonBlock title="完整节点记录（调试）" :value="activeSpan" :open="false" />
         </template>
       </section>
 

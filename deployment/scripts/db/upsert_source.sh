@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 COMMON_LIB="${SCRIPT_DIR}/common.sh"
-FRAMEWORK_SCRIPT="${SCRIPT_DIR}/apply_source_framework_migration.sh"
+SCHEMA_SCRIPT="${SCRIPT_DIR}/apply_schema.sh"
 
 SOURCE_KEY=""
 SOURCE_NAME=""
@@ -15,8 +15,7 @@ ENDPOINT=""
 IS_ACTIVE="true"
 PRIORITY="100"
 EXTRA_CONFIG="{}"
-SKIP_MIGRATION=false
-APPLY_DEFAULT_SEEDS=false
+SKIP_SCHEMA=false
 
 usage() {
   cat <<'EOF'
@@ -35,8 +34,7 @@ Optional:
   --priority <int>            Default: 100 (smaller means earlier)
   --is-active <bool>          true/false, default true
   --extra-config <json>       JSON string, default {}
-  --skip-migration            Do not run apply_source_framework_migration.sh first
-  --apply-default-seeds       When migration runs, also apply seed_source_*.sql bundle
+  --skip-schema               Do not run apply_schema.sh first
   -h, --help                  Show help
 EOF
 }
@@ -94,12 +92,8 @@ while [[ $# -gt 0 ]]; do
       EXTRA_CONFIG="$2"
       shift 2
       ;;
-    --skip-migration)
-      SKIP_MIGRATION=true
-      shift
-      ;;
-    --apply-default-seeds)
-      APPLY_DEFAULT_SEEDS=true
+    --skip-schema)
+      SKIP_SCHEMA=true
       shift
       ;;
     -h|--help)
@@ -141,17 +135,13 @@ if [[ "${IS_ACTIVE}" != "true" && "${IS_ACTIVE}" != "false" ]]; then
   exit 1
 fi
 
-if [[ "${SKIP_MIGRATION}" == false ]]; then
-  if [[ ! -f "${FRAMEWORK_SCRIPT}" ]]; then
-    echo "Missing migration runner: ${FRAMEWORK_SCRIPT}" >&2
+if [[ "${SKIP_SCHEMA}" == false ]]; then
+  if [[ ! -f "${SCHEMA_SCRIPT}" ]]; then
+    echo "Missing schema runner: ${SCHEMA_SCRIPT}" >&2
     exit 1
   fi
-  echo "Ensuring source framework schema/view..."
-  if [[ "${APPLY_DEFAULT_SEEDS}" == true ]]; then
-    bash "${FRAMEWORK_SCRIPT}"
-  else
-    bash "${FRAMEWORK_SCRIPT}" --skip-seeds
-  fi
+  echo "Ensuring schema/view..."
+  bash "${SCHEMA_SCRIPT}"
 fi
 
 db_init_runtime "${REPO_ROOT}"

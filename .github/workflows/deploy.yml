@@ -43,6 +43,8 @@ jobs:
             OLD_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' pgvector/pgvector:pg15 2>/dev/null || echo "none")
 
             docker compose -f "$COMPOSE_FILE" pull postgres n8n metabase
+            docker compose -f "$COMPOSE_FILE" up -d postgres
+            bash deployment/scripts/db/apply_schema.sh
             docker compose -f "$COMPOSE_FILE" build --pull bot api trace
             docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
             docker image prune -f

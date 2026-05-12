@@ -264,6 +264,7 @@ def _install_token_thread_memory(api_mod, monkeypatch: pytest.MonkeyPatch):  # n
 
     monkeypatch.setattr(api_mod, "load_history_for_token", _load_history_for_token)
     monkeypatch.setattr(api_mod, "append_message_for_token", _append_message_for_token)
+    monkeypatch.setattr(api_mod, "schedule_thread_memory_update", lambda **_kwargs: None)
     return threads, append_calls
 
 

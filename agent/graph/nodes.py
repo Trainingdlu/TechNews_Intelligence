@@ -15,6 +15,15 @@ from agent.clarification import (
     build_clarification_payload,
     infer_clarification_reason,
 )
+from agent.context_manager import (
+    active_question,
+    build_context_curator_messages,
+    build_context_pack,
+    build_history_manifest,
+    normalize_context_curator_result,
+    render_context_for_prompt,
+    should_use_context_curator,
+)
 from agent.core.evidence import extract_urls, normalize_url_for_match
 from agent.core.intent import classify_user_intent, extract_user_intent_text as _extract_user_intent_text
 from agent.core.runtime_factories import build_default_registry, build_default_tool_runtime
@@ -65,10 +74,12 @@ def _graph_node_span(name: str):
 
 
 def _graph_state_summary(state: AgentGraphState) -> dict[str, Any]:
+    context_pack = state.get("context_pack") or {}
     return {
         "user_message_chars": len(str(state.get("user_message") or "")),
         "history_count": len(state.get("history") or []),
         "llm_input_count": len(state.get("llm_input_messages") or []),
+        "context_strategy": ((context_pack.get("trim_report") or {}).get("strategy") if isinstance(context_pack, dict) else None),
         "selected_tools": list(state.get("selected_tools") or []),
         "pending_tool_count": len(state.get("pending_tool_calls") or []),
         "tool_result_count": len(state.get("tool_results") or []),
@@ -81,9 +92,11 @@ def _graph_state_summary(state: AgentGraphState) -> dict[str, Any]:
 def _graph_update_summary(update: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(update, dict):
         return {"type": type(update).__name__}
+    context_pack = update.get("context_pack") if isinstance(update.get("context_pack"), dict) else {}
     return {
         "keys": sorted(update.keys()),
         "intent_route": (update.get("intent") or {}).get("route") if isinstance(update.get("intent"), dict) else None,
+        "context_strategy": ((context_pack.get("trim_report") or {}).get("strategy") if isinstance(context_pack, dict) else None),
         "pending_tool_count": len(update.get("pending_tool_calls") or []),
         "tool_result_count": len(update.get("tool_results") or []),
         "evidence_count": len(update.get("evidence_urls") or update.get("valid_urls") or []),
@@ -100,11 +113,83 @@ class GraphNodeRunner:
     @_graph_node_span("prepare_context")
     def prepare_context(self, state: AgentGraphState) -> dict[str, Any]:
         emit_graph_progress("understanding", "正在理解问题", detail="")
-        messages = _history_to_messages(state.get("history") or [])
         user_message = str(state.get("user_message") or "")
-        messages.append(HumanMessage(content=user_message))
-        llm_input = build_llm_input_messages(messages)
+        history = list(state.get("history") or [])
+        thread_id = str(state.get("thread_id") or "").strip()
+        memory_summary = _load_thread_memory_summary_safe(thread_id)
+        with trace_span(
+            "context",
+            "history_manifest_builder",
+            input_summary={"history_count": len(history), "thread_id": thread_id},
+            metadata={"node": "prepare_context"},
+        ) as context_span:
+            history_manifest = build_history_manifest(history)
+            context_span.set_output(
+                {
+                    "turn_count": len(history_manifest),
+                    "memory_summary_available": bool(memory_summary),
+                }
+            )
+        curator_result: dict[str, Any] | None = None
+        curator_error = ""
+        curator_used = should_use_context_curator(
+            user_message=user_message,
+            history_manifest=history_manifest,
+            memory_summary=memory_summary,
+        )
+        if curator_used:
+            raw_curator_result = _invoke_json_model(
+                self.deps.models.context_curator,
+                node="context_curator",
+                messages=build_context_curator_messages(
+                    user_message=user_message,
+                    history_manifest=history_manifest,
+                    memory_summary=memory_summary,
+                ),
+            )
+            curator_result = normalize_context_curator_result(
+                raw_curator_result,
+                history_manifest,
+                memory_summary,
+            )
+            if not isinstance(curator_result, dict):
+                curator_error = "empty_or_invalid_curator_output"
+        context_pack = build_context_pack(
+            user_message=user_message,
+            history=history,
+            history_manifest=history_manifest,
+            memory_summary=memory_summary,
+            curator_result=curator_result,
+            curator_used=curator_used,
+            curator_error=curator_error,
+        )
+        with trace_span(
+            "context",
+            "context_pack_builder",
+            input_summary={"curator_used": curator_used, "manifest_turn_count": len(history_manifest)},
+            metadata={"node": "prepare_context"},
+        ) as context_span:
+            context_span.set_output(
+                {
+                    "strategy": (context_pack.get("trim_report") or {}).get("strategy"),
+                    "selected_turn_count": len(context_pack.get("selected_turns") or []),
+                    "selected_evidence_count": len(context_pack.get("selected_evidence_urls") or []),
+                    "depends_on_history": context_pack.get("depends_on_history"),
+                }
+            )
+        context_prompt = render_context_for_prompt(context_pack)
+        llm_input = build_llm_input_messages(
+            [
+                HumanMessage(
+                    content=(
+                        f"Current user message:\n{user_message}\n\n"
+                        f"Context pack:\n{context_prompt}"
+                    )
+                )
+            ]
+        )
         return {
+            "context_pack": context_pack,
             "llm_input_messages": llm_input,
             "tool_results": list(state.get("tool_results") or []),
             "tool_round": int(state.get("tool_round") or 0),
@@ -113,8 +198,8 @@ class GraphNodeRunner:
 
     @_graph_node_span("intent_router")
     def intent_router(self, state: AgentGraphState) -> dict[str, Any]:
-        user_message = str(state.get("user_message") or "")
-        context_snippet = _recent_context_snippet(state.get("history") or [])
+        user_message = active_question(state.get("context_pack"), str(state.get("user_message") or ""))
+        context_snippet = render_context_for_prompt(state.get("context_pack"))
         intent = _heuristic_intent(user_message)
         model_intent = _invoke_json_model(
             self.deps.models.intent_router,
@@ -154,8 +239,8 @@ class GraphNodeRunner:
     @_graph_node_span("tool_worker")
     def tool_worker(self, state: AgentGraphState) -> dict[str, Any]:
         selected_tools = list(state.get("selected_tools") or [])
-        user_message = str(state.get("user_message") or "")
-        context_snippet = _recent_context_snippet(state.get("history") or [])
+        user_message = active_question(state.get("context_pack"), str(state.get("user_message") or ""))
+        context_snippet = render_context_for_prompt(state.get("context_pack"))
         tool_results = list(state.get("tool_results") or [])
         existing_calls = _normalize_tool_calls({"tool_calls": state.get("pending_tool_calls") or []})
         if existing_calls:
@@ -320,7 +405,8 @@ class GraphNodeRunner:
     def final_synthesizer(self, state: AgentGraphState) -> dict[str, Any]:
         emit_graph_progress("synthesizing", "正在生成分析", detail="输出结论、依据")
         results = list(state.get("tool_results") or [])
-        user_message = str(state.get("user_message") or "")
+        user_message = active_question(state.get("context_pack"), str(state.get("user_message") or ""))
+        context_pack_text = render_context_for_prompt(state.get("context_pack"))
         context = format_tool_results_for_final_synthesis(results)
         evidence_brief = str(state.get("evidence_brief") or "")
         text = _invoke_text_model(
@@ -331,6 +417,7 @@ class GraphNodeRunner:
                 HumanMessage(
                     content=(
                         f"User question:\n{user_message}\n\n"
+                        f"Conversation context pack:\n{context_pack_text}\n\n"
                         f"Intent:\n{json.dumps(state.get('intent') or {}, ensure_ascii=False)}\n\n"
                         f"Evidence brief:\n{evidence_brief}\n\n"
                         f"Tool results:\n{context}\n\n"
@@ -419,6 +506,17 @@ def _message_text(item: dict[str, Any]) -> str:
             if isinstance(part, dict) and str(part.get("text", "")).strip()
         ).strip()
     return str(item.get("text", "") or "").strip()
+
+
+def _load_thread_memory_summary_safe(thread_id: str) -> dict[str, Any]:
+    if not thread_id:
+        return {}
+    try:
+        from services.thread_memory import load_thread_memory_summary
+
+        return load_thread_memory_summary(thread_id)
+    except Exception:
+        return {}
 
 
 def _human_texts(messages: list[BaseMessage]) -> list[str]:
@@ -918,7 +1016,8 @@ def _guard_output_urls(text: str, valid_urls: list[str]) -> tuple[str, dict[str,
 def _empty_evidence_fallback_calls(state: AgentGraphState) -> list[dict[str, Any]]:
     selected = list(state.get("selected_tools") or [])
     executed = {item.tool for item in (state.get("tool_results") or [])}
-    text = _extract_user_intent_text(str(state.get("user_message") or "")) or str(state.get("user_message") or "")
+    active = active_question(state.get("context_pack"), str(state.get("user_message") or ""))
+    text = _extract_user_intent_text(active) or active
     query = _fallback_retrieval_query(text)
     days = _extract_days(text)
     calls: list[dict[str, Any]] = []
@@ -991,14 +1090,14 @@ def _fulltext_calls_from_evidence(evidence_urls: list[str], state: AgentGraphSta
         {
             "name": "fulltext_batch",
             "args": {
-                "urls": _extract_user_intent_text(str(state.get("user_message") or "")) or str(state.get("user_message") or ""),
+                "urls": _extract_user_intent_text(active_question(state.get("context_pack"), str(state.get("user_message") or ""))) or active_question(state.get("context_pack"), str(state.get("user_message") or "")),
                 "max_chars_per_article": 4000,
             },
         }
     ]
 
 
-def _recent_context_snippet(history: list[dict], max_messages: int = 4, max_chars: int = 1200) -> str:
+def _recent_context_snippet(history: list[dict], max_messages: int = 4, max_chars: int = 2400) -> str:
     if not history:
         return "(none)"
     chunks: list[str] = []
@@ -1011,17 +1110,44 @@ def _recent_context_snippet(history: list[dict], max_messages: int = 4, max_char
             continue
         label = "User" if role == "user" else "Assistant"
         urls = _history_item_context_urls(item)
+        text_limit = 360 if role == "user" else 900
+        clipped_text = _truncate_context_text(text, max_chars=text_limit)
         if urls:
             url_context = " ".join(urls[:3])
-            chunks.append(f"[{label}] {text[:240]}\nEvidence URLs: {url_context}")
+            chunks.append(f"[{label}] {clipped_text}\nEvidence URLs: {url_context}")
         else:
-            chunks.append(f"[{label}] {text[:320]}")
+            chunks.append(f"[{label}] {clipped_text}")
     merged = "\n".join(chunks).strip()
     if not merged:
         return "(none)"
     if len(merged) > max_chars:
-        return merged[-max_chars:]
+        prefix = "[...truncated...]\n"
+        tail = merged[-(max_chars - len(prefix)) :]
+        first_break = tail.find("\n")
+        if 0 < first_break < 180:
+            tail = tail[first_break + 1 :]
+        return prefix + tail
     return merged
+
+
+def _truncate_context_text(text: str, *, max_chars: int) -> str:
+    cleaned = str(text or "").strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    clipped = cleaned[:max_chars].rstrip()
+    boundaries = [
+        clipped.rfind("\n"),
+        clipped.rfind("。"),
+        clipped.rfind("；"),
+        clipped.rfind(";"),
+        clipped.rfind("."),
+        clipped.rfind("，"),
+        clipped.rfind(","),
+    ]
+    boundary = max(boundaries)
+    if boundary >= int(max_chars * 0.55):
+        clipped = clipped[: boundary + 1].rstrip()
+    return f"{clipped}…"
 
 
 def _history_item_context_urls(item: dict[str, Any], max_urls: int = 3) -> list[str]:

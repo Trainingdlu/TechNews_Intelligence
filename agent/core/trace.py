@@ -27,7 +27,7 @@ _MAX_ERROR_CHAIN = 6
 _MAX_CONTEXT_DOCS = 8
 logger = logging.getLogger(__name__)
 
-_SPAN_TYPES = {"graph_node", "model_call", "tool_call", "guard", "postprocess"}
+_SPAN_TYPES = {"graph_node", "model_call", "tool_call", "guard", "postprocess", "context"}
 _SECRET_PATTERNS = (
     re.compile(r"(?i)\b(bearer\s+)[a-z0-9._~+/=-]{12,}"),
     re.compile(

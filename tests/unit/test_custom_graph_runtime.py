@@ -8,7 +8,13 @@ from unittest.mock import patch
 from agent.core.runtime_factories import build_default_tool_runtime
 from agent.core.tool_contracts import ToolEnvelope, ToolEvidence
 from agent.graph.builder import invoke_custom_graph
-from agent.graph.nodes import GraphDependencies, GraphNodeRunner, _heuristic_intent, _heuristic_tool_calls
+from agent.graph.nodes import (
+    GraphDependencies,
+    GraphNodeRunner,
+    _heuristic_intent,
+    _heuristic_tool_calls,
+    _recent_context_snippet,
+)
 from agent.graph.state import GraphModelHandle, GraphModels, GraphRuntimeConfig
 
 pytestmark = pytest.mark.usefixtures("agent_dependency_stubs")
@@ -16,6 +22,7 @@ pytestmark = pytest.mark.usefixtures("agent_dependency_stubs")
 
 def _null_models() -> GraphModels:
     return GraphModels(
+        context_curator=GraphModelHandle("context", "test", "none", None),
         intent_router=GraphModelHandle("intent", "test", "none", None),
         tool_worker=GraphModelHandle("tool", "test", "none", None),
         final_synthesizer=GraphModelHandle("final", "test", "none", None),
@@ -111,6 +118,31 @@ def test_followup_evidence_url_drives_single_article_read() -> None:
     )
 
     assert calls == [{"name": "read_news_content", "args": {"url": "https://example.com/openai-yubico"}}]
+
+
+def test_recent_context_snippet_keeps_enough_previous_answer_for_followup() -> None:
+    answer = (
+        "OpenAI released GPT-5.5 Instant with better context handling. "
+        "It also launched GPT-Realtime-2 and GPT-Realtime-Translate. "
+        "The company introduced GPT-5.5 Cyber with access controls for security users. "
+        "Greg Brockman testified in a court case about OpenAI restructuring. "
+    ) * 4
+
+    snippet = _recent_context_snippet(
+        [
+            {"role": "user", "parts": [{"text": "what happened with openai"}]},
+            {
+                "role": "model",
+                "parts": [{"text": answer}],
+                "citation_urls": ["https://example.com/openai"],
+            },
+        ]
+    )
+
+    assert "GPT-5.5 Cyber" in snippet
+    assert "Greg Brockman testified" in snippet
+    assert "https://example.com/openai" in snippet
+    assert len(snippet) > 240
 
 
 def test_chinese_compare_topics_extracts_openai_and_google() -> None:

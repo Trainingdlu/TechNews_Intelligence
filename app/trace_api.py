@@ -39,9 +39,13 @@ SPAN_TYPE_LABELS = {
     "tool_call": "工具执行",
     "guard": "策略检查",
     "postprocess": "后处理",
+    "context": "上下文整理",
 }
 
 SPAN_NAME_LABELS = {
+    "history_manifest_builder": "构建历史索引",
+    "context_pack_builder": "生成上下文包",
+    "context_curator": "上下文整理模型",
     "prepare_context": "准备上下文",
     "intent_router": "判断问题类型",
     "tool_selection": "选择工具",
@@ -185,6 +189,18 @@ def _public_run(row: dict[str, Any], *, include_payload: bool = False) -> dict[s
 def _display_name(span_type: str, name: str) -> str:
     type_label = SPAN_TYPE_LABELS.get(span_type, "执行步骤")
     name_label = SPAN_NAME_LABELS.get(name, name)
+    if span_type == "guard":
+        guard_labels = {
+            "tool_policy": "策略检查结果",
+            "clarification_response": "澄清触发结果",
+        }
+        return guard_labels.get(name, f"{type_label}：{name_label}")
+    if span_type == "postprocess":
+        postprocess_labels = {
+            "evidence_normalizer": "证据归一结果",
+            "output_guard": "输出清理结果",
+        }
+        return postprocess_labels.get(name, f"{type_label}：{name_label}")
     if span_type == "tool_call":
         return f"{type_label}：{name}"
     if span_type == "model_call":
