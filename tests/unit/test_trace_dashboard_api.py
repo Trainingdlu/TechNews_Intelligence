@@ -85,7 +85,16 @@ def test_list_runs_filters_and_returns_compact_rows(trace_api_mod, monkeypatch: 
         assert "final_status = %s" in sql
         assert "error_code = %s" in sql
         assert "user_message ILIKE %s" in sql
-        assert params[:6] == ("error", "tool_failed", "%OpenAI%", "%OpenAI%", "%OpenAI%", "%OpenAI%")
+        assert "COALESCE(error_code, '') ILIKE %s" in sql
+        assert params[:7] == (
+            "error",
+            "tool_failed",
+            "%OpenAI%",
+            "%OpenAI%",
+            "%OpenAI%",
+            "%OpenAI%",
+            "%OpenAI%",
+        )
         return (
             [
                 "request_id",

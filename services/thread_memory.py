@@ -322,16 +322,16 @@ def _generate_llm_summary_payload(
 
 
 def _build_memory_model() -> Any:
-    from services.llm_provider import DEFAULT_VERTEX_MODEL, build_chat_model
+    from services.llm_provider import DEFAULT_DEEPSEEK_MODEL, build_chat_model
 
-    provider = _first_env("AGENT_MEMORY_PROVIDER", "AGENT_GRAPH_CONTEXT_PROVIDER", default="vertex")
-    model = _first_env("AGENT_MEMORY_MODEL", "AGENT_GRAPH_CONTEXT_MODEL", default=DEFAULT_VERTEX_MODEL)
+    provider = _first_env("AGENT_MEMORY_PROVIDER", "AGENT_GRAPH_CONTEXT_PROVIDER", default="deepseek")
+    model = _first_env("AGENT_MEMORY_MODEL", "AGENT_GRAPH_CONTEXT_MODEL", default=DEFAULT_DEEPSEEK_MODEL)
     return build_chat_model(
         provider=provider,
         model_name=model,
         temperature=_env_float("AGENT_MEMORY_TEMPERATURE", 0.1),
-        default_provider="vertex",
-        default_model=DEFAULT_VERTEX_MODEL,
+        default_provider="deepseek",
+        default_model=DEFAULT_DEEPSEEK_MODEL,
     )
 
 

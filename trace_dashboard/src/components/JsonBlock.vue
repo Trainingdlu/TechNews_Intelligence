@@ -18,7 +18,28 @@ const props = defineProps({
 
 const copied = ref(false);
 
-const text = computed(() => JSON.stringify(props.value ?? null, null, 2));
+function providerInternalPlaceholder(key, value) {
+  const length = String(value ?? "").length;
+  return `[provider_internal_${key}_omitted chars=${length}]`;
+}
+
+function sanitizeDisplayValue(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeDisplayValue(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        key === "thought_signature" ? providerInternalPlaceholder(key, item) : sanitizeDisplayValue(item)
+      ])
+    );
+  }
+  return value;
+}
+
+const displayValue = computed(() => sanitizeDisplayValue(props.value ?? null));
+const text = computed(() => JSON.stringify(displayValue.value, null, 2));
 
 async function copyValue() {
   await navigator.clipboard.writeText(text.value);

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { createTraceClient, TraceApiError } from "./api";
 import JsonBlock from "./components/JsonBlock.vue";
 import SpanTree from "./components/SpanTree.vue";
@@ -13,8 +13,7 @@ const errorMessage = ref("");
 const meta = ref(null);
 const filters = ref({
   status: "all",
-  q: "",
-  error_code: ""
+  q: ""
 });
 const runs = ref([]);
 const total = ref(0);
@@ -117,7 +116,6 @@ async function loadRuns() {
     params.set("offset", "0");
     if (filters.value.status && filters.value.status !== "all") params.set("status", filters.value.status);
     if (filters.value.q.trim()) params.set("q", filters.value.q.trim());
-    if (filters.value.error_code.trim()) params.set("error_code", filters.value.error_code.trim());
     const payload = await client().runs(params);
     runs.value = payload.items || [];
     total.value = payload.total || 0;
@@ -181,7 +179,21 @@ async function selectSpan(span) {
     setError(error);
   } finally {
     loadingSpan.value = false;
+    await nextTick();
+    scrollDetailToTop();
+    scrollSelectedTreeNodeIntoView();
   }
+}
+
+function scrollDetailToTop() {
+  document.querySelector(".detail-panel")?.scrollTo({ top: 0 });
+}
+
+function scrollSelectedTreeNodeIntoView() {
+  document.querySelector(".span-node.selected")?.scrollIntoView({
+    block: "center",
+    inline: "nearest"
+  });
 }
 
 function statusLabel(status) {
@@ -230,11 +242,6 @@ function previewText(value, limit = 96) {
   return `${text.slice(0, limit)}…`;
 }
 
-function toolChain(value) {
-  if (!Array.isArray(value) || !value.length) return "无工具调用";
-  return value.join(" -> ");
-}
-
 function normalizeMessages(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -244,11 +251,29 @@ function messageRole(message) {
   return message?.role || message?.type || message?._type || message?.id?.[2] || "message";
 }
 
+function sanitizeProviderInternalPayload(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeProviderInternalPayload(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        key === "thought_signature"
+          ? `[provider_internal_${key}_omitted chars=${String(item ?? "").length}]`
+          : sanitizeProviderInternalPayload(item)
+      ])
+    );
+  }
+  return value;
+}
+
 function messageContent(message) {
   if (typeof message === "string") return message;
   const content = message?.content ?? message?.kwargs?.content ?? message?.data?.content ?? message;
-  if (typeof content === "string") return content;
-  return JSON.stringify(content, null, 2);
+  const cleanContent = sanitizeProviderInternalPayload(content);
+  if (typeof cleanContent === "string") return cleanContent;
+  return JSON.stringify(cleanContent, null, 2);
 }
 
 function collectUrls(span) {
@@ -282,7 +307,7 @@ onMounted(() => {
 <template>
   <main v-if="!hasToken" class="auth-page">
     <section class="auth-panel">
-      <p class="eyebrow">technews trace console</p>
+      <p class="eyebrow">Trace Console</p>
       <h1>输入访问 Token</h1>
       <form class="auth-form" @submit.prevent="submitToken">
         <input
@@ -300,20 +325,10 @@ onMounted(() => {
   <main v-else class="trace-shell">
     <header class="trace-topbar">
       <div class="brand-block">
-        <span class="brand-mark">TN</span>
         <div>
           <h1>Trace Console</h1>
           <p>{{ meta?.admin_email || "管理员" }}</p>
         </div>
-      </div>
-
-      <div class="run-strip" v-if="selectedRun">
-        <span class="status-pill" :class="statusClass(selectedRun.final_status)">
-          {{ statusLabel(selectedRun.final_status) }}
-        </span>
-        <span>{{ formatLatency(selectedRun.latency_ms) }}</span>
-        <span>{{ compactId(selectedRun.request_id) }}</span>
-        <span>{{ toolChain(selectedRun.tool_call_chain) }}</span>
       </div>
 
       <div class="top-actions">
@@ -326,30 +341,28 @@ onMounted(() => {
     </header>
 
     <section class="filterbar">
-      <label>
-        <span>状态</span>
-        <select v-model="filters.status" @change="loadRuns">
-          <option value="all">全部</option>
-          <option value="success">成功</option>
-          <option value="error">失败</option>
-          <option value="blocked">已拦截</option>
-        </select>
-      </label>
-      <label class="filter-search">
-        <span>关键词</span>
+      <div class="filter-left">
+        <label class="status-filter">
+          <span>状态</span>
+          <select v-model="filters.status" @change="loadRuns">
+            <option value="all">全部</option>
+            <option value="success">成功</option>
+            <option value="error">失败</option>
+            <option value="blocked">已拦截</option>
+          </select>
+        </label>
+      </div>
+      <form class="filter-center" @submit.prevent="loadRuns">
         <input
           v-model="filters.q"
           type="search"
-          placeholder="request_id / thread_id / 用户问题"
-          @keydown.enter="loadRuns"
+          placeholder="request_id / thread_id / 用户问题 / error_code"
         />
-      </label>
-      <label>
-        <span>错误码</span>
-        <input v-model="filters.error_code" type="search" placeholder="error_code" @keydown.enter="loadRuns" />
-      </label>
-      <button type="button" class="toolbar-button" @click="loadRuns">应用筛选</button>
-      <span class="filter-count">共 {{ total }} 条</span>
+        <button type="submit" class="toolbar-button">筛选</button>
+      </form>
+      <div class="filter-right">
+        <span class="filter-count">共 {{ total }} 条</span>
+      </div>
     </section>
 
     <p v-if="errorMessage" class="global-error">{{ errorMessage }}</p>
@@ -369,17 +382,17 @@ onMounted(() => {
             :class="{ selected: run.request_id === selectedRunId }"
             @click="selectRun(run)"
           >
-            <span class="row-head">
+            <span class="run-primary">
               <span class="status-dot" :class="statusClass(run.final_status)"></span>
-              <strong>{{ compactId(run.request_id) }}</strong>
+              <strong>{{ previewText(run.user_message || "无用户问题", 46) }}</strong>
               <span>{{ formatLatency(run.latency_ms) }}</span>
             </span>
-            <span class="run-message">{{ previewText(run.user_message) }}</span>
             <span class="row-foot">
               <span>{{ formatDate(run.created_at) }}</span>
               <span v-if="run.error_code">{{ run.error_code }}</span>
               <span v-else>{{ run.evidence_count || 0 }} 条证据</span>
             </span>
+            <span class="run-id">{{ compactId(run.request_id) }}</span>
           </button>
         </div>
       </aside>
@@ -409,8 +422,10 @@ onMounted(() => {
             </div>
           </section>
 
-          <section v-if="activeSpan.error_code || activeSpan.error_message" class="error-box">
-            <strong>{{ activeSpan.error_code || "执行失败" }}</strong>
+          <details v-if="activeSpan.error_code || activeSpan.error_message" class="error-box" open>
+            <summary>
+              <strong>{{ activeSpan.error_code || "执行失败" }}</strong>
+            </summary>
             <p>{{ activeSpan.error_message || "该节点记录了异常状态。" }}</p>
             <JsonBlock
               v-if="activeSpan.exception_chain && activeSpan.exception_chain.length"
@@ -418,22 +433,25 @@ onMounted(() => {
               :value="activeSpan.exception_chain"
               :open="false"
             />
-          </section>
+          </details>
 
           <section v-if="isModelSpan" class="model-section">
-            <div class="kv-grid">
-              <span>Provider</span><strong>{{ modelIo?.provider || "-" }}</strong>
-              <span>Model</span><strong>{{ modelIo?.model || "-" }}</strong>
-              <span>Node</span><strong>{{ modelIo?.node || activeSpan.name }}</strong>
-              <span>Token</span><strong>{{ modelIo?.token_usage?.total_tokens ?? "-" }}</strong>
-            </div>
+            <details class="info-block" open>
+              <summary>模型信息</summary>
+              <div class="kv-grid">
+                <span>Provider</span><strong>{{ modelIo?.provider || "-" }}</strong>
+                <span>Model</span><strong>{{ modelIo?.model || "-" }}</strong>
+                <span>Node</span><strong>{{ modelIo?.node || activeSpan.name }}</strong>
+                <span>Token</span><strong>{{ modelIo?.token_usage?.total_tokens ?? "-" }}</strong>
+              </div>
+            </details>
 
             <div v-if="modelIo" class="message-stack">
               <h4>模型输入 messages</h4>
-              <article v-for="(message, index) in normalizeMessages(modelIo.input_messages)" :key="index" class="message-card">
-                <span>{{ messageRole(message) }}</span>
+              <details v-for="(message, index) in normalizeMessages(modelIo.input_messages)" :key="index" class="message-card" open>
+                <summary>{{ messageRole(message) }}</summary>
                 <pre>{{ messageContent(message) }}</pre>
-              </article>
+              </details>
             </div>
             <div v-else class="empty-state compact">模型 I/O 加载中或不存在。</div>
 
@@ -443,16 +461,21 @@ onMounted(() => {
           </section>
 
           <section v-else-if="isToolSpan" class="tool-section">
-            <div class="kv-grid">
-              <span>工具</span><strong>{{ activeSpan.name }}</strong>
-              <span>状态</span><strong>{{ statusLabel(activeSpan.status) }}</strong>
-              <span>错误码</span><strong>{{ activeSpan.error_code || "-" }}</strong>
-              <span>耗时</span><strong>{{ formatLatency(activeSpan.latency_ms) }}</strong>
-            </div>
-            <div v-if="evidenceUrls.length" class="url-list">
-              <h4>证据 URL</h4>
-              <a v-for="url in evidenceUrls" :key="url" :href="url" target="_blank" rel="noreferrer">{{ url }}</a>
-            </div>
+            <details class="info-block" open>
+              <summary>工具信息</summary>
+              <div class="kv-grid">
+                <span>工具</span><strong>{{ activeSpan.name }}</strong>
+                <span>状态</span><strong>{{ statusLabel(activeSpan.status) }}</strong>
+                <span>错误码</span><strong>{{ activeSpan.error_code || "-" }}</strong>
+                <span>耗时</span><strong>{{ formatLatency(activeSpan.latency_ms) }}</strong>
+              </div>
+            </details>
+            <details v-if="evidenceUrls.length" class="url-list" open>
+              <summary>证据 URL</summary>
+              <div class="url-items">
+                <a v-for="url in evidenceUrls" :key="url" :href="url" target="_blank" rel="noreferrer">{{ url }}</a>
+              </div>
+            </details>
             <JsonBlock title="工具输入摘要（非完整输入）" :value="activeSpan.input_summary" />
             <JsonBlock title="工具输出摘要（非完整输出）" :value="activeSpan.output_summary" />
             <JsonBlock v-if="diagnostics" title="Diagnostics" :value="diagnostics" />
@@ -465,12 +488,15 @@ onMounted(() => {
           </section>
 
           <section v-else-if="isContextSpan" class="context-section">
-            <div class="kv-grid">
-              <span>策略</span><strong>{{ activeSpan.output_summary?.strategy || "-" }}</strong>
-              <span>选中历史</span><strong>{{ activeSpan.output_summary?.selected_turn_count ?? "-" }}</strong>
-              <span>选中证据</span><strong>{{ activeSpan.output_summary?.selected_evidence_count ?? "-" }}</strong>
-              <span>依赖历史</span><strong>{{ activeSpan.output_summary?.depends_on_history ?? "-" }}</strong>
-            </div>
+            <details class="info-block" open>
+              <summary>上下文信息</summary>
+              <div class="kv-grid">
+                <span>策略</span><strong>{{ activeSpan.output_summary?.strategy || "-" }}</strong>
+                <span>选中历史</span><strong>{{ activeSpan.output_summary?.selected_turn_count ?? "-" }}</strong>
+                <span>选中证据</span><strong>{{ activeSpan.output_summary?.selected_evidence_count ?? "-" }}</strong>
+                <span>依赖历史</span><strong>{{ activeSpan.output_summary?.depends_on_history ?? "-" }}</strong>
+              </div>
+            </details>
             <JsonBlock title="上下文输入摘要" :value="activeSpan.input_summary" />
             <JsonBlock title="上下文输出摘要" :value="activeSpan.output_summary" />
             <JsonBlock title="调试元数据" :value="activeSpan.metadata" />
@@ -482,7 +508,7 @@ onMounted(() => {
             <JsonBlock title="调试元数据" :value="activeSpan.metadata" />
           </section>
 
-          <JsonBlock title="完整节点记录（调试）" :value="activeSpan" :open="false" />
+          <JsonBlock title="完整节点记录" :value="activeSpan" :open="false" />
         </template>
       </section>
 

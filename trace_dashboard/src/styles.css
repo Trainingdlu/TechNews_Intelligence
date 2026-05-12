@@ -179,27 +179,16 @@ button {
 
 .trace-topbar {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 18px;
-  padding: 0 16px;
+  padding: 0 14px;
 }
 
 .brand-block {
   display: flex;
   align-items: center;
-  gap: 10px;
   min-width: 0;
-}
-
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line-strong);
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .brand-block h1,
@@ -243,6 +232,7 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+  justify-self: end;
 }
 
 .langsmith-state {
@@ -259,10 +249,29 @@ button {
 }
 
 .filterbar {
+  display: grid;
+  grid-template-columns: 330px minmax(480px, 1fr) 390px;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+}
+
+.filter-left,
+.filter-right {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 9px 16px;
+  min-width: 0;
+  height: 100%;
+  padding: 9px 14px;
+}
+
+.filter-left {
+  border-right: 1px solid var(--line);
+}
+
+.filter-right {
+  justify-content: flex-end;
+  border-left: 1px solid var(--line);
 }
 
 .filterbar label {
@@ -273,16 +282,22 @@ button {
   font-size: 12px;
 }
 
-.filter-search {
-  flex: 1;
+.status-filter select {
+  width: 108px;
 }
 
-.filter-search input {
+.filter-center {
+  min-width: 0;
   width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 74px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
 }
 
 .filter-count {
-  margin-left: auto;
   color: var(--muted);
   font-size: 12px;
 }
@@ -370,7 +385,7 @@ button {
   background: var(--surface-alt);
 }
 
-.row-head,
+.run-primary,
 .row-foot {
   display: flex;
   align-items: center;
@@ -378,14 +393,15 @@ button {
   min-width: 0;
 }
 
-.row-head strong {
+.run-primary strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 13px;
 }
 
-.row-head span:last-child,
+.run-primary span:last-child,
 .row-foot {
   color: var(--muted);
   font-size: 12px;
@@ -399,6 +415,16 @@ button {
 
 .row-foot {
   justify-content: space-between;
+}
+
+.run-id {
+  display: block;
+  color: var(--muted-soft);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-dot {
@@ -518,26 +544,45 @@ button {
 .error-box {
   border: 1px solid color-mix(in srgb, var(--error) 50%, var(--line));
   background: color-mix(in srgb, var(--error) 7%, var(--surface));
-  padding: 12px;
+  margin-bottom: 14px;
 }
 
-.error-box strong {
+.error-box summary,
+.info-block summary,
+.message-card summary,
+.url-list summary {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  background: var(--surface-alt);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.error-box summary strong {
   color: var(--error);
 }
 
 .error-box p {
-  margin: 8px 0 0;
+  margin: 0;
+  padding: 12px;
   color: var(--ink);
   line-height: 1.55;
+}
+
+.info-block {
+  border: 1px solid var(--line);
 }
 
 .kv-grid {
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr);
   gap: 8px 14px;
-  border: 1px solid var(--line);
   padding: 12px;
-  margin-bottom: 14px;
 }
 
 .kv-grid span {
@@ -551,8 +596,7 @@ button {
   overflow-wrap: anywhere;
 }
 
-.message-stack h4,
-.url-list h4 {
+.message-stack h4 {
   font-size: 13px;
   margin-bottom: 8px;
 }
@@ -562,13 +606,9 @@ button {
   margin-bottom: 10px;
 }
 
-.message-card > span {
-  display: block;
-  border-bottom: 1px solid var(--line);
+.message-card summary {
+  justify-content: flex-start;
   color: var(--muted);
-  background: var(--surface-alt);
-  padding: 6px 9px;
-  font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
 
@@ -585,8 +625,7 @@ button {
 
 .message-card pre {
   padding: 10px;
-  max-height: 340px;
-  overflow: auto;
+  overflow: visible;
 }
 
 .json-block {
@@ -610,8 +649,32 @@ button {
   background: var(--code-bg);
   color: var(--code-ink);
   padding: 12px;
-  max-height: 420px;
-  overflow: auto;
+  overflow: visible;
+}
+
+.model-section,
+.tool-section,
+.guard-section,
+.context-section,
+.generic-section {
+  padding: 0;
+}
+
+.model-section .kv-grid,
+.tool-section .kv-grid,
+.context-section .kv-grid,
+.model-section .info-block,
+.tool-section .info-block,
+.context-section .info-block,
+.model-section .message-stack,
+.tool-section .url-list,
+.model-section .json-block,
+.tool-section .json-block,
+.guard-section .json-block,
+.context-section .json-block,
+.generic-section .json-block {
+  width: 100%;
+  margin: 0 0 14px;
 }
 
 .ghost-button {
@@ -621,9 +684,29 @@ button {
   font-size: 12px;
 }
 
+.json-block .ghost-button {
+  height: auto;
+  min-height: 24px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 2px;
+}
+
+.json-block .ghost-button:hover {
+  color: var(--ink);
+  border-color: transparent;
+  background: transparent;
+}
+
 .url-list {
+  border: 1px solid var(--line);
+}
+
+.url-items {
   display: grid;
   gap: 7px;
+  padding: 10px;
 }
 
 .url-list a {
@@ -662,6 +745,7 @@ button {
 }
 
 .span-node {
+  scroll-margin: 96px 0;
   width: calc(100% - 8px);
   display: grid;
   grid-template-columns: 4px minmax(0, 1fr);
@@ -709,11 +793,46 @@ button {
   text-overflow: ellipsis;
 }
 
+.run-list,
+.detail-panel,
+.tree-panel {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.run-list:hover,
+.detail-panel:hover,
+.tree-panel:hover {
+  scrollbar-color: color-mix(in srgb, var(--muted) 55%, transparent) transparent;
+}
+
+.run-list::-webkit-scrollbar,
+.detail-panel::-webkit-scrollbar,
+.tree-panel::-webkit-scrollbar {
+  width: 10px;
+}
+
+.run-list::-webkit-scrollbar-thumb,
+.detail-panel::-webkit-scrollbar-thumb,
+.tree-panel::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+.run-list:hover::-webkit-scrollbar-thumb,
+.detail-panel:hover::-webkit-scrollbar-thumb,
+.tree-panel:hover::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--muted) 55%, transparent);
+}
+
 @media (max-width: 1320px) {
   body {
     min-width: 1080px;
   }
 
+  .filterbar,
   .trace-grid {
     grid-template-columns: 300px minmax(420px, 1fr) 350px;
   }

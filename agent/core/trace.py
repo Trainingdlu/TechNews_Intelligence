@@ -28,6 +28,7 @@ _MAX_CONTEXT_DOCS = 8
 logger = logging.getLogger(__name__)
 
 _SPAN_TYPES = {"graph_node", "model_call", "tool_call", "guard", "postprocess", "context"}
+_PROVIDER_INTERNAL_PAYLOAD_KEYS = {"thought_signature"}
 _SECRET_PATTERNS = (
     re.compile(r"(?i)\b(bearer\s+)[a-z0-9._~+/=-]{12,}"),
     re.compile(
@@ -135,6 +136,30 @@ def _json_safe_full(value: Any, *, seen: set[int] | None = None) -> Any:
         return repr(value)
 
 
+def _provider_internal_placeholder(key: str, value: Any) -> str:
+    try:
+        length = len(str(value or ""))
+    except Exception:
+        length = 0
+    return f"[provider_internal_{key}_omitted chars={length}]"
+
+
+def _strip_provider_internal_payload(value: Any) -> Any:
+    """Remove provider-internal binary/signature payloads from trace display/storage."""
+    if isinstance(value, dict):
+        stripped: dict[str, Any] = {}
+        for key, item in value.items():
+            clean_key = str(key)
+            if clean_key in _PROVIDER_INTERNAL_PAYLOAD_KEYS:
+                stripped[clean_key] = _provider_internal_placeholder(clean_key, item)
+            else:
+                stripped[clean_key] = _strip_provider_internal_payload(item)
+        return stripped
+    if isinstance(value, list):
+        return [_strip_provider_internal_payload(item) for item in value]
+    return value
+
+
 def _redact_text(text: str) -> str:
     redacted = text
     redacted = _SECRET_PATTERNS[0].sub(r"\1[REDACTED]", redacted)
@@ -179,7 +204,7 @@ def _serialize_message_full(message: Any) -> dict[str, Any]:
             value = getattr(message, attr)
             if value not in (None, "", [], {}):
                 payload[attr] = _json_safe_full(value)
-    return payload
+    return _strip_provider_internal_payload(payload)
 
 
 def _serialize_messages_full(messages: Any) -> Any:
@@ -191,7 +216,7 @@ def _serialize_messages_full(messages: Any) -> Any:
 def _serialize_raw_model_output(raw_output: Any) -> Any:
     if hasattr(raw_output, "content") or hasattr(raw_output, "response_metadata"):
         return _serialize_message_full(raw_output)
-    return _json_safe_full(raw_output)
+    return _strip_provider_internal_payload(_json_safe_full(raw_output))
 
 
 def _extract_context_docs(data: Any) -> list[dict[str, Any]]:

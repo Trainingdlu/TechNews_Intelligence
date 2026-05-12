@@ -198,6 +198,37 @@ def test_trace_span_records_parent_child_and_full_model_io(
     ]
 
 
+def test_model_io_omits_provider_internal_thought_signature(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AGENT_TRACE_FULL_MODEL_IO", "true")
+    persisted: list[dict] = []
+    monkeypatch.setattr("agent.core.trace._persist_request_trace", lambda summary: persisted.append(summary) or True)
+
+    with request_trace_context(user_message="hello", request_id="req-provider-internal"):
+        with trace_span("model_call", "intent_router") as span:
+            span.set_model_io(
+                node="intent_router",
+                provider="vertex",
+                model="gemini-test",
+                input_messages=[HumanMessage(content="full prompt")],
+                raw_output=AIMessage(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": "model answer text",
+                            "thought_signature": "abc123def456",
+                        }
+                    ]
+                ),
+            )
+        finalize_request_trace(final_status="success", evidence_count=0)
+
+    raw_content = persisted[0]["model_io"][0]["raw_output"]["content"][0]
+    assert raw_content["text"] == "model answer text"
+    assert raw_content["thought_signature"] == "[provider_internal_thought_signature_omitted chars=12]"
+
+
 def test_trace_full_model_io_can_be_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -282,10 +282,11 @@ def list_runs(
             "request_id ILIKE %s OR "
             "COALESCE(thread_id, '') ILIKE %s OR "
             "user_message ILIKE %s OR "
+            "COALESCE(error_code, '') ILIKE %s OR "
             "COALESCE(error_message, '') ILIKE %s"
             ")"
         )
-        params.extend([term, term, term, term])
+        params.extend([term, term, term, term, term])
 
     start_dt = _parse_datetime_filter(created_from, field_name="created_from")
     end_dt = _parse_datetime_filter(created_to, field_name="created_to")
