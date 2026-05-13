@@ -172,6 +172,21 @@ def _merge_doc(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
     existing["score"] = max(float(existing.get("score", 0.0) or 0.0), float(incoming.get("score", 0.0) or 0.0))
 
 
+def topic_side_for_doc(doc: dict[str, Any]) -> str:
+    """Return an unambiguous compare_topics side for a sampled document."""
+    group = str(doc.get("topic_group", "")).strip().upper()
+    if group in {"A", "B"}:
+        return group
+    labels = {str(item).strip().lower() for item in doc.get("query_labels", [])}
+    has_a = "topic_a" in labels
+    has_b = "topic_b" in labels
+    if has_a and not has_b:
+        return "A"
+    if has_b and not has_a:
+        return "B"
+    return ""
+
+
 def _select_base_fields_sql(extra_score: str = "0.0") -> str:
     return f"""
         SELECT
@@ -467,10 +482,11 @@ def sample_candidates(task: dict[str, Any], *, rng: random.Random) -> tuple[list
     for doc in docs:
         emb = doc.get("embedding")
         doc["seed_similarity"] = max((_cosine(emb, vec) for vec in seed_vectors), default=0.0)
-        if "topic_a" in doc.get("query_labels", []):
-            doc["topic_group"] = "A"
-        elif "topic_b" in doc.get("query_labels", []):
-            doc["topic_group"] = "B"
+        side = topic_side_for_doc(doc)
+        if side:
+            doc["topic_group"] = side
+        else:
+            doc.pop("topic_group", None)
 
     docs.sort(
         key=lambda doc: (
@@ -630,6 +646,10 @@ def _append_unique(out: list[dict[str, Any]], docs: list[dict[str, Any]], *, lim
             return
 
 
+def _normalize_pool_size(pool_size: int) -> int:
+    return max(1, min(12, max(8, int(pool_size))))
+
+
 def _pack_compare_sources(task: dict[str, Any], cluster_docs: list[dict[str, Any]], pool_size: int) -> tuple[list[dict[str, Any]], bool]:
     sources = [str(item).strip() for item in task.get("sampling", {}).get("sources", []) if str(item).strip()]
     by_source: dict[str, list[dict[str, Any]]] = {}
@@ -649,15 +669,17 @@ def _pack_compare_sources(task: dict[str, Any], cluster_docs: list[dict[str, Any
 
 
 def _pack_compare_topics(cluster_docs: list[dict[str, Any]], pool_size: int) -> tuple[list[dict[str, Any]], bool]:
-    a_docs = [doc for doc in cluster_docs if doc.get("topic_group") == "A"]
-    b_docs = [doc for doc in cluster_docs if doc.get("topic_group") == "B"]
+    a_docs = [doc for doc in cluster_docs if topic_side_for_doc(doc) == "A"]
+    b_docs = [doc for doc in cluster_docs if topic_side_for_doc(doc) == "B"]
     if not a_docs or not b_docs:
         return [], False
     a_docs.sort(key=lambda doc: float(doc.get("seed_similarity", 0.0) or 0.0), reverse=True)
     b_docs.sort(key=lambda doc: float(doc.get("seed_similarity", 0.0) or 0.0), reverse=True)
     half = max(1, pool_size // 2)
     selected = a_docs[:half] + b_docs[: pool_size - half]
-    return selected, abs(len([doc for doc in selected if doc.get("topic_group") == "A"]) - len([doc for doc in selected if doc.get("topic_group") == "B"])) <= 1
+    a_selected = len([doc for doc in selected if topic_side_for_doc(doc) == "A"])
+    b_selected = len([doc for doc in selected if topic_side_for_doc(doc) == "B"])
+    return selected, abs(a_selected - b_selected) <= 1
 
 
 def _pack_timeline(cluster_docs: list[dict[str, Any]], pool_size: int) -> tuple[list[dict[str, Any]], bool]:
@@ -679,7 +701,7 @@ def _pack_default(cluster_docs: list[dict[str, Any]], pool_size: int) -> tuple[l
 def pack_cluster(task: dict[str, Any], cluster_docs: list[dict[str, Any]], *, pool_size: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     tool = str(task.get("tool", "")).strip()
     scenario = str(task.get("scenario", "")).strip().lower()
-    pool_size = max(1, min(12, max(8, int(pool_size))))
+    pool_size = _normalize_pool_size(pool_size)
     strategy = "default_source_diverse"
     if scenario == "empty":
         selected, ok = _pack_default(cluster_docs, pool_size)
@@ -709,6 +731,35 @@ def pack_cluster(task: dict[str, Any], cluster_docs: list[dict[str, Any]], *, po
     }
 
 
+def _compare_topic_balanced_groups(
+    candidates: list[dict[str, Any]],
+    *,
+    pool_size: int,
+    pools_per_task: int,
+) -> list[list[dict[str, Any]]]:
+    pool_size = _normalize_pool_size(pool_size)
+    target_pools = max(0, int(pools_per_task))
+    if target_pools <= 0:
+        return []
+    a_docs = _round_robin_by_source([doc for doc in candidates if topic_side_for_doc(doc) == "A"])
+    b_docs = _round_robin_by_source([doc for doc in candidates if topic_side_for_doc(doc) == "B"])
+    groups: list[list[dict[str, Any]]] = []
+    a_cursor = 0
+    b_cursor = 0
+    for idx in range(target_pools):
+        a_take = pool_size // 2
+        b_take = pool_size - a_take
+        if pool_size % 2 and idx % 2:
+            a_take, b_take = b_take, a_take
+        if len(a_docs) - a_cursor < a_take or len(b_docs) - b_cursor < b_take:
+            break
+        group = a_docs[a_cursor : a_cursor + a_take] + b_docs[b_cursor : b_cursor + b_take]
+        a_cursor += a_take
+        b_cursor += b_take
+        groups.append(group)
+    return groups
+
+
 def _cluster_score(docs: list[dict[str, Any]]) -> float:
     if not docs:
         return 0.0
@@ -730,7 +781,8 @@ def _cluster_score(docs: list[dict[str, Any]]) -> float:
 
 def build_pools(task: dict[str, Any], candidates: list[dict[str, Any]], *, pools_per_task: int, rng: random.Random) -> tuple[list[SampledPool], dict[str, Any]]:
     sampling = task.get("sampling", {})
-    pool_size = _safe_int(sampling.get("pool_size", 12), 12)
+    pool_size = _normalize_pool_size(_safe_int(sampling.get("pool_size", 12), 12))
+    tool = str(task.get("tool", "")).strip()
     scenario = str(task.get("scenario", "")).strip().lower()
     sim_floor = _recall_sim_floor()
     meta: dict[str, Any] = {
@@ -746,6 +798,19 @@ def build_pools(task: dict[str, Any], candidates: list[dict[str, Any]], *, pools
         low.sort(key=lambda doc: (float(doc.get("seed_similarity", 0.0) or 0.0), doc.get("published_at", "")))
         groups = [low[idx : idx + pool_size] for idx in range(0, len(low), pool_size)]
         meta.update({"cluster_mode": "empty_negative", "empty_sim_ceiling": ceiling, "cluster_count": len(groups)})
+    elif tool == "compare_topics":
+        groups = _compare_topic_balanced_groups(candidates, pool_size=pool_size, pools_per_task=pools_per_task)
+        side_counts = {
+            "A": sum(1 for doc in candidates if topic_side_for_doc(doc) == "A"),
+            "B": sum(1 for doc in candidates if topic_side_for_doc(doc) == "B"),
+        }
+        meta.update(
+            {
+                "cluster_mode": "topic_side_balanced",
+                "cluster_count": len(groups),
+                "topic_side_counts": side_counts,
+            }
+        )
     else:
         clusters, cluster_meta = _cluster_with_hdbscan(candidates)
         meta.update(cluster_meta)

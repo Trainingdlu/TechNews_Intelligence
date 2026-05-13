@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 
-from eval.corpus_sampler import build_pools, pack_cluster
+from eval.corpus_sampler import build_pools, pack_cluster, topic_side_for_doc
 
 
 def _doc(idx: int, *, source: str, day: int, sim: float, topic_group: str = "") -> dict:
@@ -64,6 +64,48 @@ def test_pack_compare_topics_balances_topic_groups() -> None:
     assert meta["packing_constraints_passed"] is True
     assert len([doc for doc in selected if doc["topic_group"] == "A"]) == 5
     assert len([doc for doc in selected if doc["topic_group"] == "B"]) == 5
+
+
+def test_topic_side_for_doc_requires_unambiguous_label() -> None:
+    doc = _doc(1, source="S1", day=1, sim=0.9)
+    doc["query_labels"] = ["topic_a", "topic_b"]
+
+    assert topic_side_for_doc(doc) == ""
+
+    doc["topic_group"] = "A"
+    assert topic_side_for_doc(doc) == "A"
+
+
+def test_build_pools_compare_topics_balances_sides_across_pools() -> None:
+    task = {
+        "task_id": "compare_topics.normal",
+        "tool": "compare_topics",
+        "scenario": "normal",
+        "sampling": {"pool_size": 12},
+    }
+    candidates: list[dict] = []
+    for i in range(1, 19):
+        doc = _doc(i, source=f"S{i % 3}", day=((i - 1) % 28) + 1, sim=0.9 - i * 0.001)
+        doc["query_labels"] = ["topic_a"]
+        candidates.append(doc)
+    for i in range(19, 37):
+        doc = _doc(i, source=f"S{i % 3}", day=((i - 1) % 28) + 1, sim=0.9 - i * 0.001)
+        doc["query_labels"] = ["topic_b"]
+        candidates.append(doc)
+
+    pools, meta = build_pools(task, candidates, pools_per_task=3, rng=random.Random(1))
+
+    assert meta["cluster_mode"] == "topic_side_balanced"
+    assert meta["topic_side_counts"] == {"A": 18, "B": 18}
+    assert len(pools) == 3
+    used_doc_ids = [doc["doc_id"] for pool in pools for doc in pool.docs]
+    assert len(used_doc_ids) == len(set(used_doc_ids))
+    for pool in pools:
+        side_counts = {
+            "A": sum(1 for doc in pool.docs if topic_side_for_doc(doc) == "A"),
+            "B": sum(1 for doc in pool.docs if topic_side_for_doc(doc) == "B"),
+        }
+        assert side_counts == {"A": 6, "B": 6}
 
 
 def test_empty_build_pools_uses_negative_candidates_without_positive_floor(monkeypatch) -> None:

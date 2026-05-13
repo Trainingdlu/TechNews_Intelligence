@@ -133,6 +133,7 @@ def build_dataset_fingerprint_payload(
         "scenario_retrieval_map_enforced": bool(getattr(args, "enforce_scenario_retrieval_map", False)),
         "audit_policy": {
             "enabled": not bool(args.disable_audit),
+            "allow_topic_audit_fail": bool(getattr(args, "allow_topic_audit_fail", False)),
             "max_seed_attempts": int(getattr(args, "seed_max_attempts", 3)),
             "temperature_schedule": "feedback_descending",
             "legacy_max_regen_rounds": int(args.audit_max_regen_rounds),
@@ -1581,6 +1582,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Disable the second-pass audit model validation.",
     )
     parser.add_argument(
+        "--allow-topic-audit-fail",
+        action="store_true",
+        help="Allow generation to continue when the topic preflight audit fails. Intended for smoke/debug only.",
+    )
+    parser.add_argument(
         "--audit-max-regen-rounds",
         type=int,
         default=int(os.getenv("AUDIT_MAX_REGEN_ROUNDS", os.getenv("TASK_EVAL_AUDIT_MAX_REGEN_ROUNDS", "3"))),
@@ -1895,8 +1901,34 @@ def main(argv: list[str] | None = None) -> int:
                     len(topic_audit.get("warnings", [])),
                 )
             )
-
-        if pools:
+        topic_audit_blocked = topic_audit.get("verdict") == "fail" and not bool(
+            getattr(args, "allow_topic_audit_fail", False)
+        )
+        if topic_audit_blocked:
+            feedback_reasons = [
+                str(issue.get("code", "")).strip()
+                for issue in topic_audit.get("issues", [])
+                if isinstance(issue, dict) and str(issue.get("code", "")).strip()
+            ] or ["topic_audit_failed"]
+            generated_cases = []
+            dropped_for_task = [
+                {
+                    "task_id": task["task_id"],
+                    "pool_id": "",
+                    "pool_hash": "",
+                    "attempts": 0,
+                    "temperatures": seed_temperatures,
+                    "failure_stage": "topic_audit",
+                    "reason": "topic_audit_failed",
+                    "last_score": 0.0,
+                    "candidate_doc_ids": [str(doc.get("doc_id", "")) for doc in candidates],
+                    "pool_ids": [str(pool.pool_id) for pool in pools],
+                    "feedback_reasons": feedback_reasons,
+                    "attempt_log": [],
+                }
+            ]
+            print("[TaskDataset][TopicAuditBlock] task=%s reason=topic_audit_failed" % task["task_id"])
+        elif pools:
             generated_cases, dropped_for_task, _task_api_errors = _generate_cases_seed_level(
                 generation_llms=generation_llms,
                 audit_llm=audit_llm,
@@ -1969,6 +2001,8 @@ def main(argv: list[str] | None = None) -> int:
             "audit_temperature": float(args.audit_temperature),
             "seed_max_attempts": int(args.seed_max_attempts),
             "seed_attempt_temperatures": seed_temperatures,
+            "audit_enabled": not bool(args.disable_audit),
+            "allow_topic_audit_fail": bool(getattr(args, "allow_topic_audit_fail", False)),
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
             "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
@@ -2025,6 +2059,7 @@ def main(argv: list[str] | None = None) -> int:
         "seed_max_attempts": int(args.seed_max_attempts),
         "seed_attempt_temperatures": seed_temperatures,
         "audit_enabled": not bool(args.disable_audit),
+        "allow_topic_audit_fail": bool(getattr(args, "allow_topic_audit_fail", False)),
         "llm_max_retries": int(args.llm_max_retries),
         "llm_backoff_sec": float(args.llm_backoff_sec),
         "audit_max_regen_rounds": int(args.audit_max_regen_rounds),
@@ -2062,6 +2097,8 @@ def main(argv: list[str] | None = None) -> int:
             "audit_temperature": float(args.audit_temperature),
             "seed_max_attempts": int(args.seed_max_attempts),
             "seed_attempt_temperatures": seed_temperatures,
+            "audit_enabled": not bool(args.disable_audit),
+            "allow_topic_audit_fail": bool(getattr(args, "allow_topic_audit_fail", False)),
             "llm_max_retries": int(args.llm_max_retries),
             "llm_backoff_sec": float(args.llm_backoff_sec),
             "audit_max_regen_rounds": int(args.audit_max_regen_rounds),

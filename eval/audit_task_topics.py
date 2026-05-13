@@ -14,10 +14,10 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from corpus_sampler import build_eval_sample
+    from corpus_sampler import build_eval_sample, topic_side_for_doc
     from task_eval_schema import load_task_types
 except ImportError:
-    from .corpus_sampler import build_eval_sample
+    from .corpus_sampler import build_eval_sample, topic_side_for_doc
     from .task_eval_schema import load_task_types
 
 
@@ -211,12 +211,9 @@ def _pool_docs(pool: Any) -> list[dict[str, Any]]:
 def _topic_side_counts(candidates: list[dict[str, Any]]) -> dict[str, int]:
     counts = {"A": 0, "B": 0}
     for doc in candidates:
-        group = str(doc.get("topic_group", "")).strip()
-        labels = {str(item).strip() for item in doc.get("query_labels", [])}
-        if group == "A" or "topic_a" in labels:
-            counts["A"] += 1
-        if group == "B" or "topic_b" in labels:
-            counts["B"] += 1
+        side = topic_side_for_doc(doc)
+        if side in counts:
+            counts[side] += 1
     return counts
 
 

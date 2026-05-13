@@ -166,6 +166,24 @@ def test_runtime_audit_rejects_compare_topics_missing_side() -> None:
     assert any(issue["code"] == "topic_side_coverage_insufficient" for issue in result["issues"])
 
 
+def test_runtime_audit_does_not_double_count_ambiguous_compare_topic_labels() -> None:
+    task = _task(
+        tool="compare_topics",
+        params={"topic_a": "OpenAI", "topic_b": "Anthropic", "days": 21},
+        keywords=["OpenAI", "Anthropic"],
+    )
+    candidates = [_doc(i, day=(i % 5) + 1) for i in range(1, 80)]
+    for doc in candidates:
+        doc["query_labels"] = ["topic_a", "topic_b"]
+    pools = [{"docs": candidates[:12]}, {"docs": candidates[12:24]}, {"docs": candidates[24:36]}]
+
+    result = audit_task_with_sample(task, candidates, _sample_meta(candidates), pools=pools)
+
+    assert result["verdict"] == "fail"
+    assert result["coverage"]["topic_side_counts"] == {"A": 0, "B": 0}
+    assert any(issue["code"] == "topic_side_coverage_insufficient" for issue in result["issues"])
+
+
 def test_runtime_audit_rejects_timeline_without_time_spread() -> None:
     task = _task(
         tool="build_timeline",

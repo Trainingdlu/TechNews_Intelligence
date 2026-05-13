@@ -130,9 +130,9 @@
     "intent_label": "search_news",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "查询一个预期没有匹配新闻的合成 Claude 收购主题。",
+    "example_question": "查询一个预期没有匹配新闻的 zzqvqx 合成主题。",
     "parameter_template": {
-      "query": "zzqv 不存在的 Claude 收购 2026",
+      "query": "zzqvqx phantom-lab xylora-nil merger 2026",
       "days": 14
     },
     "acceptable_tool_paths": [
@@ -140,7 +140,7 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "zzqv 不存在的 Claude 收购 2026",
+            "query": "zzqvqx phantom-lab xylora-nil merger 2026",
             "days": 14
           }
         }
@@ -149,7 +149,7 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "zzqv 不存在的 Claude 收购 2026",
+            "query": "zzqvqx phantom-lab xylora-nil merger 2026",
             "days": 14,
             "limit": 10
           }
@@ -157,7 +157,7 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "zzqv 不存在的 Claude 收购 2026",
+            "query": "zzqvqx phantom-lab xylora-nil merger 2026",
             "days": 14
           }
         }
@@ -175,8 +175,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "zzqv",
-        "不存在的 Claude 收购 2026"
+        "zzqvqx",
+        "phantom-lab xylora-nil merger 2026"
       ],
       "sources": [],
       "languages": []
@@ -377,9 +377,9 @@
     "intent_label": "fulltext_batch",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "批量读取一个预期没有候选新闻的合成语音模型发布主题全文。",
+    "example_question": "批量读取一个预期没有候选新闻的 zzqvqx 合成主题全文。",
     "parameter_template": {
-      "urls": "zzqv 不存在的语音模型发布 2026",
+      "urls": "zzqvqx phantom-signal xylora-null release 2026",
       "max_chars_per_article": 4000
     },
     "acceptable_tool_paths": [
@@ -387,7 +387,7 @@
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "zzqv 不存在的语音模型发布 2026",
+            "urls": "zzqvqx phantom-signal xylora-null release 2026",
             "max_chars_per_article": 4000
           }
         }
@@ -396,14 +396,14 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "zzqv 不存在的语音模型发布 2026",
+            "query": "zzqvqx phantom-signal xylora-null release 2026",
             "days": 14
           }
         },
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "zzqv 不存在的语音模型发布 2026",
+            "urls": "zzqvqx phantom-signal xylora-null release 2026",
             "max_chars_per_article": 4000
           }
         }
@@ -421,8 +421,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "zzqv",
-        "不存在的语音模型发布 2026"
+        "zzqvqx",
+        "phantom-signal xylora-null release 2026"
       ],
       "sources": [],
       "languages": []
@@ -629,8 +629,8 @@
     "scenario": "empty",
     "example_question": "比较两个预期数据不足的合成罕见实体。",
     "parameter_template": {
-      "topic_a": "rare_entity_alpha",
-      "topic_b": "rare_entity_beta",
+      "topic_a": "zzqvqx phantom-alpha protocol",
+      "topic_b": "xylora-null beta doctrine",
       "days": 21
     },
     "acceptable_tool_paths": [
@@ -638,8 +638,8 @@
         {
           "tool": "compare_topics",
           "args": {
-            "topic_a": "rare_entity_alpha",
-            "topic_b": "rare_entity_beta",
+            "topic_a": "zzqvqx phantom-alpha protocol",
+            "topic_b": "xylora-null beta doctrine",
             "days": 21
           }
         }
@@ -648,7 +648,7 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "rare_entity_alpha",
+            "query": "zzqvqx phantom-alpha protocol",
             "days": 21,
             "limit": 10
           }
@@ -656,8 +656,8 @@
         {
           "tool": "compare_topics",
           "args": {
-            "topic_a": "rare_entity_alpha",
-            "topic_b": "rare_entity_beta",
+            "topic_a": "zzqvqx phantom-alpha protocol",
+            "topic_b": "xylora-null beta doctrine",
             "days": 21
           }
         }
@@ -675,8 +675,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "rare_entity_alpha",
-        "rare_entity_beta"
+        "zzqvqx phantom-alpha protocol",
+        "xylora-null beta doctrine"
       ],
       "sources": [],
       "languages": []
@@ -883,9 +883,9 @@
     "intent_label": "compare_sources",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "比较一个预期为空的合成 GPU 初创公司融资主题的来源覆盖。",
+    "example_question": "比较一个预期为空的 zzqvqx 合成主题的来源覆盖。",
     "parameter_template": {
-      "topic": "zzqv 不存在的 GPU 初创公司融资",
+      "topic": "zzqvqx phantom-source xylora-null ledger 2026",
       "days": 14
     },
     "acceptable_tool_paths": [
@@ -893,7 +893,7 @@
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "zzqv 不存在的 GPU 初创公司融资",
+            "topic": "zzqvqx phantom-source xylora-null ledger 2026",
             "days": 14
           }
         }
@@ -902,7 +902,7 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "zzqv 不存在的 GPU 初创公司融资",
+            "query": "zzqvqx phantom-source xylora-null ledger 2026",
             "days": 14,
             "limit": 10
           }
@@ -910,7 +910,7 @@
         {
           "tool": "compare_sources",
           "args": {
-            "topic": "zzqv 不存在的 GPU 初创公司融资",
+            "topic": "zzqvqx phantom-source xylora-null ledger 2026",
             "days": 14
           }
         }
@@ -928,8 +928,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "zzqv",
-        "不存在的 GPU 初创公司融资"
+        "zzqvqx",
+        "phantom-source xylora-null ledger 2026"
       ],
       "sources": [
         "HackerNews",
@@ -1144,7 +1144,7 @@
     "scenario": "empty",
     "example_question": "为一个预期为空的合成事件主题构建时间线。",
     "parameter_template": {
-      "topic": "zzqv 不存在的时间线事件 2026",
+      "topic": "zzqvqx phantom-chronicle xylora-null event 2026",
       "days": 14,
       "limit": 12
     },
@@ -1153,7 +1153,7 @@
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "zzqv 不存在的时间线事件 2026",
+            "topic": "zzqvqx phantom-chronicle xylora-null event 2026",
             "days": 14,
             "limit": 12
           }
@@ -1163,7 +1163,7 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "zzqv 不存在的时间线事件 2026",
+            "query": "zzqvqx phantom-chronicle xylora-null event 2026",
             "days": 14,
             "limit": 10
           }
@@ -1171,7 +1171,7 @@
         {
           "tool": "build_timeline",
           "args": {
-            "topic": "zzqv 不存在的时间线事件 2026",
+            "topic": "zzqvqx phantom-chronicle xylora-null event 2026",
             "days": 14,
             "limit": 12
           }
@@ -1190,8 +1190,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "zzqv",
-        "不存在的时间线事件 2026"
+        "zzqvqx",
+        "phantom-chronicle xylora-null event 2026"
       ],
       "sources": [],
       "languages": []
@@ -1393,9 +1393,9 @@
     "intent_label": "trend_analysis",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "分析一个预期没有证据支持的合成趋势主题。",
+    "example_question": "分析一个预期没有证据支持的 zzqvqx 合成主题。",
     "parameter_template": {
-      "topic": "zzqv 不存在的趋势主题 2026",
+      "topic": "zzqvqx phantom-metric xylora-null drift 2026",
       "window": 7
     },
     "acceptable_tool_paths": [
@@ -1403,7 +1403,7 @@
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "zzqv 不存在的趋势主题 2026",
+            "topic": "zzqvqx phantom-metric xylora-null drift 2026",
             "window": 7
           }
         }
@@ -1412,7 +1412,7 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "zzqv 不存在的趋势主题 2026",
+            "query": "zzqvqx phantom-metric xylora-null drift 2026",
             "days": 7,
             "limit": 10
           }
@@ -1420,7 +1420,7 @@
         {
           "tool": "trend_analysis",
           "args": {
-            "topic": "zzqv 不存在的趋势主题 2026",
+            "topic": "zzqvqx phantom-metric xylora-null drift 2026",
             "window": 7
           }
         }
@@ -1438,8 +1438,8 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "zzqv",
-        "不存在的趋势主题 2026"
+        "zzqvqx",
+        "phantom-metric xylora-null drift 2026"
       ],
       "sources": [],
       "languages": []
@@ -1655,11 +1655,11 @@
     "intent_label": "analyze_landscape",
     "retrieval_mode": "non_retrieval",
     "scenario": "empty",
-    "example_question": "分析一个预期没有证据的合成 AI 微领域。",
+    "example_question": "分析一个预期没有证据的 zzqvqx 合成领域。",
     "parameter_template": {
-      "topic": "zzqv 不存在的 AI 微领域",
+      "topic": "zzqvqx phantom-sector xylora-null domain 2026",
       "days": 30,
-      "entities": "rare_entity_alpha,rare_entity_beta",
+      "entities": "zzqvqx-alpha,xylora-null-beta",
       "limit_per_entity": 3
     },
     "acceptable_tool_paths": [
@@ -1667,9 +1667,9 @@
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "zzqv 不存在的 AI 微领域",
+            "topic": "zzqvqx phantom-sector xylora-null domain 2026",
             "days": 30,
-            "entities": "rare_entity_alpha,rare_entity_beta",
+            "entities": "zzqvqx-alpha,xylora-null-beta",
             "limit_per_entity": 3
           }
         }
@@ -1678,7 +1678,7 @@
         {
           "tool": "query_news",
           "args": {
-            "query": "zzqv 不存在的 AI 微领域",
+            "query": "zzqvqx phantom-sector xylora-null domain 2026",
             "days": 30,
             "limit": 10
           }
@@ -1686,9 +1686,9 @@
         {
           "tool": "analyze_landscape",
           "args": {
-            "topic": "zzqv 不存在的 AI 微领域",
+            "topic": "zzqvqx phantom-sector xylora-null domain 2026",
             "days": 30,
-            "entities": "rare_entity_alpha,rare_entity_beta",
+            "entities": "zzqvqx-alpha,xylora-null-beta",
             "limit_per_entity": 3
           }
         }
@@ -1706,10 +1706,10 @@
       "pool_size": 12,
       "candidate_limit": 300,
       "keywords": [
-        "zzqv",
-        "不存在的 AI 微领域",
-        "rare_entity_alpha",
-        "rare_entity_beta"
+        "zzqvqx",
+        "phantom-sector xylora-null domain 2026",
+        "zzqvqx-alpha",
+        "xylora-null-beta"
       ],
       "sources": [],
       "languages": []

@@ -77,3 +77,11 @@ def test_provider_only_uses_provider_default_model(monkeypatch) -> None:
 
     assert args.provider == "deepseek"
     assert args.model == DEFAULT_DEEPSEEK_MODEL
+
+
+def test_topic_audit_fail_override_defaults_to_blocking() -> None:
+    args = mod._parse_args([])
+    assert args.allow_topic_audit_fail is False
+
+    args = mod._parse_args(["--allow-topic-audit-fail"])
+    assert args.allow_topic_audit_fail is True
