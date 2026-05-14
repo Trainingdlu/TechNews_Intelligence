@@ -120,6 +120,7 @@
 
     // == View Switching ==
     function showAuth() {
+        document.body.classList.remove('chat-active');
         chatView.classList.remove('active');
         // small delay so CSS transition runs
         requestAnimationFrame(() => {
@@ -128,6 +129,7 @@
     }
 
     function showChat() {
+        document.body.classList.add('chat-active');
         authView.classList.remove('active');
         requestAnimationFrame(() => {
             chatView.classList.add('active');

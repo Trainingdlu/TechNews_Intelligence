@@ -20,8 +20,9 @@
     --border-color: #e0e0e0;
     --chip-border: #c4c7c5;
     --primary-blue: #0b57d0;
-    --user-bubble: #eef0f3;
-    --user-bubble-text: var(--text-primary);
+    --user-bubble: #e1e8f0;
+    --user-bubble-text: #111827;
+    --user-bubble-border: rgba(92, 112, 132, 0.16);
     --agent-bubble: var(--surface-color);
     --input-bg: #f0f4f8;
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -97,6 +98,7 @@
         --primary-blue: #8ab4f8;
         --user-bubble: #2f3136;
         --user-bubble-text: var(--text-primary);
+        --user-bubble-border: rgba(255, 255, 255, 0.04);
         --agent-bubble: #2a2a2a;
         --input-bg: #2a2a2a;
         --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -166,6 +168,7 @@
     --primary-blue: #8ab4f8;
     --user-bubble: #2f3136;
     --user-bubble-text: var(--text-primary);
+    --user-bubble-border: rgba(255, 255, 255, 0.04);
     --agent-bubble: #2a2a2a;
     --input-bg: #2a2a2a;
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
@@ -220,6 +223,9 @@
 
 :root[data-theme="light"] {
     color-scheme: light;
+    --user-bubble: #e1e8f0;
+    --user-bubble-text: #111827;
+    --user-bubble-border: rgba(92, 112, 132, 0.16);
     --swiss-ink: #101514;
     --swiss-muted: #4f565b;
     --title-ink: #101514;
@@ -1015,6 +1021,7 @@ body {
 .msg.user .msg-content {
     background: var(--user-bubble);
     color: var(--user-bubble-text);
+    box-shadow: inset 0 0 0 1px var(--user-bubble-border);
     border-bottom-right-radius: 4px;
 }
 
@@ -1460,6 +1467,7 @@ body {
         display: none;
     }
 
+    .agent-page.chat-active,
     .agent-page:has(#chat-view.active) {
         height: 100dvh;
         overflow: hidden;
@@ -1475,6 +1483,11 @@ body {
         right: 0;
         bottom: 0;
         z-index: 1003;
+    }
+
+    .agent-page.chat-active .bottom-nav,
+    .agent-page:has(#chat-view.active) .bottom-nav {
+        display: none;
     }
 
     .agent-page #theme-toggle,
@@ -1573,7 +1586,7 @@ body {
         min-height: 0;
         max-width: 100%;
         padding-top: calc(56px + env(safe-area-inset-top));
-        padding-bottom: calc(150px + env(safe-area-inset-bottom));
+        padding-bottom: calc(88px + env(safe-area-inset-bottom));
     }
 
     .agent-page .chat-header {
@@ -1621,7 +1634,7 @@ body {
         position: fixed;
         left: 0;
         right: 0;
-        bottom: calc(64px + env(safe-area-inset-bottom));
+        bottom: env(safe-area-inset-bottom);
         z-index: 1002;
         padding: 10px 16px 12px;
         border-top: none;
