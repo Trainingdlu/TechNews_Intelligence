@@ -1,6 +1,21 @@
-# TechNews Intelligence
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/svg/title.svg" alt="TechNews Intelligence" width="700">
+  <br>
+  <img src="https://img.shields.io/badge/stack-n8n_|_PostgreSQL_|_Metabase_|_Agent-blue?style=flat-square" alt="技术栈">
+  <img src="https://img.shields.io/badge/runtime-LangGraph_|_ToolRuntime-green?style=flat-square" alt="运行时">
+  <img src="https://img.shields.io/badge/license-AGPL_3.0-red?style=flat-square" alt="许可证">
+  <p align="center">
+    <a href="https://dashboard.trainingcqy.com" style="text-decoration:none"><strong>Metabase 演示</strong></a>
+    &nbsp;&nbsp; | &nbsp;&nbsp;
+    <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>智能体交互</strong></a>
+    &nbsp;&nbsp; | &nbsp;&nbsp;
+    <a href="https://agent.trainingcqy.com/subscribe.html" style="text-decoration:none"><strong>日报订阅</strong></a>
+  </p>
+</div>
 
 TechNews Intelligence 是面向科技新闻的自动化情报系统。系统通过 n8n 采集新闻和正文，使用 PostgreSQL + pgvector 存储结构化数据和向量数据，并提供可检索、可追踪、可评测的 Agent 分析能力。用户可以通过 Web API、Trace Console、Telegram Bot、Metabase 看板和本地 CLI 使用系统。
+
+![效果展示](https://raw.githubusercontent.com/Trainingdlu/TechNews_Intelligence/main/assets/previews/showcase.png)
 
 ## 核心能力
 
@@ -25,11 +40,12 @@ TechNews Intelligence 是面向科技新闻的自动化情报系统。系统通�
 | `sql/` | 数据库 schema、视图、seed、分析 SQL。 |
 | `deployment/` | Docker Compose、环境变量模板、数据库运维脚本。 |
 | `etl_workflow/` | n8n 工作流导出文件。 |
+| `docs/` | 架构、部署、开发和评测文档。 |
 
 ## 快速启动
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/Trainingdlu/TechNews_Intelligence.git
 cd TechNews_Intelligence
 cp deployment/.env.example deployment/.env
 ```
@@ -106,8 +122,8 @@ python eval/trace_query.py --request-id <request_id>
 
 - [系统架构](docs/ARCHITECTURE.md)
 - [部署与运维](docs/OPERATIONS.md)
-- [评测体系](docs/EVALUATION.md)
 - [开发说明](docs/DEVELOPMENT.md)
+- [评测体系](docs/EVALUATION.md)
 
 ## License
 

@@ -314,7 +314,7 @@ def test_lookup_candidates_by_query_accepts_extended_hybrid_columns_without_reor
             4.0,   # text_score
             0.9,   # semantic_score
             3.0,   # exact_score
-            0.9,   # match_score (鏇撮珮锛屼絾涓嶅奖鍝嶆煡璇㈡帓搴?
+            0.9,   # match_score (higher, but does not affect query sort order)
         ),
     ]
     fake_conn = _FakeConn(rows)

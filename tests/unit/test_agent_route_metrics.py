@@ -193,6 +193,7 @@ class TestPromptContract:
 
         assert "append the raw URL at sentence end using parentheses" in SYSTEM_INSTRUCTION
         assert "Do NOT output numeric citations like [1], [2]" in SYSTEM_INSTRUCTION
+        assert "Do not use emoji" in SYSTEM_INSTRUCTION
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +425,42 @@ class TestAgentSafety:
                     payload = generate_response_payload([], "recent ai updates")
         assert payload["kind"] == "answer"
         assert payload["citation_urls"] == ["https://a.example.com"]
+
+    def test_generate_response_strips_emoji_from_final_text(self):
+        from agent.agent import generate_response
+
+        expected = (
+            "Main analysis \U0001F600 cites https://a.example.com. \u2705\n\n"
+            "## Sources\n- [1] Title \U0001F680 https://a.example.com"
+        )
+        with patch(
+            "agent.agent._run_generation_core",
+            return_value=("Main analysis \U0001F600 cites https://a.example.com. \u2705", {"https://a.example.com"}),
+        ):
+            with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
+                out = generate_response([], "recent ai updates")
+
+        assert "\U0001F600" not in out
+        assert "\U0001F680" not in out
+        assert "\u2705" not in out
+        assert "https://a.example.com" in out
+
+    def test_generate_response_payload_strips_emoji_from_title_map(self):
+        from agent.agent import generate_response_payload
+
+        expected = "Main analysis cites https://a.example.com.\n\n## Sources\n- [1] https://a.example.com"
+        with patch(
+            "agent.agent._run_generation_core",
+            return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}),
+        ):
+            with patch(
+                "agent.agent._decorate_response_with_sources",
+                return_value=(expected, {"https://a.example.com": "Launch \U0001F680"}),
+            ):
+                payload = generate_response_payload([], "recent ai updates")
+
+        assert payload["text"] == expected
+        assert payload["url_title_map"] == {"https://a.example.com": "Launch"}
 
     def test_generate_response_blocks_when_output_has_url_outside_valid_set(self):
         from agent.agent import AgentGenerationError, generate_response

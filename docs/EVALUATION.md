@@ -2,6 +2,25 @@
 
 评测体系用于验证 Agent 的问题理解、工具路径、检索证据、最终回答和系统稳定性。评测脚本复用实时 Agent 运行链路，并通过 Trace 表回溯模型规划、工具执行和输出守卫行为。
 
+## 目标与原则
+
+评测不只看最终回答文本，而是同时检查 Agent 是否走了正确路径。
+
+| 目标 | 说明 |
+| --- | --- |
+| 路径正确 | 问题类型、工具选择、工具顺序和澄清触发符合预期。 |
+| 证据可靠 | 回答引用的 URL 来自工具证据，且满足来源、数量和时效要求。 |
+| 生成可信 | 最终回答完整、结构清晰，并区分事实、推断和不确定性。 |
+| 行为稳定 | 多次运行结果不应出现工具路径大幅漂移或无证据回答。 |
+| 可回溯 | 每个失败 case 都能通过 Trace 定位到意图、工具、检索、生成或系统层。 |
+
+设计原则：
+
+- 评测复用线上 Agent Runtime，不维护一套独立 mock 链路。
+- 评分优先使用结构化 Trace 和工具输出，再使用 LLM-as-a-Judge 判断开放文本质量。
+- 完整 prompt 和 raw output 不进入公开报告，只通过 Trace 查询脚本按需读取。
+- 矩阵实验以可比较为目标，每组实验必须记录配置、输出目录和 manifest。
+
 ## 评测组成
 
 | 模块 | 说明 |
@@ -35,6 +54,30 @@
 PYTHONPATH=. python eval/build_task_dataset.py --help
 ```
 
+单条 case 的核心字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `case_id` | 稳定 ID，用于报告、Trace 查询和回归对比。 |
+| `question` | 用户问题，直接送入 Agent Runtime。 |
+| `task_type` | 任务类型，用于聚合分数和覆盖率。 |
+| `expected_tools` | 期望出现的工具集合或关键路径。 |
+| `evidence_requirements` | 对证据数量、来源、URL 或时间范围的要求。 |
+| `citation_requirements` | 对内联引用和来源列表的要求。 |
+| `scoring` | case 级评分条件和权重。 |
+
+任务类型覆盖：
+
+| 类型 | 目标能力 |
+| --- | --- |
+| 近况简报 | 检验 `query_news` / `search_news` 的近期召回和摘要能力。 |
+| 深度解读 | 检验检索、全文读取、证据归一和最终综合。 |
+| 主题对比 | 检验 `compare_topics` 和跨实体证据覆盖。 |
+| 来源对比 | 检验 `compare_sources` 的来源覆盖和情绪差异计算。 |
+| 时间线 | 检验 `build_timeline` 的窗口扩展和事件排序。 |
+| 竞争格局 | 检验 `analyze_landscape` 的实体聚合和信号分类。 |
+| 澄清场景 | 检验证据不足、范围模糊和 URL 越权时是否触发澄清。 |
+
 ## 单组评测
 
 ```bash
@@ -66,6 +109,25 @@ python eval/run_matrix_eval.py \
 ```
 
 矩阵评测用于比较不同模型、检索参数、rerank 配置或 Agent 参数。每组实验输出独立 JSON 报告和 manifest。
+
+矩阵配置通常比较：
+
+| 维度 | 示例 |
+| --- | --- |
+| 模型角色 | intent/tool/final 使用不同 provider 或模型。 |
+| 检索策略 | 召回窗口、候选数量、关键词权重、语义权重。 |
+| Rerank | `none` vs `llm_rerank`，或不同 rerank 超时策略。 |
+| 工具轮次 | `AGENT_GRAPH_MAX_TOOL_ROUNDS` 对深度问题的影响。 |
+| 上下文策略 | Context Pack 裁剪、Thread Memory 开关和历史证据使用。 |
+
+每个矩阵组需要保留：
+
+- 实验配置。
+- 数据集版本或 fingerprint。
+- 运行时间和 run id。
+- 单 case 结果。
+- 聚合指标。
+- Trace 摘要或可查询 request id。
 
 ## 一键评测
 
@@ -104,6 +166,19 @@ eval/reports/<RUN_ID>/
 
 Trace 数据优先来自 `agent_trace_spans` 和 `agent_model_io`。评测结果不直接暴露完整 prompt/raw output，完整内容通过 Trace 查询脚本读取。
 
+失败归因：
+
+| 归因 | 典型表现 | 优先查看 |
+| --- | --- | --- |
+| 意图错误 | 简单问答误走工具、需要工具却直接回答、该澄清未澄清。 | `intent_router` span |
+| 工具规划错误 | 漏选关键工具、参数为空、重复调用、工具顺序异常。 | `tool_selection`, `tool_worker`, `tool_policy` span |
+| 检索不足 | 空结果、证据数量不足、来源覆盖不完整、时间窗口不合理。 | `tool_call` span 和 ToolEnvelope diagnostics |
+| 生成不稳 | 结论缺失、引用不完整、事实与证据不一致。 | `final_synthesizer` model I/O |
+| 守卫问题 | 非证据 URL 泄漏、引用编号错乱、来源列表缺失。 | `output_guard`, `postprocess` span |
+| 系统异常 | 超时、数据库异常、模型调用失败、token usage 异常。 | `agent_runs`, error chain |
+
+质量门禁可以按场景设置，不建议所有任务共用单一阈值。检索类 case 更看重证据覆盖和引用合法性；深度分析 case 更看重工具路径、全文读取和最终综合质量；澄清类 case 更看重是否及时停止并返回可执行的澄清问题。
+
 ## Trace 查询
 
 按请求查看 span tree：
@@ -123,6 +198,13 @@ python eval/trace_query.py --model-span-id <span_id> --show-model-io
 ```bash
 python eval/trace_query.py --case-id <case_id>
 ```
+
+排查建议：
+
+1. 先看 `agent_runs` 中的 final status、latency、tools_used 和 evidence_count。
+2. 再看 `agent_trace_spans` 的节点顺序，确认失败发生在 intent、tool、guard、postprocess 还是 model_call。
+3. 需要模型输入输出时，再用 `--model-span-id <span_id> --show-model-io` 精查。
+4. 对检索失败优先查看 ToolEnvelope diagnostics，而不是只看最终回答。
 
 ## 报告
 
@@ -144,3 +226,14 @@ python eval/build_report.py \
   --dataset-version <DATASET_VERSION> \
   --output-md eval/reports/<RUN_ID>/final_report.md
 ```
+
+报告应包含：
+
+- 数据集版本和运行配置。
+- 总分与分层得分。
+- 各任务类型得分。
+- 矩阵组对比和排名。
+- 失败 case 样例。
+- 主要回归点和改进建议。
+
+报告不应直接粘贴完整 prompt、raw model output 或敏感环境变量。需要复现细节时保留 request id、case id 和 trace 查询命令。

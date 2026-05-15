@@ -63,6 +63,47 @@ class AgentGenerationError(Exception):
     def __str__(self) -> str:  # pragma: no cover - trivial
         return self.message
 
+
+_EMOJI_RE = re.compile(
+    r"(?:[0-9#*]\ufe0f?\u20e3)"
+    r"|(?:[\U0001F1E6-\U0001F1FF]{2})"
+    r"|(?:[\U0001F300-\U0001FAFF\u2600-\u27BF]\ufe0f?"
+    r"(?:\u200d[\U0001F300-\U0001FAFF\u2600-\u27BF]\ufe0f?)*)"
+    r"|[\ufe0e\ufe0f\u200d]"
+)
+
+
+def _strip_emoji(text: Any) -> str:
+    """Remove emoji and emoji joiner artifacts from model-visible output."""
+    return _EMOJI_RE.sub("", str(text or ""))
+
+
+def _strip_emoji_from_title_map(title_map: dict[str, str] | None) -> dict[str, str]:
+    if not isinstance(title_map, dict):
+        return {}
+    return {
+        str(url).strip(): _strip_emoji(title).strip()
+        for url, title in title_map.items()
+        if str(url).strip() and _strip_emoji(title).strip()
+    }
+
+
+def _strip_emoji_from_clarification_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    cleaned = dict(payload or {})
+    cleaned["question"] = _strip_emoji(cleaned.get("question", "")).strip()
+    cleaned["original_question"] = _strip_emoji(cleaned.get("original_question", "")).strip()
+    hints = cleaned.get("hints", [])
+    if isinstance(hints, list):
+        cleaned["hints"] = [
+            _strip_emoji(item).strip()
+            for item in hints
+            if _strip_emoji(item).strip()
+        ]
+    else:
+        cleaned["hints"] = []
+    return cleaned
+
+
 def _build_chat_model() -> Any:
     """Create the chat model client from environment configuration."""
     temperature = float(os.getenv("AGENT_TEMPERATURE", "0.1"))
@@ -311,7 +352,8 @@ def _build_hitl_soft_followup(
         "1) Output only the final follow-up text, no reasoning.\n"
         "2) Keep it within 1-3 sentences and professional tone.\n"
         "3) Do not output template ids, URLs, or inline citation markers like [1].\n"
-        "4) Follow-up must stay specific to the current question.\n\n"
+        "4) Follow-up must stay specific to the current question.\n"
+        "5) Do not use emoji, emoticons, pictographs, or decorative reaction icons.\n\n"
         f"User question: {user_message}\n"
         f"Risk context: {context_preview}\n"
     )
@@ -353,7 +395,7 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
 
 
 def _sanitize_clarification_text(text: str, *, max_chars: int) -> str:
-    cleaned = str(text or "").strip()
+    cleaned = _strip_emoji(text).strip()
     cleaned = re.sub(r"https?://[^\s)\]]+", "", cleaned).strip()
     cleaned = re.sub(r"\[(?:\d{1,3}|[^\]\n]{1,80})\]", "", cleaned).strip()
     cleaned = re.sub(r"^[\-*•\d\.\s]+", "", cleaned).strip()
@@ -409,7 +451,8 @@ def _build_dynamic_clarification_payload(
         "4) Ask for the smallest useful missing detail: timeframe, source, exact company/product/event, "
         "original URL, or whether to broaden the search terms.\n"
         "5) Hints must be concrete options tailored to the user's request; 2-3 hints max.\n"
-        "6) Do not include URLs, citation markers, markdown tables, or explanations.\n\n"
+        "6) Do not include URLs, citation markers, markdown tables, or explanations.\n"
+        "7) Do not use emoji, emoticons, pictographs, or decorative reaction icons.\n\n"
         f"User question: {user_message}\n"
         f"Context: {context_preview}\n"
     )
@@ -645,9 +688,11 @@ def generate_response(
                 progress_callback=progress_callback,
             )
             core_text = _strip_generic_analysis_leadin(core_text)
+            core_text = _strip_emoji(core_text)
             _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
             _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
             final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+            final_text = _strip_emoji(final_text)
             _finalize_request_trace(
                 final_status="success",
                 evidence_count=len(valid_urls),
@@ -659,8 +704,8 @@ def generate_response(
             )
             return final_text
         except ClarificationRequiredError as exc:
-            payload = exc.clarification.to_dict()
-            question_text = str(payload.get("question", "")).strip()
+            payload = _strip_emoji_from_clarification_payload(exc.clarification.to_dict())
+            question_text = _strip_emoji(payload.get("question", "")).strip()
             _finalize_request_trace(
                 final_status="clarification_required",
                 evidence_count=0,
@@ -707,9 +752,12 @@ def generate_response_payload(
                 progress_callback=progress_callback,
             )
             core_text = _strip_generic_analysis_leadin(core_text)
+            core_text = _strip_emoji(core_text)
             _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
             _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
             final_text, title_map = _decorate_response_with_sources(core_text, user_message, valid_urls)
+            final_text = _strip_emoji(final_text)
+            title_map = _strip_emoji_from_title_map(title_map)
             _finalize_request_trace(
                 final_status="success",
                 evidence_count=len(valid_urls),
@@ -727,7 +775,7 @@ def generate_response_payload(
                 "citation_urls": _extract_citation_urls_from_text(final_text),
             }
         except ClarificationRequiredError as exc:
-            payload = exc.clarification.to_dict()
+            payload = _strip_emoji_from_clarification_payload(exc.clarification.to_dict())
             question_text = str(payload.get("question", "")).strip()
             _finalize_request_trace(
                 final_status="clarification_required",
@@ -786,9 +834,11 @@ def generate_response_eval_payload(
                     user_message,
                 )
                 core_text = _strip_generic_analysis_leadin(core_text)
+                core_text = _strip_emoji(core_text)
                 _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
                 _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
                 final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+                final_text = _strip_emoji(final_text)
                 tool_calls = _ordered_tool_calls_for_eval(None)
                 trace_summary = _finalize_request_trace(
                     final_status="success",
