@@ -36,7 +36,7 @@ def _stub_conversation_memory(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:
         del token_id
         del limit
         if thread_id not in memory:
-            raise api_mod.ConversationThreadNotFoundError(thread_id)
+            raise api_mod.chat_service.ConversationThreadNotFoundError(thread_id)
         return list(memory[thread_id])
 
     def _append_message_for_token(thread_id, token_id, message, metadata=None):  # noqa: ANN001
@@ -45,10 +45,10 @@ def _stub_conversation_memory(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:
         memory.setdefault(thread_id, []).append(message)
         return {"thread_id": thread_id}
 
-    monkeypatch.setattr(api_mod, "create_thread", _create_thread)
-    monkeypatch.setattr(api_mod, "load_history_for_token", _load_history_for_token)
-    monkeypatch.setattr(api_mod, "append_message_for_token", _append_message_for_token)
-    monkeypatch.setattr(api_mod, "schedule_thread_memory_update", lambda **_kwargs: None)
+    monkeypatch.setattr(api_mod.chat_service, "create_thread", _create_thread)
+    monkeypatch.setattr(api_mod.chat_service, "load_history_for_token", _load_history_for_token)
+    monkeypatch.setattr(api_mod.chat_service, "append_message_for_token", _append_message_for_token)
+    monkeypatch.setattr(api_mod.chat_service, "schedule_thread_memory_update", lambda **_kwargs: None)
 
 
 def test_chat_logs_and_forwards_trace_request_id(
@@ -66,21 +66,21 @@ def test_chat_logs_and_forwards_trace_request_id(
     async def _fake_to_thread(func, *args, **kwargs):
         return func(*args, **kwargs)
 
-    monkeypatch.setattr(api_mod, "generate_response_payload", _fake_generate_response_payload)
-    monkeypatch.setattr(api_mod.asyncio, "to_thread", _fake_to_thread)
+    monkeypatch.setattr(api_mod.chat_service, "generate_response_payload", _fake_generate_response_payload)
+    monkeypatch.setattr(api_mod.chat_service.asyncio, "to_thread", _fake_to_thread)
     _stub_conversation_memory(api_mod, monkeypatch)
-    monkeypatch.setattr(api_mod, "_check_rate_limit", lambda _ip: None)
+    monkeypatch.setattr(api_mod.rate_limit, "check_rate_limit", lambda _ip: None)
     monkeypatch.setattr(
-        api_mod,
-        "_reserve_quota_or_403",
+        api_mod.chat_service.quota_service,
+        "reserve_quota_or_notify_403",
         lambda _token: {"remaining": 9, "quota": 10, "notified": False},
     )
-    monkeypatch.setattr(api_mod, "_maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod.chat_service.quota_service, "maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
 
     body = api_mod.ChatRequest(message="hello")
     token_info = {"id": 1, "email": "user@example.com"}
 
-    with patch.object(api_mod.logger, "info") as info_log:
+    with patch.object(api_mod.chat_service.logger, "info") as info_log:
         response = asyncio.run(api_mod.chat(body, _fake_request(), token_info))
 
     assert response.reply == "reply-ok"
@@ -118,22 +118,22 @@ def test_chat_stream_logs_and_forwards_trace_request_id(
                 chunks.append(str(chunk))
         return "".join(chunks)
 
-    monkeypatch.setattr(api_mod, "generate_response_payload", _fake_generate_response_payload)
-    monkeypatch.setattr(api_mod.asyncio, "to_thread", _fake_to_thread)
+    monkeypatch.setattr(api_mod.chat_service, "generate_response_payload", _fake_generate_response_payload)
+    monkeypatch.setattr(api_mod.chat_service.asyncio, "to_thread", _fake_to_thread)
     _stub_conversation_memory(api_mod, monkeypatch)
-    monkeypatch.setattr(api_mod, "_check_rate_limit", lambda _ip: None)
+    monkeypatch.setattr(api_mod.rate_limit, "check_rate_limit", lambda _ip: None)
     monkeypatch.setattr(
-        api_mod,
-        "_reserve_quota_or_403",
+        api_mod.chat_service.quota_service,
+        "reserve_quota_or_notify_403",
         lambda _token: {"remaining": 8, "quota": 10, "notified": False},
     )
-    monkeypatch.setattr(api_mod, "_maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
-    monkeypatch.setattr(api_mod, "_refund_reserved_quota", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod.chat_service.quota_service, "maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod.chat_service.quota_service, "refund_reserved_quota", lambda *_a, **_k: None)
 
     body = api_mod.ChatRequest(message="stream hello")
     token_info = {"id": 1, "email": "user@example.com"}
 
-    with patch.object(api_mod.logger, "info") as info_log:
+    with patch.object(api_mod.chat_service.logger, "info") as info_log:
         response = asyncio.run(api_mod.chat_stream(body, _fake_request(), token_info))
 
     payload = asyncio.run(_collect_stream(response))

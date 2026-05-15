@@ -1,51 +1,35 @@
-"""Web API 入口：FastAPI + Token 自动发放 + 限额管理"""
+"""Web API entrypoint: FastAPI routes and response adapters."""
 
-import os
-import json
-import secrets
-import time
-import asyncio
+from __future__ import annotations
+
 import logging
-import html
-import hmac
-import hashlib
+import os
 import uuid
-from threading import Lock
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, HTTPException, Depends, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.responses import HTMLResponse, StreamingResponse
-from cachetools import TTLCache
-from pydantic import BaseModel, EmailStr, Field
-from psycopg2.extras import Json
-
-from agent import AgentGenerationError, generate_response_payload
-from agent.clarification import (
-    build_clarification_history_item,
-    resolve_user_message_with_history_clarification,
-)
-from services.db import init_db_pool, close_db_pool, get_conn, put_conn
-from services.conversations import (
-    ConversationThreadNotFoundError,
-    append_message,
-    append_message_for_token,
-    create_thread,
-    load_history,
-    load_history_for_token,
-)
-from services.thread_memory import schedule_thread_memory_update
-from services.mail import (
-    send_token_email,
-    send_quota_exhausted_to_admin,
-    send_quota_exhausted_to_user,
-    send_quota_upgraded,
-)
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / "agent" / ".env", override=True)
+
+from fastapi import Depends, FastAPI, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import EmailStr
+
+from app import rate_limit, security
+from app.schemas import (
+    AccessRequest,
+    ChatRequest,
+    ChatResponse,
+    QuotaResponse,
+    SubscriptionRequest,
+    SubscriptionResponse,
+    UnsubscribeRequest,
+)
+from app.services import access_token_service, chat_service, subscription_service
+from services.db import close_db_pool, init_db_pool
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -53,173 +37,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://agentapi.trainingcqy.com")
-APPROVE_LINK_SECRET = os.getenv("APPROVE_LINK_SECRET", os.getenv("SECRET_KEY", ""))
-APPROVE_LINK_TTL_SEC = max(60, int(os.getenv("APPROVE_LINK_TTL_SEC", "86400")))
-DEFAULT_QUOTA = 10
-UPGRADED_QUOTA = 50
-LEGACY_TRIAL_QUOTA = 15
-DEFAULT_SUBSCRIPTION_SOURCES = [
-    "HackerNews",
-    "TechCrunch",
-]
-SUBSCRIPTION_FREQUENCIES = ["daily"]
 
-# ---------------------------------------------------------------------------
-# Rate Limiter（内存级，按 IP 限流）
-# ---------------------------------------------------------------------------
-RATE_LIMIT = int(os.getenv("API_RATE_LIMIT", "5"))
-RATE_WINDOW = 60
-RATE_TRACK_MAX_IPS = max(100, int(os.getenv("API_RATE_TRACK_MAX_IPS", "10000")))
-
-def _new_rate_log_cache(*, maxsize: int | None = None, ttl: int | None = None) -> TTLCache[str, list[float]]:
-    cache_maxsize = maxsize if maxsize is not None else RATE_TRACK_MAX_IPS
-    cache_ttl = ttl if ttl is not None else RATE_WINDOW
-    return TTLCache(maxsize=max(1, cache_maxsize), ttl=max(1, cache_ttl), timer=time.time)
-
-
-_request_log: TTLCache[str, list[float]] = _new_rate_log_cache()
-_rate_lock = Lock()
-
-
-def _check_rate_limit(client_ip: str):
-    now = time.time()
-    with _rate_lock:
-        timestamps = [t for t in _request_log.get(client_ip, []) if now - t < RATE_WINDOW]
-        if len(timestamps) >= RATE_LIMIT:
-            _request_log[client_ip] = timestamps
-            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后重试")
-        timestamps.append(now)
-        _request_log[client_ip] = timestamps
-
-
-def _build_approve_signature(record_id: int, exp: int) -> str:
-    secret = APPROVE_LINK_SECRET.strip().encode("utf-8")
-    if not secret:
-        raise RuntimeError("APPROVE_LINK_SECRET is empty")
-    payload = f"{record_id}:{exp}".encode("utf-8")
-    return hmac.new(secret, payload, hashlib.sha256).hexdigest()
-
-
-def _build_signed_approve_url(record_id: int) -> str | None:
-    if not APPROVE_LINK_SECRET.strip():
-        return None
-    exp = int(time.time()) + APPROVE_LINK_TTL_SEC
-    sig = _build_approve_signature(record_id, exp)
-    return f"{API_BASE_URL}/approve/{record_id}?exp={exp}&sig={sig}"
-
-
-def _is_valid_approve_signature(record_id: int, exp: int | None, sig: str | None) -> bool:
-    if exp is None or not sig:
-        return False
-    if not APPROVE_LINK_SECRET.strip():
-        return False
-    if exp < int(time.time()):
-        return False
-    try:
-        expected = _build_approve_signature(record_id, exp)
-    except Exception:
-        return False
-    return hmac.compare_digest(expected, sig)
-
-
-def _render_approve_confirmation_page(record_id: int, exp: int, sig: str) -> str:
-    safe_sig = html.escape(sig, quote=True)
-    action = f"/approve/{record_id}?exp={exp}&sig={safe_sig}"
-    return (
-        "<html><body style=\"font-family:sans-serif;max-width:560px;margin:32px auto;\">"
-        "<h2>审批确认</h2>"
-        "<p>请确认是否将该用户额度提升至升级配额。</p>"
-        f"<form method=\"post\" action=\"{action}\">"
-        "<button type=\"submit\" style=\"padding:8px 16px;cursor:pointer;\">确认批准</button>"
-        "</form>"
-        "</body></html>"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Token 验证（从数据库校验）
-# ---------------------------------------------------------------------------
-_bearer_scheme = HTTPBearer()
-
-
-def _repair_legacy_upgraded_usage(
-    cur,
-    record_id: int,
-    quota: int,
-    used: int,
-    status: str,
-    notified: bool,
-) -> tuple[int, bool, bool]:
-    """
-    兼容旧逻辑：
-    历史版本升级只把 quota 改为 50，未重置 used，导致升级后额度被试用阶段占用。
-    命中后仅修复一次：used 减去旧试用额度，并清除 notified 标记。
-    """
-    if (
-        status == "upgraded"
-        and quota == UPGRADED_QUOTA
-        and bool(notified)
-        and used >= LEGACY_TRIAL_QUOTA
-    ):
-        repaired_used = max(used - LEGACY_TRIAL_QUOTA, 0)
-        cur.execute(
-            "UPDATE access_tokens SET used = %s, notified = FALSE WHERE id = %s",
-            (repaired_used, record_id),
-        )
-        logger.info(
-            "quota compatibility repaired for record_id=%s: used %s -> %s",
-            record_id,
-            used,
-            repaired_used,
-        )
-        return repaired_used, False, True
-    return used, bool(notified), False
-
-
-def _verify_token(credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme)) -> dict:
-    """校验 Bearer Token 并返回 token 记录"""
-    token = credentials.credentials
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT id, email, quota, used, status, notified FROM access_tokens WHERE token = %s",
-            (token,),
-        )
-        row = cur.fetchone()
-        if not row:
-            cur.close()
-            raise HTTPException(status_code=401, detail="无效的 Token")
-
-        token_id, email, quota, used, status, notified = row
-        used, _, repaired = _repair_legacy_upgraded_usage(
-            cur=cur,
-            record_id=int(token_id),
-            quota=int(quota),
-            used=int(used),
-            status=str(status or ""),
-            notified=bool(notified),
-        )
-        if repaired:
-            conn.commit()
-        cur.close()
-        return {
-            "id": int(token_id),
-            "email": email,
-            "token": token,
-            "quota": int(quota),
-            "used": int(used),
-            "status": str(status or ""),
-        }
-    finally:
-        put_conn(conn)
-
-
-# ---------------------------------------------------------------------------
-# FastAPI App
-# ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db_pool()
@@ -240,450 +58,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_bearer_scheme = HTTPBearer()
 
-# ---------------------------------------------------------------------------
-# Models
-# ---------------------------------------------------------------------------
-class AccessRequest(BaseModel):
-    email: EmailStr
 
+def _verify_token(credentials: HTTPAuthorizationCredentials = Depends(_bearer_scheme)) -> dict:
+    return access_token_service.verify_token(credentials.credentials)
 
-class ChatRequest(BaseModel):
-    message: str
-    thread_id: str | None = None
 
-
-class ClarificationResponsePayload(BaseModel):
-    kind: str = "clarification_required"
-    reason: str
-    question: str
-    hints: list[str] = []
-    original_question: str = ""
-
-
-class ChatResponse(BaseModel):
-    reply: str
-    thread_id: str
-    kind: str = "answer"
-    clarification: ClarificationResponsePayload | None = None
-    citation_urls: list[str] = Field(default_factory=list)
-    remaining: int
-    quota: int
-
-
-class QuotaResponse(BaseModel):
-    quota: int
-    used: int
-    remaining: int
-    status: str
-
-
-class SubscriptionRequest(BaseModel):
-    email: EmailStr
-    name: str | None = None
-    sources: list[str] | None = None
-    frequency: str = "daily"
-    timezone: str = "Asia/Shanghai"
-
-
-class UnsubscribeRequest(BaseModel):
-    email: EmailStr
-
-
-class SubscriptionResponse(BaseModel):
-    email: EmailStr
-    name: str | None = None
-    is_active: bool
-    sources: list[str]
-    frequency: str
-    timezone: str
-
-
-def _sse_event(event: str, data: dict) -> str:
-    """Encode one SSE event payload."""
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-def _status_text_from_progress(payload: dict) -> str | None:
-    """Map runtime progress payload to UI-facing status text."""
-    title = str(payload.get("title", "")).strip()
-    if title:
-        return title
-    stage = str(payload.get("stage", "")).strip().lower()
-    if stage == "understanding":
-        return "正在理解问题"
-    if stage == "selecting_tools":
-        return "正在调用工具"
-    if stage == "retrieving":
-        return "正在检索相关新闻"
-    if stage == "analyzing":
-        return "正在整理信息"
-    if stage == "synthesizing":
-        return "正在生成分析"
-    if stage == "finalizing":
-        return "正在生成分析"
-    if stage == "clarification_required":
-        return "需要补充信息"
-    return None
-
-
-def _progress_event_payload(payload: dict) -> dict:
-    return {
-        "phase": str(payload.get("phase") or payload.get("stage") or "").strip(),
-        "tool": str(payload.get("tool") or payload.get("tool_name") or "").strip(),
-        "title": str(payload.get("title") or _status_text_from_progress(payload) or "").strip(),
-        "detail": str(payload.get("detail") or "").strip(),
-        "article_title": str(payload.get("article_title") or "").strip(),
-        "url": str(payload.get("url") or "").strip(),
-        "index": payload.get("index"),
-        "total": payload.get("total"),
-        "items": [
-            str(item).strip()
-            for item in (payload.get("items") if isinstance(payload.get("items"), list) else [])
-            if str(item).strip()
-        ],
-        "status": str(payload.get("status") or "running").strip(),
-    }
-
-
-def _evidence_event_payload(payload: dict) -> dict:
-    return {
-        "tool": str(payload.get("tool") or "").strip(),
-        "title": str(payload.get("title") or "").strip(),
-        "source": str(payload.get("source") or payload.get("detail") or "").strip(),
-        "url": str(payload.get("url") or "").strip(),
-        "created_at": str(payload.get("created_at") or "").strip(),
-        "rank": payload.get("rank"),
-        "match_score": payload.get("match_score"),
-    }
-
-
-def _remaining_after_refund(reservation: dict) -> int:
-    quota = int(reservation.get("quota", 0) or 0)
-    remaining = int(reservation.get("remaining", 0) or 0) + 1
-    if quota > 0:
-        remaining = min(remaining, quota)
-    return max(remaining, 0)
-
-
-def _agent_memory_load_limit() -> int:
-    try:
-        return max(1, int(os.getenv("AGENT_MEMORY_LOAD_LIMIT", "80")))
-    except Exception:
-        return 80
-
-
-def _normalize_request_thread_id(thread_id: str | None) -> str | None:
-    value = str(thread_id or "").strip()
-    return value or None
-
-
-def _load_thread_history_or_404(thread_id: str, *, token_id: int) -> list[dict]:
-    try:
-        return load_history_for_token(
-            thread_id,
-            token_id,
-            limit=_agent_memory_load_limit(),
-        )
-    except ConversationThreadNotFoundError:
-        raise HTTPException(status_code=404, detail="conversation_thread_not_found") from None
-
-
-def _create_thread_for_request(body: ChatRequest, token_info: dict) -> str:
-    subject = str(body.message or "").strip()[:80] or None
-    metadata = {
-        "channel": "web",
-        "email": str(token_info.get("email", "") or ""),
-        "token_id": token_info.get("id"),
-    }
-    row = create_thread(channel="web", subject=subject, metadata=metadata)
-    thread_id = str(row.get("thread_id", "")).strip()
-    if not thread_id:
-        raise RuntimeError("conversation thread creation returned empty thread_id")
-    return thread_id
-
-
-def _user_history_item(message: str) -> dict:
-    return {"role": "user", "parts": [{"text": str(message or "")}]}
-
-
-def _model_history_item_from_payload(payload: dict) -> dict:
-    kind = str(payload.get("kind", "answer")).strip().lower()
-    if kind == "clarification_required":
-        clarification_payload = payload.get("clarification", {})
-        if isinstance(clarification_payload, dict):
-            return build_clarification_history_item(clarification_payload)
-    title_map = payload.get("url_title_map", {})
-    if not isinstance(title_map, dict):
-        title_map = {}
-    return {
-        "role": "model",
-        "kind": "answer",
-        "parts": [{"text": str(payload.get("text", "") or "")}],
-        "citation_urls": [
-            str(url).strip()
-            for url in payload.get("citation_urls", [])
-            if str(url).strip()
-        ] if isinstance(payload.get("citation_urls", []), list) else [],
-        "url_title_map": {
-            str(url).strip(): str(title).strip()
-            for url, title in title_map.items()
-            if str(url).strip() and str(title).strip()
-        },
-    }
-
-
-def _persist_conversation_turn(
-    *,
-    thread_id: str,
-    token_id: int,
-    user_message: str,
-    effective_message: str,
-    payload: dict,
-    request_id: str,
-) -> None:
-    metadata = {
-        "request_id": request_id,
-        "effective_message": effective_message,
-    }
-    append_message_for_token(
-        thread_id,
-        token_id,
-        _user_history_item(user_message),
-        metadata=metadata,
-    )
-    model_message = _model_history_item_from_payload(payload)
-    model_row = append_message_for_token(
-        thread_id,
-        token_id,
-        model_message,
-        metadata=metadata,
-    )
-    schedule_thread_memory_update(
-        thread_id=thread_id,
-        user_message=user_message,
-        model_message=model_message,
-        model_message_id=int(model_row.get("id")) if isinstance(model_row, dict) and model_row.get("id") else None,
-        request_id=request_id,
-    )
-
-
-def _normalize_sources(sources: list[str] | None) -> list[str]:
-    allowed_sources = _fetch_active_source_names()
-
-    if not sources:
-        return allowed_sources.copy()
-
-    normalized: list[str] = []
-    allowed_map = {s.lower(): s for s in allowed_sources}
-    for source in sources:
-        key = source.strip().lower()
-        if key in allowed_map and allowed_map[key] not in normalized:
-            normalized.append(allowed_map[key])
-
-    if not normalized:
-        raise HTTPException(status_code=400, detail="invalid_sources")
-
-    return normalized
-
-
-def _row_to_subscription(row) -> SubscriptionResponse:
-    sources = row[3] if isinstance(row[3], list) else []
-    return SubscriptionResponse(
-        email=row[0],
-        name=row[1],
-        is_active=row[2],
-        sources=sources,
-        frequency=row[4] or "daily",
-        timezone=row[5] or "Asia/Shanghai",
-    )
-
-
-def _fetch_active_source_names() -> list[str]:
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT source_name
-            FROM public.source_registry
-            WHERE is_active = TRUE
-            ORDER BY priority ASC, source_name ASC
-            """
-        )
-        rows = cur.fetchall()
-        cur.close()
-        names = [r[0] for r in rows if r and r[0]]
-        if names:
-            return names
-        return DEFAULT_SUBSCRIPTION_SOURCES.copy()
-    except Exception:
-        return DEFAULT_SUBSCRIPTION_SOURCES.copy()
-    finally:
-        put_conn(conn)
-
-
-def _reserve_quota_or_403(token_info: dict) -> dict:
-    """Atomically reserve one quota unit. Returns reservation snapshot."""
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE access_tokens
-            SET used = used + 1
-            WHERE id = %s AND used < quota
-            RETURNING used, quota, notified
-            """,
-            (token_info["id"],),
-        )
-        row = cur.fetchone()
-        if not row:
-            conn.rollback()
-            cur.close()
-            raise HTTPException(status_code=403, detail="quota_exhausted")
-
-        used, quota, notified = row
-        conn.commit()
-        cur.close()
-        return {
-            "used": int(used),
-            "quota": int(quota),
-            "remaining": int(quota - used),
-            "notified": bool(notified),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"[{token_info['email']}] 额度预扣失败: {e}")
-        raise HTTPException(status_code=500, detail="服务暂时不可用，请稍后重试")
-    finally:
-        put_conn(conn)
-
-
-def _reserve_quota_or_notify_403(token_info: dict) -> dict:
-    try:
-        return _reserve_quota_or_403(token_info)
-    except HTTPException as exc:
-        if exc.status_code == 403 and exc.detail == "quota_exhausted":
-            _maybe_send_quota_exhausted_notifications(token_info, {"remaining": 0})
-        raise
-
-
-def _refund_reserved_quota(token_info: dict):
-    """Best-effort quota refund used when generation fails after reservation."""
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE access_tokens
-            SET used = GREATEST(used - 1, 0)
-            WHERE id = %s
-            RETURNING used, quota
-            """,
-            (token_info["id"],),
-        )
-        row = cur.fetchone()
-        conn.commit()
-        cur.close()
-        if row:
-            logger.info(
-                "[%s] quota refund applied: used=%s quota=%s",
-                token_info["email"],
-                int(row[0]),
-                int(row[1]),
-            )
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"[{token_info['email']}] 额度退款失败: {e}")
-    finally:
-        put_conn(conn)
-
-
-def _maybe_send_quota_exhausted_notifications(token_info: dict, reservation: dict):
-    """When remaining is 0, mark exhausted+notified once and send mail notifications."""
-    if int(reservation.get("remaining", 0)) > 0:
-        return
-
-    conn = get_conn()
-    row = None
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE access_tokens
-            SET status = 'exhausted'
-            WHERE id = %s AND used >= quota
-            RETURNING email, notified
-            """,
-            (token_info["id"],),
-        )
-        row = cur.fetchone()
-        conn.commit()
-        cur.close()
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"[{token_info['email']}] 标记额度耗尽失败: {e}")
-        return
-    finally:
-        put_conn(conn)
-
-    if not row:
-        return
-
-    email = str(row[0] or token_info["email"])
-    already_notified = bool(row[1])
-    if already_notified:
-        return
-
-    admin_email = ADMIN_EMAIL.strip()
-    if not admin_email:
-        logger.error("ADMIN_EMAIL 未配置，无法发送管理员审批邮件；notified 保持 false: %s", email)
-        return
-
-    approve_url = _build_signed_approve_url(token_info["id"])
-    if not approve_url:
-        logger.error("APPROVE_LINK_SECRET 未配置，无法发送管理员审批邮件；notified 保持 false: %s", email)
-        return
-
-    admin_sent = send_quota_exhausted_to_admin(admin_email, email, token_info["id"], approve_url)
-    if not admin_sent:
-        logger.error("管理员审批邮件发送失败；notified 保持 false: admin=%s user=%s", admin_email, email)
-        return
-
-    user_sent = send_quota_exhausted_to_user(email)
-    if not user_sent:
-        logger.error("用户等待审批通知邮件发送失败: %s", email)
-    _mark_quota_exhausted_notified(token_info["id"])
-    logger.info("额度耗尽审批邮件已发送: admin=%s user=%s", admin_email, email)
-
-
-def _mark_quota_exhausted_notified(record_id: int) -> None:
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE access_tokens
-            SET notified = TRUE
-            WHERE id = %s AND used >= quota
-            """,
-            (record_id,),
-        )
-        conn.commit()
-        cur.close()
-    except Exception as e:
-        conn.rollback()
-        logger.error("标记额度耗尽通知成功状态失败: %s", e)
-    finally:
-        put_conn(conn)
-
-
-# ---------------------------------------------------------------------------
-# Routes — Token 管理
-# ---------------------------------------------------------------------------
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -691,193 +72,32 @@ def health():
 
 @app.get("/subscription-options")
 def get_subscription_options():
-    return {
-        "sources": _fetch_active_source_names(),
-        "frequencies": SUBSCRIPTION_FREQUENCIES,
-        "default_timezone": "Asia/Shanghai",
-    }
+    return subscription_service.subscription_options()
 
 
 @app.get("/subscriptions", response_model=SubscriptionResponse)
 def get_subscription(email: EmailStr):
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            SELECT email, name, is_active, source_preferences, frequency, timezone
-            FROM subscribers
-            WHERE email = %s
-            LIMIT 1
-            """,
-            (email,),
-        )
-        row = cur.fetchone()
-        cur.close()
-        if not row:
-            raise HTTPException(status_code=404, detail="subscription_not_found")
-        return _row_to_subscription(row)
-    finally:
-        put_conn(conn)
+    return subscription_service.get_subscription_by_email(str(email))
 
 
 @app.post("/subscriptions", response_model=SubscriptionResponse)
 def subscribe_daily_brief(body: SubscriptionRequest):
-    sources = _normalize_sources(body.sources)
-    frequency = body.frequency.lower()
-    if frequency not in SUBSCRIPTION_FREQUENCIES:
-        raise HTTPException(status_code=400, detail="invalid_frequency")
-
-    timezone = body.timezone.strip() if body.timezone else "Asia/Shanghai"
-    if len(timezone) > 50:
-        raise HTTPException(status_code=400, detail="invalid_timezone")
-
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO subscribers (
-                email, name, is_active, source_preferences, frequency, timezone, updated_at
-            )
-            VALUES (%s, %s, TRUE, %s, %s, %s, NOW())
-            ON CONFLICT (email) DO UPDATE
-            SET
-                name = COALESCE(EXCLUDED.name, subscribers.name),
-                is_active = TRUE,
-                source_preferences = EXCLUDED.source_preferences,
-                frequency = EXCLUDED.frequency,
-                timezone = EXCLUDED.timezone,
-                updated_at = NOW()
-            RETURNING email, name, is_active, source_preferences, frequency, timezone
-            """,
-            (
-                body.email,
-                body.name.strip()[:50] if body.name else None,
-                Json(sources),
-                frequency,
-                timezone,
-            ),
-        )
-        row = cur.fetchone()
-        conn.commit()
-        cur.close()
-        return _row_to_subscription(row)
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"订阅保存失败: {e}")
-        raise HTTPException(status_code=500, detail="subscription_save_failed")
-    finally:
-        put_conn(conn)
+    return subscription_service.subscribe_daily_brief(body)
 
 
 @app.post("/subscriptions/unsubscribe")
 def unsubscribe_daily_brief(body: UnsubscribeRequest):
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE subscribers
-            SET is_active = FALSE, updated_at = NOW()
-            WHERE email = %s
-            RETURNING id
-            """,
-            (body.email,),
-        )
-        row = cur.fetchone()
-        conn.commit()
-        cur.close()
-        if not row:
-            raise HTTPException(status_code=404, detail="subscription_not_found")
-        return {"message": "unsubscribed"}
-    except HTTPException:
-        conn.rollback()
-        raise
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"退订失败: {e}")
-        raise HTTPException(status_code=500, detail="subscription_unsubscribe_failed")
-    finally:
-        put_conn(conn)
+    return subscription_service.unsubscribe_daily_brief(body)
 
 
 @app.post("/request-access")
 def request_access(body: AccessRequest):
-    """访客提交邮箱，自动生成 Token 发送邮件"""
-    token = secrets.token_urlsafe(32)
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        # 检查该邮箱是否已有活跃 Token
-        cur.execute(
-            """
-            SELECT id, token, quota, used, status, notified
-            FROM access_tokens
-            WHERE email = %s
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            (body.email,),
-        )
-        existing = cur.fetchone()
-        if existing:
-            ex_id, ex_token, ex_quota, ex_used, ex_status, ex_notified = existing
-            ex_used, _, repaired = _repair_legacy_upgraded_usage(
-                cur=cur,
-                record_id=int(ex_id),
-                quota=int(ex_quota),
-                used=int(ex_used),
-                status=str(ex_status or ""),
-                notified=bool(ex_notified),
-            )
-            if repaired:
-                conn.commit()
-            if ex_status in ("active", "upgraded") and ex_used < ex_quota:
-                cur.close()
-                # 重新发送已有 Token
-                send_token_email(body.email, ex_token, ex_quota - ex_used)
-                return {"message": "Token 已重新发送至邮箱", "request_id": None}
-
-        # 创建新 Token
-        cur.execute(
-            "INSERT INTO access_tokens (email, token, quota) VALUES (%s, %s, %s) RETURNING id",
-            (body.email, token, DEFAULT_QUOTA),
-        )
-        record_id = cur.fetchone()[0]
-        conn.commit()
-        cur.close()
-
-        send_token_email(body.email, token, DEFAULT_QUOTA)
-        logger.info(f"新 Token 已发放: {body.email} (id={record_id})")
-        return {"message": "Token 已发送至邮箱", "request_id": record_id}
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"创建 Token 失败: {e}")
-        raise HTTPException(status_code=500, detail="服务异常，请稍后重试")
-    finally:
-        put_conn(conn)
+    return access_token_service.request_access_token(str(body.email))
 
 
 @app.get("/quota/{token}", response_model=QuotaResponse)
 def get_quota(token: str):
-    """查询 Token 剩余额度和状态"""
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT quota, used, status FROM access_tokens WHERE token = %s",
-            (token,),
-        )
-        row = cur.fetchone()
-        cur.close()
-        if not row:
-            raise HTTPException(status_code=404, detail="Token 不存在")
-        return QuotaResponse(
-            quota=row[0], used=row[1], remaining=row[0] - row[1], status=row[2],
-        )
-    finally:
-        put_conn(conn)
+    return access_token_service.get_quota(token)
 
 
 @app.get("/approve/{record_id}", response_class=HTMLResponse)
@@ -887,12 +107,12 @@ def approve_page(
     sig: str | None = Query(default=None),
 ):
     """管理员打开审批页：仅展示确认按钮，不执行状态变更。"""
-    if not APPROVE_LINK_SECRET.strip():
+    if not security.APPROVE_LINK_SECRET.strip():
         logger.error("APPROVE_LINK_SECRET 未配置，拒绝审批请求")
         return HTMLResponse("<h2>服务配置错误</h2><p>审批密钥未配置。</p>", status_code=503)
-    if not _is_valid_approve_signature(record_id, exp, sig):
+    if not security.is_valid_approve_signature(record_id, exp, sig):
         return HTMLResponse("<h2>审批链接无效或已过期</h2>", status_code=403)
-    return HTMLResponse(_render_approve_confirmation_page(record_id, int(exp), str(sig)))
+    return HTMLResponse(security.render_approve_confirmation_page(record_id, int(exp), str(sig)))
 
 
 @app.post("/approve/{record_id}", response_class=HTMLResponse)
@@ -902,48 +122,16 @@ def approve(
     sig: str | None = Query(default=None),
 ):
     """管理员确认后执行审批：提升用户额度。"""
-    if not APPROVE_LINK_SECRET.strip():
+    if not security.APPROVE_LINK_SECRET.strip():
         logger.error("APPROVE_LINK_SECRET 未配置，拒绝审批请求")
         return HTMLResponse("<h2>服务配置错误</h2><p>审批密钥未配置。</p>", status_code=503)
-    if not _is_valid_approve_signature(record_id, exp, sig):
+    if not security.is_valid_approve_signature(record_id, exp, sig):
         return HTMLResponse("<h2>审批链接无效或已过期</h2>", status_code=403)
 
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT email, status FROM access_tokens WHERE id = %s", (record_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            return HTMLResponse("<h2>记录不存在</h2>", status_code=404)
-        email, status = row
-        if status == "upgraded":
-            return HTMLResponse(f"<h2>已批准过</h2><p>{email} 的额度此前已提升。</p>")
-
-        cur.execute(
-            "UPDATE access_tokens SET quota = %s, status = 'upgraded', upgraded_at = NOW() WHERE id = %s",
-            (UPGRADED_QUOTA, record_id),
-        )
-        conn.commit()
-        cur.close()
-
-        send_quota_upgraded(email, UPGRADED_QUOTA)
-        logger.info(f"{email} 额度已提升至")
-        return HTMLResponse(
-            f"<h2>{email}</h2><p>额度已提升至 {UPGRADED_QUOTA} 次，通知邮件已发送。</p>"
-        )
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"审批处理失败: {e}")
-        return HTMLResponse(f"<h2>处理失败</h2><p>{e}</p>", status_code=500)
-    finally:
-        put_conn(conn)
+    html, status_code = access_token_service.approve_access_request(record_id)
+    return HTMLResponse(html, status_code=status_code)
 
 
-# ---------------------------------------------------------------------------
-# Routes — 对话
-# ---------------------------------------------------------------------------
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
     body: ChatRequest,
@@ -951,97 +139,9 @@ async def chat(
     token_info: dict = Depends(_verify_token),
 ):
     client_ip = request.client.host if request.client else "unknown"
-    _check_rate_limit(client_ip)
+    rate_limit.check_rate_limit(client_ip)
     request_id = uuid.uuid4().hex
-    thread_id = _normalize_request_thread_id(body.thread_id)
-    history = _load_thread_history_or_404(thread_id, token_id=int(token_info["id"])) if thread_id else []
-    reservation = _reserve_quota_or_notify_403(token_info)
-
-    logger.info(
-        "[%s] 对话: request_id=%s message=%s...",
-        token_info["email"],
-        request_id,
-        body.message[:50],
-    )
-    try:
-        if thread_id is None:
-            thread_id = _create_thread_for_request(body, token_info)
-        effective_message, pending = resolve_user_message_with_history_clarification(history, body.message)
-        if pending is not None:
-            logger.info(
-                "[%s] clarification follow-up detected: request_id=%s reason=%s",
-                token_info["email"],
-                request_id,
-                pending.reason,
-            )
-        payload = await asyncio.to_thread(
-            generate_response_payload,
-            history,
-            effective_message,
-            request_id=request_id,
-            thread_id=thread_id,
-        )
-        _persist_conversation_turn(
-            thread_id=thread_id,
-            token_id=int(token_info["id"]),
-            user_message=body.message,
-            effective_message=effective_message,
-            payload=payload,
-            request_id=request_id,
-        )
-    except HTTPException:
-        _refund_reserved_quota(token_info)
-        raise
-    except asyncio.CancelledError:
-        _refund_reserved_quota(token_info)
-        raise
-    except AgentGenerationError as e:
-        _refund_reserved_quota(token_info)
-        logger.warning(
-            "[%s] generation blocked: request_id=%s error=%s",
-            token_info["email"],
-            request_id,
-            e,
-        )
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        _refund_reserved_quota(token_info)
-        logger.error(
-            "[%s] 处理失败: request_id=%s error=%s",
-            token_info["email"],
-            request_id,
-            e,
-        )
-        raise HTTPException(status_code=500, detail="服务暂时不可用，请稍后重试")
-
-    kind = str(payload.get("kind", "answer")).strip().lower()
-    if kind == "clarification_required":
-        _refund_reserved_quota(token_info)
-        clarification_payload = payload.get("clarification", {})
-        question = str(payload.get("text", "")).strip()
-        return ChatResponse(
-            reply=question,
-            thread_id=thread_id,
-            kind="clarification_required",
-            clarification=clarification_payload if isinstance(clarification_payload, dict) else None,
-            citation_urls=[],
-            remaining=_remaining_after_refund(reservation),
-            quota=int(reservation["quota"]),
-        )
-
-    reply = str(payload.get("text", "")).strip()
-    citation_urls = payload.get("citation_urls", [])
-    if not isinstance(citation_urls, list):
-        citation_urls = []
-    _maybe_send_quota_exhausted_notifications(token_info, reservation)
-    return ChatResponse(
-        reply=reply,
-        thread_id=thread_id,
-        kind="answer",
-        citation_urls=[str(url).strip() for url in citation_urls if str(url).strip()],
-        remaining=max(int(reservation["remaining"]), 0),
-        quota=int(reservation["quota"]),
-    )
+    return await chat_service.handle_chat_request(body, token_info, request_id)
 
 
 @app.post("/chat-stream")
@@ -1052,173 +152,11 @@ async def chat_stream(
 ):
     """SSE chat endpoint: emits status updates then final payload."""
     client_ip = request.client.host if request.client else "unknown"
-    _check_rate_limit(client_ip)
+    rate_limit.check_rate_limit(client_ip)
     request_id = uuid.uuid4().hex
-    thread_id = _normalize_request_thread_id(body.thread_id)
-    history = _load_thread_history_or_404(thread_id, token_id=int(token_info["id"])) if thread_id else []
-    reservation = _reserve_quota_or_notify_403(token_info)
-
-    logger.info(
-        "[%s] 对话(流式): request_id=%s message=%s...",
-        token_info["email"],
-        request_id,
-        body.message[:50],
-    )
-    try:
-        if thread_id is None:
-            thread_id = _create_thread_for_request(body, token_info)
-        effective_message, pending = resolve_user_message_with_history_clarification(history, body.message)
-        if pending is not None:
-            logger.info(
-                "[%s] clarification follow-up detected(stream): request_id=%s reason=%s",
-                token_info["email"],
-                request_id,
-                pending.reason,
-            )
-    except Exception:
-        _refund_reserved_quota(token_info)
-        raise
-
-    async def event_generator():
-        loop = asyncio.get_running_loop()
-        progress_queue: asyncio.Queue[dict] = asyncio.Queue()
-        done_event = asyncio.Event()
-        result_holder: dict[str, dict] = {}
-        error_holder: dict[str, Exception] = {}
-        refunded = False
-        completed = False
-        worker_task: asyncio.Task | None = None
-
-        def refund_once():
-            nonlocal refunded
-            if refunded:
-                return
-            refunded = True
-            _refund_reserved_quota(token_info)
-
-        def progress_callback(payload: dict[str, str]):
-            stage = str(payload.get("stage", "")).strip()
-            if not stage:
-                return
-            loop.call_soon_threadsafe(progress_queue.put_nowait, payload)
-
-        def worker():
-            try:
-                result_holder["payload"] = generate_response_payload(
-                    history,
-                    effective_message,
-                    progress_callback=progress_callback,
-                    request_id=request_id,
-                    thread_id=thread_id,
-                )
-                _persist_conversation_turn(
-                    thread_id=thread_id,
-                    token_id=int(token_info["id"]),
-                    user_message=body.message,
-                    effective_message=effective_message,
-                    payload=result_holder["payload"],
-                    request_id=request_id,
-                )
-            except Exception as exc:
-                error_holder["exc"] = exc
-            finally:
-                loop.call_soon_threadsafe(done_event.set)
-
-        try:
-            worker_task = asyncio.create_task(asyncio.to_thread(worker))
-            last_status = ""
-
-            while True:
-                if done_event.is_set() and progress_queue.empty():
-                    break
-                try:
-                    payload = await asyncio.wait_for(progress_queue.get(), timeout=0.25)
-                except asyncio.TimeoutError:
-                    continue
-
-                event_type = str(payload.get("event") or "").strip().lower()
-                if event_type == "progress" or payload.get("tool") or payload.get("tool_name"):
-                    progress_payload = _progress_event_payload(payload)
-                    yield _sse_event("progress", progress_payload)
-                    continue
-                elif event_type == "evidence":
-                    evidence_payload = _evidence_event_payload(payload)
-                    if evidence_payload.get("url") or evidence_payload.get("title"):
-                        yield _sse_event("evidence", evidence_payload)
-                    continue
-
-                status_text = _status_text_from_progress(payload)
-                if status_text and status_text != last_status:
-                    last_status = status_text
-                    yield _sse_event("status", {"text": status_text})
-
-            await worker_task
-
-            if "exc" in error_holder:
-                exc = error_holder["exc"]
-                refund_once()
-                if isinstance(exc, AgentGenerationError):
-                    logger.warning(
-                        "[%s] generation blocked: request_id=%s error=%s",
-                        token_info["email"],
-                        request_id,
-                        exc,
-                    )
-                    yield _sse_event("error", {"detail": str(exc), "status_code": 503})
-                    return
-                logger.error(
-                    "[%s] 处理失败: request_id=%s error=%s",
-                    token_info["email"],
-                    request_id,
-                    exc,
-                )
-                yield _sse_event("error", {"detail": "服务暂时不可用，请稍后重试", "status_code": 500})
-                return
-
-            payload = result_holder.get("payload", {})
-            kind = str(payload.get("kind", "answer")).strip().lower()
-            if kind == "clarification_required":
-                clarification_payload = payload.get("clarification", {})
-                question = str(payload.get("text", "")).strip()
-                refund_once()
-                completed = True
-                yield _sse_event("final", {
-                    "kind": "clarification_required",
-                    "reply": question,
-                    "thread_id": thread_id,
-                    "clarification": clarification_payload if isinstance(clarification_payload, dict) else None,
-                    "citation_urls": [],
-                    "remaining": _remaining_after_refund(reservation),
-                    "quota": int(reservation["quota"]),
-                })
-                return
-
-            reply = str(payload.get("text", "")).strip()
-            citation_urls = payload.get("citation_urls", [])
-            if not isinstance(citation_urls, list):
-                citation_urls = []
-            _maybe_send_quota_exhausted_notifications(token_info, reservation)
-            completed = True
-            yield _sse_event("final", {
-                "kind": "answer",
-                "reply": reply,
-                "thread_id": thread_id,
-                "citation_urls": [str(url).strip() for url in citation_urls if str(url).strip()],
-                "remaining": max(int(reservation["remaining"]), 0),
-                "quota": int(reservation["quota"]),
-            })
-        finally:
-            if worker_task is not None and not worker_task.done():
-                worker_task.cancel()
-                try:
-                    await worker_task
-                except Exception:
-                    pass
-            if not completed:
-                refund_once()
-
+    turn = chat_service.prepare_chat_turn(body, token_info, request_id, stream=True)
     return StreamingResponse(
-        event_generator(),
+        chat_service.stream_chat_events(turn),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -9,7 +9,6 @@
     &nbsp;&nbsp; | &nbsp;&nbsp;
     <a href="https://agent.trainingcqy.com" style="text-decoration:none"><strong>智能体交互</strong></a>
     &nbsp;&nbsp; | &nbsp;&nbsp;
-    <a href="https://agent.trainingcqy.com/subscribe.html" style="text-decoration:none"><strong>日报订阅</strong></a>
   </p>
 </div>
 
@@ -81,7 +80,7 @@ bash deployment/scripts/db/apply_seed.sh
 ## 常用服务与端口
 
 | 服务 | 容器 | 默认端口 | 说明 |
-| --- | --- | ---: | --- |
+| --- | --- | --- | --- |
 | PostgreSQL | `tech_news_db` | `5432` | 数据库与向量检索。 |
 | n8n | `tech_news_n8n` | `5678` | 新闻采集和通知工作流。 |
 | Metabase | `tech_news_bi` | `3000` | 数据分析看板。 |

@@ -33,15 +33,15 @@ def api_client(
         "used": 0,
         "status": "active",
     }
-    monkeypatch.setattr(api_mod, "_check_rate_limit", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod.rate_limit, "check_rate_limit", lambda *_a, **_k: None)
     monkeypatch.setattr(
-        api_mod,
-        "_reserve_quota_or_403",
+        api_mod.chat_service.quota_service,
+        "reserve_quota_or_notify_403",
         lambda *_a, **_k: {"remaining": 4, "quota": 10, "used": 6},
     )
-    monkeypatch.setattr(api_mod, "_maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
+    monkeypatch.setattr(api_mod.chat_service.quota_service, "maybe_send_quota_exhausted_notifications", lambda *_a, **_k: None)
     refund_spy = MagicMock()
-    monkeypatch.setattr(api_mod, "_refund_reserved_quota", refund_spy)
+    monkeypatch.setattr(api_mod.chat_service.quota_service, "refund_reserved_quota", refund_spy)
 
     memory: dict[str, list[dict]] = {}
 
@@ -54,7 +54,7 @@ def api_client(
         del token_id
         del limit
         if thread_id not in memory:
-            raise api_mod.ConversationThreadNotFoundError(thread_id)
+            raise api_mod.chat_service.ConversationThreadNotFoundError(thread_id)
         return list(memory[thread_id])
 
     def _fake_append_message_for_token(thread_id, token_id, message, metadata=None):  # noqa: ANN001
@@ -63,16 +63,18 @@ def api_client(
         memory.setdefault(thread_id, []).append(message)
         return {"thread_id": thread_id, "payload": message}
 
-    monkeypatch.setattr(api_mod, "create_thread", _fake_create_thread)
-    monkeypatch.setattr(api_mod, "load_history_for_token", _fake_load_history_for_token)
-    monkeypatch.setattr(api_mod, "append_message_for_token", _fake_append_message_for_token)
-    monkeypatch.setattr(api_mod, "schedule_thread_memory_update", lambda **_kwargs: None)
+    monkeypatch.setattr(api_mod.chat_service, "create_thread", _fake_create_thread)
+    monkeypatch.setattr(api_mod.chat_service, "load_history_for_token", _fake_load_history_for_token)
+    monkeypatch.setattr(api_mod.chat_service, "append_message_for_token", _fake_append_message_for_token)
+    monkeypatch.setattr(api_mod.chat_service, "schedule_thread_memory_update", lambda **_kwargs: None)
     api_mod._unit_test_memory = memory  # pylint: disable=protected-access
+    original_generate = api_mod.chat_service.generate_response_payload
 
     client = TestClient(api_mod.app)
     try:
         yield client, api_mod, refund_spy
     finally:
+        api_mod.chat_service.generate_response_payload = original_generate
         api_mod.app.dependency_overrides.clear()
         client.close()
 
@@ -134,7 +136,7 @@ def _source_conflict_payload() -> dict:
 
 def test_chat_returns_clarification_payload_not_503(api_client) -> None:  # noqa: ANN001
     client, api_mod, refund_spy = api_client
-    api_mod.generate_response_payload = lambda *_a, **_k: _clarification_payload()
+    api_mod.chat_service.generate_response_payload = lambda *_a, **_k: _clarification_payload()
 
     response = client.post(
         "/chat",
@@ -152,7 +154,7 @@ def test_chat_returns_clarification_payload_not_503(api_client) -> None:  # noqa
 
 def test_chat_stream_carries_source_conflict_reason(api_client) -> None:  # noqa: ANN001
     client, api_mod, _ = api_client
-    api_mod.generate_response_payload = lambda *_a, **_k: _source_conflict_payload()
+    api_mod.chat_service.generate_response_payload = lambda *_a, **_k: _source_conflict_payload()
 
     response = client.post(
         "/chat-stream",
@@ -176,7 +178,7 @@ def test_chat_stream_emits_final_clarification_event(api_client) -> None:  # noq
             progress_callback({"stage": "understanding"})
         return _clarification_payload()
 
-    api_mod.generate_response_payload = _fake_generate
+    api_mod.chat_service.generate_response_payload = _fake_generate
 
     response = client.post(
         "/chat-stream",
@@ -191,6 +193,29 @@ def test_chat_stream_emits_final_clarification_event(api_client) -> None:  # noq
     final_events = [payload for name, payload in events if name == "final"]
     assert final_events
     assert final_events[-1]["kind"] == "clarification_required"
+    assert refund_spy.call_count == 1
+
+
+def test_chat_stream_worker_error_refunds_and_emits_error(api_client) -> None:  # noqa: ANN001
+    client, api_mod, refund_spy = api_client
+
+    def _fake_generate(_history, _message, progress_callback=None, request_id=None, thread_id=None):  # noqa: ANN001
+        del _history, _message, progress_callback, request_id, thread_id
+        raise api_mod.chat_service.AgentGenerationError("blocked by guard")
+
+    api_mod.chat_service.generate_response_payload = _fake_generate
+
+    response = client.post(
+        "/chat-stream",
+        json={"message": "帮我分析 AI 行业", "history": []},
+        headers={"Authorization": "Bearer test"},
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse_events(response.text)
+    error_events = [payload for name, payload in events if name == "error"]
+    assert error_events
+    assert error_events[-1] == {"detail": "blocked by guard", "status_code": 503}
     assert refund_spy.call_count == 1
 
 
@@ -210,7 +235,7 @@ def test_clarification_followup_retries_with_merged_message(api_client) -> None:
             "citation_urls": ["https://example.com/a"],
         }
 
-    api_mod.generate_response_payload = _fake_generate
+    api_mod.chat_service.generate_response_payload = _fake_generate
 
     first = client.post(
         "/chat",
@@ -251,7 +276,7 @@ def test_clarification_followup_retries_with_merged_message(api_client) -> None:
 
 def test_chat_normal_answer_path_unchanged(api_client) -> None:  # noqa: ANN001
     client, api_mod, refund_spy = api_client
-    api_mod.generate_response_payload = lambda *_a, **_k: {
+    api_mod.chat_service.generate_response_payload = lambda *_a, **_k: {
         "kind": "answer",
         "text": "正常回答 [1]\n\n## 来源\n- [1] https://example.com/n",
         "url_title_map": {"https://example.com/n": "Example N"},

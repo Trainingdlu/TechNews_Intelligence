@@ -168,7 +168,7 @@ def email_validator_stub(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         pass
 
     def _fake_validate_email(email: str, *_args, **_kwargs):
-        return types.SimpleNamespace(email=email, normalized=email)
+        return types.SimpleNamespace(email=email, normalized=email, local_part=email.split("@", 1)[0])
 
     email_validator_mod.EmailNotValidError = EmailNotValidError
     email_validator_mod.validate_email = _fake_validate_email
