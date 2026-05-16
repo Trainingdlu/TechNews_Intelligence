@@ -113,7 +113,7 @@ bash deployment/scripts/db/run_data_quality_checks.sh
 python eval/trace_query.py --request-id <request_id>
 ```
 
-## 文档导航
+## 项目文档
 
 - [系统架构](docs/ARCHITECTURE.md)
 - [部署与运维](docs/OPERATIONS.md)
