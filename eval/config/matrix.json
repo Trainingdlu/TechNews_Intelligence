@@ -1,10 +1,13 @@
 {
   "name": "recall_matrix",
-  "description": "Three-group serial retrieval matrix",
+  "description": "Three-group retrieval matrix for the curated retrieval dataset",
   "runner": "task_eval",
   "runner_script": "run_task_eval.py",
   "baseline_group": "G0",
-  "default_runner_args": [],
+  "default_runner_args": [
+    "--dataset",
+    "eval/datasets/task_eval_cases_retrieval.jsonl"
+  ],
   "groups": [
     {
       "id": "G0",

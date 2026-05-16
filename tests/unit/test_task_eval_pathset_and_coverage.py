@@ -10,7 +10,7 @@ from eval.task_eval_scoring import score_case
 
 def test_task_types_cover_all_current_tools() -> None:
     task_types = json.loads(
-        Path("eval/config/tasks_180.json").read_text(encoding="utf-8-sig")
+        Path("eval/config/task_types_retrieval.json").read_text(encoding="utf-8-sig")
     )
     task_tools = {
         str(item.get("tool", "")).strip()
@@ -24,7 +24,7 @@ def test_task_types_cover_all_current_tools() -> None:
 
 def test_task_types_match_risk_based_scenario_policy() -> None:
     task_types = json.loads(
-        Path("eval/config/tasks_180.json").read_text(encoding="utf-8-sig")
+        Path("eval/config/task_types_retrieval.json").read_text(encoding="utf-8-sig")
     )
     by_tool: dict[str, set[str]] = {}
     for item in task_types:
@@ -111,5 +111,37 @@ def test_path_set_best_match_uses_alternative_path() -> None:
     layers = score_case(case, [run])
     assert layers["tool"]["acceptable_path_hit_rate"] == 1.0
     assert layers["tool"]["param_accuracy"] == 1.0
+
+
+def test_clarification_case_does_not_require_tool_path_hit() -> None:
+    case = {
+        "intent_label": "search_news",
+        "should_clarify": True,
+        "required_tools": [],
+        "forbidden_tools": [],
+        "expected_tool_paths": [],
+        "retrieval_evaluable": False,
+        "verifiable_claims": [],
+        "input_news_pool": [],
+    }
+    run = {
+        "final_answer": "请先澄清你指的是 Claude Code 还是 Claude API 定价？",
+        "tool_calls": [],
+        "tool_calls_detailed": [],
+        "retrieved_urls": [],
+        "citations": [],
+        "clarification_triggered": True,
+        "error": "",
+        "latency_ms": 120.0,
+        "final_status": "clarification_required",
+    }
+
+    layers = score_case(case, [run])
+    assert layers["intent"]["clarification_accuracy"] == 1.0
+    assert layers["intent"]["top1_accuracy"] == 1.0
+    assert layers["tool"]["case_count"] == 0
+    assert layers["tool"]["acceptable_path_hit_rate"] is None
+    assert layers["tool"]["param_accuracy"] is None
+    assert layers["attribution"]["code"] == "PASS"
 
 

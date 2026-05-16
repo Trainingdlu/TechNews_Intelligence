@@ -43,7 +43,9 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `eval/config/tasks_180.json` | 任务配置。 |
+| `eval/config/task_types_smoke.json` | 小规模冒烟配置，用来快速检查采样、模型 JSON 输出和证据校验链路。 |
+| `eval/config/task_types_preflight.json` | 中等规模预检配置，用来在正式生成前验证题型覆盖和生成稳定性。 |
+| `eval/config/task_types_retrieval.json` | 正式检索/分析题集生成配置，正式报告和简历数据只认该配置或人工审核后的派生数据集。 |
 | `eval/config/matrix.json` | 矩阵实验配置。 |
 | `eval/datasets/*.jsonl` | 生成的数据集。 |
 | `eval/reports/*` | 评测报告输出。 |
@@ -53,6 +55,12 @@
 ```bash
 PYTHONPATH=. python eval/build_task_dataset.py --help
 ```
+
+构建题集默认使用 DeepSeek（`deepseek-v4-pro`），可通过 `TASK_EVAL_PROVIDER` 和 `TASK_EVAL_MODEL` 覆盖。正式生成建议先跑 `task_types_smoke.json`，再跑 `task_types_preflight.json`，最后用 `task_types_retrieval.json` 生成正式题集。
+
+smoke / preflight 是抽样预检配置，不要求覆盖所有工具和所有场景，运行时应带上 `--no-enforce-coverage-policy`。正式配置 `task_types_retrieval.json` 才启用完整覆盖校验。所有配置都可以开启 `--enforce-scenario-retrieval-map`，确保 `normal/boundary` 被当作可检索题，`conflict/empty` 被当作澄清或非检索题。
+
+`should_clarify=true` 的冲突、空结果类场景不再要求工具路径命中：生成时 `expected_tool_paths=[]`、`required_tools=[]`、检索 gold 为空，评分时重点检查是否正确触发澄清，避免把澄清题和检索题混在同一套工具指标里。
 
 单条 case 的核心字段：
 
@@ -139,7 +147,7 @@ bash deployment/scripts/eval/run_eval.sh
 
 | 变量 | 默认值 |
 | --- | --- |
-| `TASK_FILE` | `eval/config/tasks_180.json` |
+| `TASK_FILE` | `eval/config/task_types_retrieval.json` |
 | `MATRIX_FILE` | `eval/config/matrix.json` |
 | `GROUPS` | `G0,G1,G2` |
 | `RUNS_PER_CASE` | `1` |

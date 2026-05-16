@@ -295,8 +295,10 @@ def validate_task_type_scenario_coverage(task_types: list[dict[str, Any]]) -> No
         by_tool.setdefault(tool, set()).add(scenario)
 
     missing: dict[str, list[str]] = {}
-    for tool, required in SCENARIO_COVERAGE_POLICY.items():
-        covered = by_tool.get(tool, set())
+    for tool, covered in by_tool.items():
+        required = SCENARIO_COVERAGE_POLICY.get(tool)
+        if not required:
+            continue
         missing_scenarios = sorted(required.difference(covered))
         if missing_scenarios:
             missing[tool] = missing_scenarios
@@ -423,17 +425,24 @@ def normalize_case(
     if not _contains_zh(expected_answer):
         raise ValueError(f"{case_id}: expected_answer must contain Chinese text.")
 
-    expected_tool_paths = _normalize_tool_paths(
-        raw_case.get("expected_tool_paths", task_type["acceptable_tool_paths"]),
-        field=f"{case_id}.expected_tool_paths",
-    )
+    case_should_clarify = bool(raw_case.get("should_clarify", task_type["should_clarify"]))
+    raw_expected_tool_paths = raw_case.get("expected_tool_paths", [] if case_should_clarify else task_type["acceptable_tool_paths"])
+    if case_should_clarify:
+        if raw_expected_tool_paths:
+            raise ValueError(f"{case_id}: should_clarify cases must not define expected_tool_paths.")
+        expected_tool_paths: list[list[dict[str, Any]]] = []
+    else:
+        expected_tool_paths = _normalize_tool_paths(
+            raw_expected_tool_paths,
+            field=f"{case_id}.expected_tool_paths",
+        )
     acceptable_tool_paths = _normalize_tool_paths(
         task_type.get("acceptable_tool_paths", []),
         field=f"{case_id}.acceptable_tool_paths",
     )
-    if not _paths_subset(expected_tool_paths, acceptable_tool_paths):
+    if expected_tool_paths and not _paths_subset(expected_tool_paths, acceptable_tool_paths):
         raise ValueError(f"{case_id}: expected_tool_paths must be subset of task acceptable_tool_paths.")
-    required_tools = _as_str_list(raw_case.get("required_tools", task_type["required_tools"]))
+    required_tools = _as_str_list(raw_case.get("required_tools", [] if case_should_clarify else task_type["required_tools"]))
     forbidden_tools = _as_str_list(raw_case.get("forbidden_tools", task_type["forbidden_tools"]))
     if set(required_tools).intersection(forbidden_tools):
         raise ValueError(f"{case_id}: required_tools overlaps forbidden_tools.")
@@ -519,7 +528,7 @@ def normalize_case(
         "retrieval_gold_doc_ids": retrieval_gold_doc_ids,
         "retrieval_gold_urls": retrieval_gold_urls,
         "verifiable_claims": verifiable_claims,
-        "should_clarify": bool(raw_case.get("should_clarify", task_type["should_clarify"])),
+        "should_clarify": case_should_clarify,
         "retrieval_evaluable": retrieval_evaluable,
         "difficulty": difficulty,
         "tags": _as_str_list(raw_case.get("tags", task_type.get("tags", []))),
@@ -566,10 +575,17 @@ def validate_case(case: dict[str, Any], *, strict_tool: bool = True) -> None:
         doc_ids.add(doc_id)
         urls.add(url)
 
-    expected_tool_paths = _normalize_tool_paths(
-        case.get("expected_tool_paths"),
-        field=f"{case_id}.expected_tool_paths",
-    )
+    should_clarify = bool(case.get("should_clarify"))
+    raw_expected_tool_paths = case.get("expected_tool_paths")
+    if should_clarify:
+        if raw_expected_tool_paths:
+            raise ValueError(f"{case_id}: should_clarify cases must not define expected_tool_paths.")
+        expected_tool_paths: list[list[dict[str, Any]]] = []
+    else:
+        expected_tool_paths = _normalize_tool_paths(
+            raw_expected_tool_paths,
+            field=f"{case_id}.expected_tool_paths",
+        )
     if strict_tool and available_tools:
         unknown_tools = sorted(
             {
@@ -581,7 +597,7 @@ def validate_case(case: dict[str, Any], *, strict_tool: bool = True) -> None:
         )
         if unknown_tools:
             raise ValueError(f"{case_id}: unknown tools in expected_tool_paths={unknown_tools}")
-    if tool not in {
+    if (not should_clarify) and tool not in {
         call["tool"]
         for path in expected_tool_paths
         for call in path
@@ -589,7 +605,7 @@ def validate_case(case: dict[str, Any], *, strict_tool: bool = True) -> None:
         raise ValueError(f"{case_id}: expected_tool_paths must include tool={tool}.")
 
     required_tools = _as_str_list(case.get("required_tools"))
-    if not required_tools:
+    if (not should_clarify) and not required_tools:
         raise ValueError(f"{case_id}: required_tools must be non-empty.")
     forbidden_tools = _as_str_list(case.get("forbidden_tools"))
     if set(required_tools).intersection(forbidden_tools):

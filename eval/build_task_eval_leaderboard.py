@@ -108,6 +108,14 @@ METRIC_SPECS: list[MetricSpec] = [
         case_key="forbidden_tool_rate",
     ),
     MetricSpec(
+        name="tool_unnecessary_tool_call_rate",
+        layer="tool",
+        direction="lower_better",
+        summary_path="summary.tool.unnecessary_tool_call_rate",
+        case_layer="tool",
+        case_key="unnecessary_tool_call_rate",
+    ),
+    MetricSpec(
         name="avg_recall_at_10",
         layer="retrieval",
         direction="higher_better",

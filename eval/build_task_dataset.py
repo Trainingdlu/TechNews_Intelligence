@@ -16,6 +16,7 @@ import json
 import os
 import random
 import re
+import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -25,8 +26,13 @@ from typing import Any, TypeVar
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 
+if __package__ in {None, ""}:
+    project_root = Path(__file__).resolve().parents[1]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
 from services.llm_provider import (
-    DEFAULT_VERTEX_MODEL,
+    DEFAULT_DEEPSEEK_MODEL,
     build_chat_model as build_shared_chat_model,
     resolve_model_config,
 )
@@ -54,8 +60,8 @@ except ImportError:  # package-style import fallback
     )
 
 
-DEFAULT_MODEL = DEFAULT_VERTEX_MODEL
-DEFAULT_PROVIDER = "vertex"
+DEFAULT_MODEL = DEFAULT_DEEPSEEK_MODEL
+DEFAULT_PROVIDER = "deepseek"
 SCHEMA_VERSION = "task_eval_schema@2026-04-25-evidence-quotes"
 BUILD_LOGIC_VERSION = "task_dataset_build@2026-04-29-topic-preflight"
 SCENARIO_RETRIEVAL_MODE_MAP: dict[str, str] = {
@@ -205,7 +211,7 @@ def _load_eval_env(env_file: Path | None) -> None:
             raise FileNotFoundError(f"Env file not found: {candidate}")
         load_dotenv(dotenv_path=candidate, override=True)
 
-    # Dataset generation defaults to Vertex unless TASK_EVAL_PROVIDER is explicit.
+    # Dataset generation defaults to DeepSeek unless TASK_EVAL_PROVIDER is explicit.
     if not str(os.getenv("TASK_EVAL_PROVIDER", "")).strip():
         os.environ["TASK_EVAL_PROVIDER"] = _resolve_preferred_provider()
 
@@ -697,6 +703,7 @@ def _generator_prompts(
     rejection_reasons: dict[str, str] | None = None,
     attempt_feedback: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
+    clarify_task = bool(task["should_clarify"])
     schema_hint = {
         "task_id": task["task_id"],
         "cases": [
@@ -704,14 +711,16 @@ def _generator_prompts(
                 "pool_id": "string",
                 "expected_question": "string",
                 "expected_answer": "string",
-                "expected_tool_paths": [
-                    [{"tool": task["tool"], "args": task["parameter_template"]}]
-                ],
-                "required_tools": task["required_tools"],
+                "expected_tool_paths": []
+                if clarify_task
+                else [[{"tool": task["tool"], "args": task["parameter_template"]}]],
+                "required_tools": [] if clarify_task else task["required_tools"],
                 "forbidden_tools": task["forbidden_tools"],
-                "retrieval_gold_doc_ids": ["doc_id from same pool"],
-                "retrieval_gold_urls": ["url from same pool"],
-                "verifiable_claims": [
+                "retrieval_gold_doc_ids": [] if clarify_task else ["doc_id from same pool"],
+                "retrieval_gold_urls": [] if clarify_task else ["url from same pool"],
+                "verifiable_claims": []
+                if clarify_task
+                else [
                     {
                         "claim": "verifiable claim from expected_answer",
                         "evidence_doc_ids": ["doc_id from same pool"],
@@ -739,7 +748,7 @@ def _generator_prompts(
         "2) Study the news pool to identify key entities, events, and facts.\n"
         "3) Craft a realistic Chinese question that a user would ask.\n"
         "4) Write a grounded expected_answer using only evidence from the pool.\n"
-        "5) Specify tool paths and verifiable claims.\n\n"
+        "5) Specify tool paths and verifiable claims only for cases that should be answered directly.\n\n"
         "Rules:\n"
         "1) Return strict JSON object only.\n"
         "2) One case per pool_id, no missing and no extra pools.\n"
@@ -752,10 +761,13 @@ def _generator_prompts(
         "continuous, exact excerpt from the same doc's title/summary/evidence_text. Do not paraphrase. "
         "Do not combine non-adjacent sentences. Do not use ellipses (... or \\u2026).\n"
         "9) expected_question and expected_answer must be written in Chinese (entity/product names may stay in English).\n"
-        "10) expected_tool_paths must be an exact subset of acceptable_tool_paths; do not alter tool args.\n"
-        "11) For non-empty scenarios, expected_question must be answerable by the pool and mention pool entities/topics.\n"
-        "12) For empty/non_retrieval scenarios, do not invent facts, leave retrieval gold empty, and verifiable_claims may be empty.\n"
-        "13) Do not output markdown fences."
+        "10) If should_clarify=false, expected_tool_paths must be an exact subset of acceptable_tool_paths; do not alter tool args.\n"
+        "11) If should_clarify=true, the case must ask for clarification instead of tool execution: "
+        "expected_tool_paths=[], required_tools=[], retrieval gold empty, verifiable_claims=[], and expected_answer "
+        "should be the clarification question the agent should ask.\n"
+        "12) For non-empty non-clarification scenarios, expected_question must be answerable by the pool and mention pool entities/topics.\n"
+        "13) For empty/non_retrieval scenarios, do not invent facts, leave retrieval gold empty, and verifiable_claims may be empty.\n"
+        "14) Do not output markdown fences."
     )
 
     # Feedback loop: inject previous rejection reasons
@@ -804,7 +816,8 @@ def _audit_prompts(task: dict[str, Any], cases: list[dict[str, Any]]) -> tuple[s
         "3) Provide a clear accept/reject verdict with specific reasoning.\n\n"
         "Check each case for contract consistency and evidence grounding.\n"
         "Reject any case whose expected_question or expected_answer is not Chinese.\n"
-        "Reject any case whose expected_tool_paths is not an exact subset of task.acceptable_tool_paths.\n"
+        "For should_clarify=false, reject any case whose expected_tool_paths is not an exact subset of task.acceptable_tool_paths.\n"
+        "For should_clarify=true, reject any case that defines expected_tool_paths, required_tools, retrieval gold labels, or verifiable claims.\n"
         "For non-empty scenarios, reject if expected_question is not grounded in input_news_pool topics/entities.\n"
         "If rejected for language, set reason to non_chinese_expected_text.\n"
         "If rejected for path drift, set reason to path_not_in_acceptable.\n"
@@ -1501,19 +1514,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--task-types",
         type=Path,
-        default=eval_dir / "config" / "tasks_180.json",
+        default=eval_dir / "config" / "task_types_retrieval.json",
         help="Task type config JSON file.",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=eval_dir / "datasets" / "task_eval_cases.jsonl",
+        default=eval_dir / "datasets" / "task_eval_cases_retrieval.jsonl",
         help="Output dataset JSONL path.",
     )
     parser.add_argument(
         "--manifest-output",
         type=Path,
-        default=eval_dir / "datasets" / "task_eval_manifest.json",
+        default=eval_dir / "datasets" / "task_eval_manifest_retrieval.json",
         help="Output manifest JSON path.",
     )
     parser.add_argument(

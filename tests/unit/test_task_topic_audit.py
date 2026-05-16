@@ -82,7 +82,7 @@ def _sample_meta(candidates: list[dict], **overrides) -> dict:
 
 def test_actual_task_topics_static_audit_passes() -> None:
     tasks = load_task_types(
-        Path("eval/config/tasks_180.json"),
+        Path("eval/config/task_types_retrieval.json"),
         strict_tool=False,
         enforce_coverage_policy=False,
     )

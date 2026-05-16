@@ -472,7 +472,7 @@ def run_topic_audit(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Audit task topic quality before dataset generation.")
-    parser.add_argument("--task-file", type=Path, default=Path("eval/config/tasks_180.json"))
+    parser.add_argument("--task-file", type=Path, default=Path("eval/config/task_types_retrieval.json"))
     parser.add_argument("--strict", action="store_true", help="Treat warnings as blocking unless allowed by env.")
     parser.add_argument("--static-only", action="store_true", help="Skip DB-backed candidate coverage checks.")
     parser.add_argument("--seed", type=int, default=42)

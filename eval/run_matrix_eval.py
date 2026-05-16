@@ -215,6 +215,7 @@ def _extract_summary_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "intent_clarification_accuracy": intent.get("clarification_accuracy"),
         "tool_path_hit_rate": tool.get("acceptable_path_hit_rate"),
         "tool_forbidden_tool_rate": tool.get("forbidden_tool_rate"),
+        "tool_unnecessary_tool_call_rate": tool.get("unnecessary_tool_call_rate"),
         "tool_param_accuracy": tool.get("param_accuracy"),
         "retrieval_case_count": retrieval.get("case_count"),
         "retrieval_recall_at_10": retrieval.get("recall_at_10"),

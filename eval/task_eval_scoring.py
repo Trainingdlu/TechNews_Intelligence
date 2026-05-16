@@ -57,6 +57,7 @@ RCS_MRR_W = 0.3
 RCS_NDCG_W = 0.3
 
 ATTRIBUTION_CODES = (
+    "CLARIFICATION_FAIL",
     "INTENT_FAIL",
     "TOOL_PATH_FAIL",
     "TOOL_ARG_FAIL",
@@ -78,6 +79,15 @@ def _mean(values: list[float | None]) -> float | None:
     if not numbers:
         return None
     return sum(numbers) / len(numbers)
+
+
+def _append_metric(values: list[float], value: Any) -> None:
+    if value is None:
+        return
+    try:
+        values.append(float(value))
+    except (TypeError, ValueError):
+        return
 
 
 def _quantile(values: list[float], q: float) -> float:
@@ -360,24 +370,33 @@ def score_case(
         error_text = str(run.get("error", "")).strip().lower()
         latency_ms = float(run.get("latency_ms", 0.0) or 0.0)
 
-        predicted_intent = tool_calls[0] if tool_calls else "none"
-        expected_labels.append(expected_intent)
+        predicted_intent = "clarification_required" if clarification_triggered else (tool_calls[0] if tool_calls else "none")
+        expected_label = "clarification_required" if should_clarify else expected_intent
+        expected_labels.append(expected_label)
         predicted_labels.append(predicted_intent)
-        intent_hit = 1.0 if predicted_intent == expected_intent else 0.0
         clarify_hit = 1.0 if clarification_triggered == should_clarify else 0.0
+        intent_hit = clarify_hit if should_clarify else (1.0 if predicted_intent == expected_intent else 0.0)
 
-        tool_precision = _safe_div(
-            float(len(actual_tools_set.intersection(required_tools))),
-            float(len(actual_tools_set) or 1),
-        )
-        tool_recall = _safe_div(
-            float(len(actual_tools_set.intersection(required_tools))),
-            float(len(required_tools) or 1),
-        )
-        best_path = _best_path_match(expected_paths, tool_calls, actual_detailed_calls)
-        path_hit = float(best_path["path_hit"])
+        if should_clarify:
+            tool_precision = None
+            tool_recall = None
+            best_path = {"coverage": None, "best_path_index": -1}
+            path_hit = None
+            param_acc = None
+        else:
+            tool_precision = _safe_div(
+                float(len(actual_tools_set.intersection(required_tools))),
+                float(len(actual_tools_set) or 1),
+            )
+            tool_recall = _safe_div(
+                float(len(actual_tools_set.intersection(required_tools))),
+                float(len(required_tools) or 1),
+            )
+            best_path = _best_path_match(expected_paths, tool_calls, actual_detailed_calls)
+            path_hit = float(best_path["path_hit"])
+            param_acc = float(best_path["param_accuracy"])
         forbidden_hit = 1.0 if actual_tools_set.intersection(forbidden_tools) else 0.0
-        param_acc = float(best_path["param_accuracy"])
+        unnecessary_tool_call_hit = 1.0 if should_clarify and tool_calls else 0.0
 
         if retrieval_evaluable:
             recall5 = recall_at_k(retrieved_urls, retrieval_gold_urls, 5)
@@ -467,9 +486,10 @@ def score_case(
                 "tool_set_precision": tool_precision,
                 "tool_set_recall": tool_recall,
                 "path_hit": path_hit,
-                "path_coverage": float(best_path["coverage"]),
+                "path_coverage": None if best_path["coverage"] is None else float(best_path["coverage"]),
                 "best_path_index": int(best_path["best_path_index"]),
                 "forbidden_tool_hit": forbidden_hit,
+                "unnecessary_tool_call_hit": unnecessary_tool_call_hit,
                 "param_accuracy": param_acc,
                 "recall_at_5": recall5,
                 "recall_at_10": recall10,
@@ -508,13 +528,16 @@ def score_case(
             "top1_accuracy": intent_top1,
             "macro_f1": intent_macro_f1,
             "clarification_accuracy": clarification_accuracy,
+            "should_clarify": should_clarify,
         },
         "tool": {
-            "tool_set_precision": _mean([row["tool_set_precision"] for row in run_rows]) or 0.0,
-            "tool_set_recall": _mean([row["tool_set_recall"] for row in run_rows]) or 0.0,
-            "acceptable_path_hit_rate": _mean([row["path_hit"] for row in run_rows]) or 0.0,
+            "case_count": 0 if should_clarify else 1,
+            "tool_set_precision": _mean([row["tool_set_precision"] for row in run_rows]),
+            "tool_set_recall": _mean([row["tool_set_recall"] for row in run_rows]),
+            "acceptable_path_hit_rate": _mean([row["path_hit"] for row in run_rows]),
             "forbidden_tool_rate": _mean([row["forbidden_tool_hit"] for row in run_rows]) or 0.0,
-            "param_accuracy": _mean([row["param_accuracy"] for row in run_rows]) or 0.0,
+            "unnecessary_tool_call_rate": _mean([row["unnecessary_tool_call_hit"] for row in run_rows]) or 0.0,
+            "param_accuracy": _mean([row["param_accuracy"] for row in run_rows]),
         },
         "retrieval": {
             "evaluable": retrieval_evaluable,
@@ -561,11 +584,16 @@ def derive_case_attribution(layer: dict[str, Any]) -> dict[str, Any]:
     analysis = layer.get("analysis", {})
     system = layer.get("system", {})
 
-    if float(intent.get("top1_accuracy", 0.0) or 0.0) < 1.0:
+    should_clarify = bool(intent.get("should_clarify", False))
+    if should_clarify and float(intent.get("clarification_accuracy", 0.0) or 0.0) < 1.0:
+        return {"code": "CLARIFICATION_FAIL", "layer": "intent"}
+    if (not should_clarify) and float(intent.get("top1_accuracy", 0.0) or 0.0) < 1.0:
         return {"code": "INTENT_FAIL", "layer": "intent"}
-    if float(tool.get("acceptable_path_hit_rate", 0.0) or 0.0) < 1.0:
+    path_hit = tool.get("acceptable_path_hit_rate")
+    if path_hit is not None and float(path_hit) < 1.0:
         return {"code": "TOOL_PATH_FAIL", "layer": "tool"}
-    if float(tool.get("param_accuracy", 0.0) or 0.0) < 1.0:
+    param_accuracy = tool.get("param_accuracy")
+    if param_accuracy is not None and float(param_accuracy) < 1.0:
         return {"code": "TOOL_ARG_FAIL", "layer": "tool"}
     if bool(retrieval.get("evaluable")) and float(retrieval.get("gold_hit_rate", 0.0) or 0.0) <= 0.0:
         return {"code": "RETRIEVAL_FAIL", "layer": "retrieval"}
@@ -588,10 +616,12 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
         return {
             "intent": {"top1_accuracy": 0.0, "macro_f1": 0.0, "clarification_accuracy": 0.0},
             "tool": {
+                "case_count": 0,
                 "tool_set_precision": 0.0,
                 "tool_set_recall": 0.0,
                 "acceptable_path_hit_rate": 0.0,
                 "forbidden_tool_rate": 0.0,
+                "unnecessary_tool_call_rate": 0.0,
                 "param_accuracy": 0.0,
             },
             "retrieval": {
@@ -638,7 +668,9 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
     tool_recall_vals: list[float] = []
     path_hit_vals: list[float] = []
     forbidden_vals: list[float] = []
+    unnecessary_tool_vals: list[float] = []
     param_vals: list[float] = []
+    tool_case_count = 0
 
     retrieval_rows: list[dict[str, Any]] = []
     analysis_rows: list[dict[str, Any]] = []
@@ -666,17 +698,23 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
         intent_top1_vals.append(float(intent.get("top1_accuracy", 0.0) or 0.0))
         clarify_vals.append(float(intent.get("clarification_accuracy", 0.0) or 0.0))
         for run in runs:
-            expected_intent = str(case.get("intent_label", "")).strip()
+            expected_intent = (
+                "clarification_required"
+                if bool(case.get("should_clarify", False))
+                else str(case.get("intent_label", "")).strip()
+            )
             predicted = str(run.get("predicted_intent_label", "")).strip()
             if expected_intent and predicted:
                 intent_expected.append(expected_intent)
                 intent_predicted.append(predicted)
 
-        tool_precision_vals.append(float(tool.get("tool_set_precision", 0.0) or 0.0))
-        tool_recall_vals.append(float(tool.get("tool_set_recall", 0.0) or 0.0))
-        path_hit_vals.append(float(tool.get("acceptable_path_hit_rate", 0.0) or 0.0))
-        forbidden_vals.append(float(tool.get("forbidden_tool_rate", 0.0) or 0.0))
-        param_vals.append(float(tool.get("param_accuracy", 0.0) or 0.0))
+        tool_case_count += int(tool.get("case_count", 0) or 0)
+        _append_metric(tool_precision_vals, tool.get("tool_set_precision"))
+        _append_metric(tool_recall_vals, tool.get("tool_set_recall"))
+        _append_metric(path_hit_vals, tool.get("acceptable_path_hit_rate"))
+        _append_metric(forbidden_vals, tool.get("forbidden_tool_rate"))
+        _append_metric(unnecessary_tool_vals, tool.get("unnecessary_tool_call_rate"))
+        _append_metric(param_vals, tool.get("param_accuracy"))
 
         if retrieval.get("evaluable"):
             retrieval_rows.append(retrieval)
@@ -718,11 +756,13 @@ def aggregate_layer_summary(case_rows: list[dict[str, Any]]) -> dict[str, Any]:
             "clarification_accuracy": _safe_div(sum(clarify_vals), len(clarify_vals)),
         },
         "tool": {
-            "tool_set_precision": _safe_div(sum(tool_precision_vals), len(tool_precision_vals)),
-            "tool_set_recall": _safe_div(sum(tool_recall_vals), len(tool_recall_vals)),
-            "acceptable_path_hit_rate": _safe_div(sum(path_hit_vals), len(path_hit_vals)),
-            "forbidden_tool_rate": _safe_div(sum(forbidden_vals), len(forbidden_vals)),
-            "param_accuracy": _safe_div(sum(param_vals), len(param_vals)),
+            "case_count": tool_case_count,
+            "tool_set_precision": _mean(tool_precision_vals),
+            "tool_set_recall": _mean(tool_recall_vals),
+            "acceptable_path_hit_rate": _mean(path_hit_vals),
+            "forbidden_tool_rate": _mean(forbidden_vals) or 0.0,
+            "unnecessary_tool_call_rate": _mean(unnecessary_tool_vals) or 0.0,
+            "param_accuracy": _mean(param_vals),
         },
         "retrieval": {
             "case_count": len(retrieval_rows),

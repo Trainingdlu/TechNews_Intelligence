@@ -111,6 +111,33 @@ def test_normalize_case_enforces_retrieval_gold_subset() -> None:
     assert case["input_news_pool_hash"] == build_news_pool_hash(_pool())
 
 
+def test_normalize_case_allows_clarification_without_tool_path() -> None:
+    task = _task_type()
+    task["retrieval_mode"] = "non_retrieval"
+    task["scenario"] = "conflict"
+    task["should_clarify"] = True
+    case = normalize_case(
+        _case(
+            expected_question="请查 Claude 但不要限定是哪类信息",
+            expected_answer="请先确认你想查 Claude 产品更新、价格变化还是公司动态？",
+            expected_tool_paths=[],
+            required_tools=[],
+            retrieval_evaluable=False,
+            retrieval_gold_doc_ids=[],
+            verifiable_claims=[],
+        ),
+        task_type=task,
+        case_id="case-clarify",
+        pool_id="pool-1",
+        input_news_pool=_pool(),
+    )
+
+    validate_case(case, strict_tool=False)
+    assert case["should_clarify"] is True
+    assert case["expected_tool_paths"] == []
+    assert case["required_tools"] == []
+
+
 def test_normalize_case_rejects_invalid_gold_ids() -> None:
     task = _task_type()
     with pytest.raises(ValueError, match="retrieval_gold_doc_ids must be subset"):

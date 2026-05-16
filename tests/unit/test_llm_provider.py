@@ -101,5 +101,6 @@ def test_run_eval_script_uses_role_level_model_variables() -> None:
     assert 'PROVIDER="${PROVIDER:-' not in script
     assert 'MODEL="${MODEL:-' not in script
     assert 'AGENT_PROVIDER="${AGENT_PROVIDER:-vertex}"' in script
-    assert 'DATASET_PROVIDER="${DATASET_PROVIDER:-vertex}"' in script
+    assert 'DATASET_PROVIDER="${DATASET_PROVIDER:-deepseek}"' in script
+    assert 'DATASET_MODEL="${DATASET_MODEL:-deepseek-v4-pro}"' in script
     assert 'JUDGE_PROVIDER="${JUDGE_PROVIDER:-vertex}"' in script

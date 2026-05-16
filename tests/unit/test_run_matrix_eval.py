@@ -31,7 +31,10 @@ def test_load_matrix_config_reads_baseline_and_default_args() -> None:
 
     assert config.baseline_group == "G0"
     assert config.runner_script == "run_task_eval.py"
-    assert config.default_runner_args == []
+    assert config.default_runner_args == [
+        "--dataset",
+        "eval/datasets/task_eval_cases_retrieval.jsonl",
+    ]
 
 
 def test_load_matrix_groups_rejects_duplicate_ids(tmp_path: Path) -> None:
