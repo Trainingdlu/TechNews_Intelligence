@@ -496,6 +496,16 @@ def _repair_generated_case(
     pool_docs: list[dict[str, Any]],
 ) -> dict[str, Any]:
     out = dict(raw_case)
+    if bool(task.get("should_clarify", False)):
+        out["expected_tool_paths"] = []
+        out["required_tools"] = []
+        out["retrieval_gold_doc_ids"] = []
+        out["retrieval_gold_urls"] = []
+        out["verifiable_claims"] = []
+        out["retrieval_evaluable"] = False
+        out["should_clarify"] = True
+        return out
+
     acceptable_paths = _coerce_path_list(task.get("acceptable_tool_paths", []))
     out["expected_tool_paths"] = _coerce_expected_paths_to_acceptable(
         out.get("expected_tool_paths"),

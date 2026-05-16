@@ -11,6 +11,7 @@ from eval.task_eval_schema import (
     normalize_case,
     validate_case,
 )
+from eval.build_task_dataset import _repair_generated_case
 
 def _expected_tool_paths(query: str = "OpenAI") -> list[list[dict]]:
     return [[{"tool": "query_news", "args": {"query": query}}]]
@@ -136,6 +137,30 @@ def test_normalize_case_allows_clarification_without_tool_path() -> None:
     assert case["should_clarify"] is True
     assert case["expected_tool_paths"] == []
     assert case["required_tools"] == []
+
+
+def test_repair_generated_case_strips_tool_fields_for_clarification() -> None:
+    task = _task_type()
+    task["should_clarify"] = True
+    task["retrieval_mode"] = "non_retrieval"
+    raw = _case(
+        expected_tool_paths=_expected_tool_paths(),
+        required_tools=["query_news"],
+        retrieval_evaluable=True,
+        retrieval_gold_doc_ids=["doc_1"],
+        retrieval_gold_urls=["https://a.example.com"],
+        verifiable_claims=[_claim()],
+        should_clarify=True,
+    )
+
+    repaired = _repair_generated_case(raw, task, _pool())
+
+    assert repaired["expected_tool_paths"] == []
+    assert repaired["required_tools"] == []
+    assert repaired["retrieval_gold_doc_ids"] == []
+    assert repaired["retrieval_gold_urls"] == []
+    assert repaired["verifiable_claims"] == []
+    assert repaired["retrieval_evaluable"] is False
 
 
 def test_normalize_case_rejects_invalid_gold_ids() -> None:
