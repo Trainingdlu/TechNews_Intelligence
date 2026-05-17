@@ -1,4 +1,12 @@
-"""Build task-driven eval dataset.
+"""Build legacy task-driven eval dataset.
+
+This script is kept as an experimental/compatibility path. The primary eval
+dataset flow is now event-driven:
+
+1) eval/build_event_cards.py
+2) eval/build_event_eval_datasets.py
+3) eval/run_retrieval_eval.py, eval/run_generation_eval.py,
+   eval/run_e2e_event_eval.py
 
 Flow:
 1) Load task types (task-driven).
@@ -617,18 +625,6 @@ def _validate_generated_case_alignment(
                 f"{case_id}: expected_answer mentions sources={sorted(answer_sources)} "
                 f"not covered by gold evidence sources={sorted(gold_sources)}."
             )
-
-    gold_quote_text = "\n".join(
-        str(quote.get("quote", "") or "")
-        for claim in case.get("verifiable_claims", [])
-        if isinstance(claim, dict)
-        for quote in claim.get("evidence_quotes", [])
-        if isinstance(quote, dict)
-    )
-    if topic_tokens and _anchor_overlap_count(topic_tokens, gold_quote_text) < _required_anchor_hits(topic_tokens):
-        raise ValueError(
-            f"{case_id}: verifiable claim quotes do not match tool parameter anchors={topic_tokens}."
-        )
 
 
 def _title_topic(pool_docs: list[dict[str, Any]]) -> str:

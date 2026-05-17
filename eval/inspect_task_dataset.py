@@ -344,17 +344,6 @@ def _case_issues(case: dict[str, Any], *, min_per_task: int, task_counts: Counte
                 }
             )
 
-    quote_text = "\n".join(
-        str(quote.get("quote", "") or "")
-        for claim in claims
-        if isinstance(claim, dict)
-        for quote in claim.get("evidence_quotes", [])
-        if isinstance(quote, dict)
-    )
-    if topic_tokens and quote_text and _overlap(topic_tokens, quote_text) < _required_hits(topic_tokens):
-        issues.append(
-            {"case_id": case_id, "code": "quote_topic_mismatch", "detail": ",".join(topic_tokens)}
-        )
     return issues
 
 

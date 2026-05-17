@@ -280,9 +280,9 @@
     "intent_label": "fulltext_batch",
     "retrieval_mode": "evaluable",
     "scenario": "boundary",
-    "example_question": "Without URLs, auto-select OpenAI Voice Engine docs in last 14 days and read full text.",
+    "example_question": "Without URLs, auto-select recent OpenAI docs and read full text.",
     "parameter_template": {
-      "urls": "OpenAI Voice Engine recent 14 days",
+      "urls": "OpenAI recent 14 days",
       "max_chars_per_article": 4000
     },
     "acceptable_tool_paths": [
@@ -290,7 +290,7 @@
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "OpenAI Voice Engine recent 14 days",
+            "urls": "OpenAI recent 14 days",
             "max_chars_per_article": 4000
           }
         }
@@ -299,14 +299,14 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "OpenAI Voice Engine",
+            "query": "OpenAI",
             "days": 14
           }
         },
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "OpenAI Voice Engine recent 14 days",
+            "urls": "OpenAI recent 14 days",
             "max_chars_per_article": 4000
           }
         }
@@ -324,8 +324,7 @@
       "pool_size": 10,
       "candidate_limit": 200,
       "keywords": [
-        "OpenAI",
-        "Voice"
+        "OpenAI"
       ],
       "sources": [],
       "languages": []
@@ -384,8 +383,7 @@
       "pool_size": 10,
       "candidate_limit": 220,
       "keywords": [
-        "OpenAI",
-        "Voice"
+        "OpenAI"
       ],
       "sources": [],
       "languages": []
@@ -401,9 +399,9 @@
     "intent_label": "fulltext_batch",
     "retrieval_mode": "evaluable",
     "scenario": "normal",
-    "example_question": "Batch read full text for OpenAI Voice Engine topic without explicit URLs.",
+    "example_question": "Batch read full text for recent OpenAI topic without explicit URLs.",
     "parameter_template": {
-      "urls": "OpenAI Voice Engine recent 14 days",
+      "urls": "OpenAI recent 14 days",
       "max_chars_per_article": 4000
     },
     "acceptable_tool_paths": [
@@ -411,7 +409,7 @@
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "OpenAI Voice Engine recent 14 days",
+            "urls": "OpenAI recent 14 days",
             "max_chars_per_article": 4000
           }
         }
@@ -420,14 +418,14 @@
         {
           "tool": "search_news",
           "args": {
-            "query": "OpenAI Voice Engine recent 14 days",
+            "query": "OpenAI recent 14 days",
             "days": 14
           }
         },
         {
           "tool": "fulltext_batch",
           "args": {
-            "urls": "OpenAI Voice Engine recent 14 days",
+            "urls": "OpenAI recent 14 days",
             "max_chars_per_article": 4000
           }
         }
@@ -445,8 +443,7 @@
       "pool_size": 10,
       "candidate_limit": 220,
       "keywords": [
-        "OpenAI",
-        "Voice"
+        "OpenAI"
       ],
       "sources": [],
       "languages": []
