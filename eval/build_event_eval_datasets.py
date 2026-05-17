@@ -233,14 +233,19 @@ def _event_type(card: dict[str, Any]) -> str:
 
 
 def _find_product(card: dict[str, Any], entity: str) -> str:
-    haystack = _card_haystack(card)
+    title = _clean_event_title(str(card.get("event_title", "")))
     for pattern in PRODUCT_PATTERNS:
-        match = re.search(pattern, haystack, flags=re.IGNORECASE)
+        match = re.search(pattern, title, flags=re.IGNORECASE)
         if not match:
             continue
         product = re.sub(r"\s+", " ", match.group(0)).strip()
         if product and product.lower() != str(entity or "").lower():
             return product
+
+    # Facts often mention adjacent tools or competitors. If the title already
+    # identifies the main entity, do not promote a fact-only mention to product.
+    if entity and re.search(re.escape(entity), title, flags=re.IGNORECASE):
+        return ""
 
     for item in card.get("entities", []) or []:
         candidate = str(item or "").strip()

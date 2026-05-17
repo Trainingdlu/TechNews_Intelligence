@@ -130,6 +130,32 @@ def test_retrieval_questions_skip_event_without_clear_anchor() -> None:
     assert _retrieval_questions(card) == []
 
 
+def test_title_entity_prevents_fact_only_product_contamination() -> None:
+    card = validate_event_card(
+        {
+            "event_id": "zed_1_0_release_2026_05",
+            "event_title": "[开发] Zed代码编辑器正式发布1.0版本",
+            "entities": ["Zed", "Claude"],
+            "time_window": {"start": "2026-05-01", "end": "2026-05-01"},
+            "core_urls": ["https://example.com/zed-1-0"],
+            "related_urls": [],
+            "facts": [
+                {
+                    "claim": "Zed 1.0 发布后支持 Claude 辅助开发能力",
+                    "quote": "Zed 1.0 发布后支持 Claude 辅助开发能力",
+                    "url": "https://example.com/zed-1-0",
+                }
+            ],
+            "suitable_tasks": ["single_event"],
+            "sources": ["Blog"],
+        }
+    )
+    questions = [question for _, question in _retrieval_questions(card)]
+    assert questions
+    assert any(question.startswith("Zed 最近发布") for question in questions)
+    assert all("Claude 的" not in question for question in questions)
+
+
 def test_generation_case_rejects_missing_evidence() -> None:
     try:
         validate_generation_case(
