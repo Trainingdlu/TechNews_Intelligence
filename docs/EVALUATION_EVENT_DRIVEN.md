@@ -36,6 +36,7 @@ nohup docker compose --env-file deployment/.env -f deployment/docker-compose.yml
     --days 30 \
     --candidate-limit 300 \
     --max-events 20 \
+    --max-related-per-event 5 \
   > eval/logs/build_event_cards_smoke.log 2>&1 &
 ```
 
@@ -243,6 +244,7 @@ nohup docker compose --env-file deployment/.env -f deployment/docker-compose.yml
     --days 60 \
     --candidate-limit 1000 \
     --max-events 100 \
+    --max-related-per-event 5 \
   > eval/logs/build_event_cards.log 2>&1 &
 ```
 
