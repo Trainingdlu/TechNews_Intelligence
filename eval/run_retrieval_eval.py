@@ -6,7 +6,8 @@ import argparse
 import json
 import os
 import re
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,14 +30,46 @@ def _load_eval_env(env_file: Path | None) -> None:
         load_dotenv(dotenv_path=env_file.resolve(), override=True)
 
 
-def _days_from_case(case: dict[str, Any], default: int) -> int:
+def _days_from_case(case: dict[str, Any], default: int, *, today: date | None = None) -> int:
     raw = str(case.get("time_window", "") or "")
-    numbers = [int(item) for item in re.findall(r"\d+", raw)]
-    if not numbers:
+    iso_dates = []
+    for item in re.findall(r"\d{4}-\d{2}-\d{2}", raw):
+        try:
+            iso_dates.append(date.fromisoformat(item))
+        except ValueError:
+            continue
+    if iso_dates:
+        base_day = min(iso_dates)
+        current_day = today or datetime.now(timezone.utc).date()
+        if base_day <= current_day:
+            return max(1, min(365, (current_day - base_day).days + 2))
         return int(default)
-    if any(1 <= item <= 365 for item in numbers):
-        return max(1, min(365, numbers[-1]))
+
+    explicit = re.search(r"(\d{1,3})\s*(?:d|day|days|天)", raw, flags=re.IGNORECASE)
+    if explicit:
+        return max(1, min(365, int(explicit.group(1))))
     return int(default)
+
+
+def _summary_by_query_type(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in results:
+        grouped[str(row.get("query_type") or "unknown")].append(row)
+    summary: dict[str, dict[str, Any]] = {}
+    for query_type, rows in sorted(grouped.items()):
+        count = len(rows)
+        if not count:
+            continue
+        exact_hits = sum(float(row.get("scores", {}).get("exact_hit_at_k", 0.0)) for row in rows)
+        event_hits = sum(float(row.get("scores", {}).get("event_hit_at_k", 0.0)) for row in rows)
+        mrr_sum = sum(float(row.get("scores", {}).get("mrr_at_k", 0.0)) for row in rows)
+        summary[query_type] = {
+            "case_count": count,
+            "exact_hit_rate": exact_hits / count,
+            "event_hit_rate": event_hits / count,
+            "avg_mrr_at_k": mrr_sum / count,
+        }
+    return summary
 
 
 def _run_search_news(question: str, *, days: int) -> dict[str, Any]:
@@ -98,6 +131,8 @@ def main() -> None:
                 "question": case["question"],
                 "query_type": case["query_type"],
                 "gold_event_id": case["gold_event_id"],
+                "gold_urls": case.get("gold_urls", []),
+                "pred_urls": run.get("pred_urls", []),
                 "status": run.get("status"),
                 "started_at": started.isoformat(),
                 "days": days,
@@ -116,6 +151,7 @@ def main() -> None:
         "runner": "search_news_tool",
         "k": int(args.k),
         "summary": summarize_retrieval_scores(flat_scores),
+        "summary_by_query_type": _summary_by_query_type(results),
         "results": results,
         "env": {
             "AGENT_RETRIEVAL_RERANK_MODE": os.getenv("AGENT_RETRIEVAL_RERANK_MODE", ""),
@@ -130,4 +166,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
