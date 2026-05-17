@@ -139,6 +139,75 @@ def test_normalize_case_allows_clarification_without_tool_path() -> None:
     assert case["required_tools"] == []
 
 
+def test_normalize_case_uses_task_clarification_contract_over_model_output() -> None:
+    task = _task_type()
+    task["retrieval_mode"] = "non_retrieval"
+    task["scenario"] = "conflict"
+    task["should_clarify"] = True
+
+    case = normalize_case(
+        _case(
+            should_clarify=False,
+            expected_tool_paths=_expected_tool_paths(),
+            required_tools=["query_news"],
+            retrieval_evaluable=True,
+            retrieval_gold_doc_ids=["doc_1"],
+            retrieval_gold_urls=["https://a.example.com"],
+            verifiable_claims=[_claim()],
+        ),
+        task_type=task,
+        case_id="case-clarify-contract",
+        pool_id="pool-1",
+        input_news_pool=_pool(),
+    )
+
+    assert case["should_clarify"] is True
+    assert case["retrieval_evaluable"] is False
+    assert case["expected_tool_paths"] == []
+    assert case["required_tools"] == []
+    assert case["retrieval_gold_doc_ids"] == []
+    assert case["retrieval_gold_urls"] == []
+    assert case["verifiable_claims"] == []
+
+
+def test_normalize_case_uses_task_retrieval_mode_over_model_output() -> None:
+    task = _task_type()
+    case = normalize_case(
+        _case(retrieval_evaluable=False),
+        task_type=task,
+        case_id="case-task-retrieval-mode",
+        pool_id="pool-1",
+        input_news_pool=_pool(),
+    )
+
+    assert case["retrieval_evaluable"] is True
+    assert case["retrieval_gold_doc_ids"] == ["doc_1"]
+
+
+def test_normalize_case_clears_non_retrieval_gold_and_claims() -> None:
+    task = _task_type()
+    task["retrieval_mode"] = "non_retrieval"
+    task["scenario"] = "empty"
+
+    case = normalize_case(
+        _case(
+            retrieval_evaluable=True,
+            retrieval_gold_doc_ids=["doc_1"],
+            retrieval_gold_urls=["https://a.example.com"],
+            verifiable_claims=[_claim()],
+        ),
+        task_type=task,
+        case_id="case-non-retrieval-contract",
+        pool_id="pool-1",
+        input_news_pool=_pool(),
+    )
+
+    assert case["retrieval_evaluable"] is False
+    assert case["retrieval_gold_doc_ids"] == []
+    assert case["retrieval_gold_urls"] == []
+    assert case["verifiable_claims"] == []
+
+
 def test_repair_generated_case_strips_tool_fields_for_clarification() -> None:
     task = _task_type()
     task["should_clarify"] = True

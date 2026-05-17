@@ -18,7 +18,7 @@ import random
 import re
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TypeVar
@@ -42,6 +42,7 @@ try:
     from audit_task_topics import audit_task_with_sample
     from corpus_sampler import build_eval_sample
     from evidence_validator import EvidenceValidationResult, validate_case_evidence
+    from pool_quality import pool_quality_summary, topic_anchor_terms
     from task_eval_schema import (
         build_news_pool_hash,
         load_task_types,
@@ -52,6 +53,7 @@ except ImportError:  # package-style import fallback
     from .audit_task_topics import audit_task_with_sample
     from .corpus_sampler import build_eval_sample
     from .evidence_validator import EvidenceValidationResult, validate_case_evidence
+    from .pool_quality import pool_quality_summary, topic_anchor_terms
     from .task_eval_schema import (
         build_news_pool_hash,
         load_task_types,
@@ -63,7 +65,7 @@ except ImportError:  # package-style import fallback
 DEFAULT_MODEL = DEFAULT_DEEPSEEK_MODEL
 DEFAULT_PROVIDER = "deepseek"
 SCHEMA_VERSION = "task_eval_schema@2026-04-25-evidence-quotes"
-BUILD_LOGIC_VERSION = "task_dataset_build@2026-04-29-topic-preflight"
+BUILD_LOGIC_VERSION = "task_dataset_build@2026-05-17-pool-quality"
 SCENARIO_RETRIEVAL_MODE_MAP: dict[str, str] = {
     "normal": "evaluable",
     "conflict": "non_retrieval",
@@ -78,6 +80,7 @@ _TASK_EVAL_MODEL_AUTO = "__task_eval_model_auto__"
 class Pool:
     pool_id: str
     docs: list[dict[str, Any]]
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 def _json_sha256(payload: Any) -> str:
@@ -289,6 +292,38 @@ QUESTION_STOPWORDS = {
     "请", "帮我", "过去", "最近", "新闻", "分析", "比较", "构建", "时间线", "趋势", "关于",
     "the", "and", "for", "with", "over", "last", "days", "news", "compare", "analyze", "build",
 }
+ANCHOR_STOPWORDS = QUESTION_STOPWORDS.union(
+    {
+        "a",
+        "an",
+        "about",
+        "around",
+        "day",
+        "english",
+        "from",
+        "http",
+        "https",
+        "latest",
+        "com",
+        "net",
+        "org",
+        "recent",
+        "related",
+        "search",
+        "updates",
+        "vs",
+        "week",
+    }
+)
+SOURCE_ALIASES = {
+    "techcrunch": "techcrunch",
+    "hackernews": "hackernews",
+    "hacker news": "hackernews",
+    "wsj": "wsj",
+    "wall street journal": "wsj",
+    "arstechnica": "arstechnica",
+    "ars technica": "arstechnica",
+}
 
 
 def _contains_zh(text: str) -> bool:
@@ -408,6 +443,194 @@ def _question_grounded(question: str, pool_docs: list[dict[str, Any]]) -> bool:
     return any(len(token) >= 4 for token in overlap)
 
 
+def _dedupe_tokens(tokens: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for token in tokens:
+        text = str(token or "").strip().lower()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+    return out
+
+
+def _anchor_tokens(text: Any) -> list[str]:
+    tokens: list[str] = []
+    for token in _tokenize(str(text or "")):
+        cleaned = token.strip("_").lower()
+        if len(cleaned) < 2:
+            continue
+        if cleaned.isdigit():
+            continue
+        if cleaned in ANCHOR_STOPWORDS:
+            continue
+        if re.fullmatch(r"20\d{2}|\d+d?", cleaned):
+            continue
+        tokens.append(cleaned)
+    return _dedupe_tokens(tokens)
+
+
+def _path_anchor_groups(expected_paths: list[list[dict[str, Any]]]) -> dict[str, list[str]]:
+    groups: dict[str, list[str]] = {}
+    for path in expected_paths:
+        if not isinstance(path, list):
+            continue
+        for step in path:
+            if not isinstance(step, dict):
+                continue
+            args = step.get("args", {})
+            if not isinstance(args, dict):
+                continue
+            for key in ("query", "topic", "topic_a", "topic_b", "url", "urls"):
+                value = args.get(key)
+                if value is None:
+                    continue
+                text = str(value).strip()
+                if not text:
+                    continue
+                tokens = _anchor_tokens(text)
+                if tokens:
+                    groups[key] = _dedupe_tokens(groups.get(key, []) + tokens)
+    return groups
+
+
+def _doc_text(doc: dict[str, Any]) -> str:
+    return " ".join(
+        str(doc.get(key, "") or "")
+        for key in ("title", "title_cn", "summary", "evidence_text", "url", "source")
+    )
+
+
+def _docs_by_id(docs: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        str(doc.get("doc_id", "")).strip(): doc
+        for doc in docs
+        if isinstance(doc, dict) and str(doc.get("doc_id", "")).strip()
+    }
+
+
+def _required_anchor_hits(tokens: list[str]) -> int:
+    if len(tokens) >= 3:
+        return 2
+    if len(tokens) >= 1:
+        return 1
+    return 0
+
+
+def _anchor_overlap_count(tokens: list[str], text: str) -> int:
+    text_tokens = set(_anchor_tokens(text))
+    return sum(1 for token in _dedupe_tokens(tokens) if token in text_tokens)
+
+
+def _source_key(value: Any) -> str:
+    text = re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+    if text in {"hackernews", "hn"}:
+        return "hackernews"
+    if text == "techcrunch":
+        return "techcrunch"
+    if text in {"wsj", "wallstreetjournal"}:
+        return "wsj"
+    if text in {"arstechnica", "ars"}:
+        return "arstechnica"
+    return text
+
+
+def _mentioned_sources(text: str) -> set[str]:
+    lowered = str(text or "").lower()
+    found: set[str] = set()
+    for alias, canonical in SOURCE_ALIASES.items():
+        if alias in lowered:
+            found.add(canonical)
+    return found
+
+
+def _validate_generated_case_alignment(
+    case: dict[str, Any],
+    task: dict[str, Any],
+) -> None:
+    if not bool(case.get("retrieval_evaluable")):
+        return
+
+    case_id = str(case.get("case_id", "")).strip() or str(task.get("task_id", "")).strip()
+    expected_paths = _coerce_path_list(case.get("expected_tool_paths", []))
+    anchor_groups = _path_anchor_groups(expected_paths)
+    topic_tokens = _dedupe_tokens(
+        anchor_groups.get("query", [])
+        + anchor_groups.get("topic", [])
+        + anchor_groups.get("url", [])
+        + anchor_groups.get("urls", [])
+    )
+    side_topic_tokens = _dedupe_tokens(anchor_groups.get("topic_a", []) + anchor_groups.get("topic_b", []))
+    if not topic_tokens and side_topic_tokens:
+        topic_tokens = side_topic_tokens
+    if not topic_tokens:
+        topic_tokens = _anchor_tokens(json.dumps(task.get("parameter_template", {}), ensure_ascii=False))
+
+    question = str(case.get("expected_question", "") or "")
+    if topic_tokens and _anchor_overlap_count(topic_tokens, question) < _required_anchor_hits(topic_tokens):
+        raise ValueError(
+            f"{case_id}: expected_question is not aligned with tool parameter anchors={topic_tokens}."
+        )
+
+    docs = case.get("input_news_pool", [])
+    if not isinstance(docs, list):
+        docs = []
+    by_id = _docs_by_id(docs)
+    gold_doc_ids = [
+        str(doc_id).strip()
+        for doc_id in case.get("retrieval_gold_doc_ids", [])
+        if str(doc_id).strip()
+    ]
+    gold_docs = [by_id[doc_id] for doc_id in gold_doc_ids if doc_id in by_id]
+    gold_text = "\n".join(_doc_text(doc) for doc in gold_docs)
+    if topic_tokens and _anchor_overlap_count(topic_tokens, gold_text) < _required_anchor_hits(topic_tokens):
+        raise ValueError(
+            f"{case_id}: retrieval_gold_doc_ids do not match tool parameter anchors={topic_tokens}."
+        )
+
+    if str(task.get("tool", "")).strip() == "compare_topics":
+        for side_key in ("topic_a", "topic_b"):
+            side_tokens = anchor_groups.get(side_key, [])
+            if side_tokens and _anchor_overlap_count(side_tokens, question) < _required_anchor_hits(side_tokens):
+                raise ValueError(f"{case_id}: compare_topics question missing {side_key}.")
+            if side_tokens and _anchor_overlap_count(side_tokens, gold_text) < _required_anchor_hits(side_tokens):
+                raise ValueError(f"{case_id}: compare_topics missing gold evidence for {side_key}.")
+
+    if str(task.get("tool", "")).strip() == "compare_sources":
+        expected_sources = {
+            _source_key(source)
+            for source in task.get("sampling", {}).get("sources", [])
+            if _source_key(source)
+        }
+        if expected_sources:
+            gold_sources = {_source_key(doc.get("source")) for doc in gold_docs if _source_key(doc.get("source"))}
+            missing_sources = expected_sources.difference(gold_sources)
+            if missing_sources:
+                raise ValueError(f"{case_id}: compare_sources missing gold evidence sources={sorted(missing_sources)}.")
+
+    answer_sources = _mentioned_sources(str(case.get("expected_answer", "") or ""))
+    if answer_sources:
+        gold_sources = {_source_key(doc.get("source")) for doc in gold_docs if _source_key(doc.get("source"))}
+        if gold_sources and not answer_sources.issubset(gold_sources):
+            raise ValueError(
+                f"{case_id}: expected_answer mentions sources={sorted(answer_sources)} "
+                f"not covered by gold evidence sources={sorted(gold_sources)}."
+            )
+
+    gold_quote_text = "\n".join(
+        str(quote.get("quote", "") or "")
+        for claim in case.get("verifiable_claims", [])
+        if isinstance(claim, dict)
+        for quote in claim.get("evidence_quotes", [])
+        if isinstance(quote, dict)
+    )
+    if topic_tokens and _anchor_overlap_count(topic_tokens, gold_quote_text) < _required_anchor_hits(topic_tokens):
+        raise ValueError(
+            f"{case_id}: verifiable claim quotes do not match tool parameter anchors={topic_tokens}."
+        )
+
+
 def _title_topic(pool_docs: list[dict[str, Any]]) -> str:
     for doc in pool_docs:
         if not isinstance(doc, dict):
@@ -496,6 +719,7 @@ def _repair_generated_case(
     pool_docs: list[dict[str, Any]],
 ) -> dict[str, Any]:
     out = dict(raw_case)
+    task_retrieval_evaluable = str(task.get("retrieval_mode", "")).strip().lower() == "evaluable"
     if bool(task.get("should_clarify", False)):
         out["expected_tool_paths"] = []
         out["required_tools"] = []
@@ -507,10 +731,18 @@ def _repair_generated_case(
         return out
 
     acceptable_paths = _coerce_path_list(task.get("acceptable_tool_paths", []))
+    out["should_clarify"] = False
+    out["retrieval_evaluable"] = task_retrieval_evaluable
+    out["required_tools"] = list(task.get("required_tools", []))
+    out["forbidden_tools"] = list(task.get("forbidden_tools", []))
     out["expected_tool_paths"] = _coerce_expected_paths_to_acceptable(
         out.get("expected_tool_paths"),
         acceptable_paths,
     )
+    if not task_retrieval_evaluable:
+        out["retrieval_gold_doc_ids"] = []
+        out["retrieval_gold_urls"] = []
+        out["verifiable_claims"] = []
 
     scenario = str(task.get("scenario", "")).strip().lower()
     question = str(out.get("expected_question", "")).strip()
@@ -694,12 +926,16 @@ def _pools_for_prompt(pools: list[Pool], *, summary_chars: int = 700) -> list[di
                     "language": item.get("language", ""),
                     "channels": item.get("channels", []),
                     "seed_similarity": item.get("seed_similarity", 0.0),
+                    "topic_match_score": item.get("topic_match_score", 0.0),
+                    "matched_anchor_terms": item.get("matched_anchor_terms", []),
+                    "anchor_hit_fields": item.get("anchor_hit_fields", {}),
                 }
             )
         out.append(
             {
                 "pool_id": pool.pool_id,
                 "input_news_pool_hash": build_news_pool_hash(pool.docs),
+                "pool_quality": pool.meta.get("pool_quality", {}) if isinstance(pool.meta, dict) else {},
                 "docs": docs,
             }
         )
@@ -777,7 +1013,13 @@ def _generator_prompts(
         "should be the clarification question the agent should ask.\n"
         "12) For non-empty non-clarification scenarios, expected_question must be answerable by the pool and mention pool entities/topics.\n"
         "13) For empty/non_retrieval scenarios, do not invent facts, leave retrieval gold empty, and verifiable_claims may be empty.\n"
-        "14) Do not output markdown fences."
+        "14) Do not change fixed evaluation attributes from the task definition: should_clarify, retrieval_evaluable, "
+        "required_tools, forbidden_tools, and acceptable tool args are configuration-owned.\n"
+        "15) The expected_question, tool args, retrieval gold docs, evidence quotes, and expected_answer must describe "
+        "the same topic. Do not ask about one entity/product and answer with another.\n"
+        "16) Each pool contains topic_anchor and pool_quality metadata. Generate the case only around that anchor; "
+        "do not switch to adjacent news just because it appears in the pool.\n"
+        "17) Do not output markdown fences."
     )
 
     # Feedback loop: inject previous rejection reasons
@@ -802,6 +1044,7 @@ def _generator_prompts(
             "scenario": task["scenario"],
             "example_question": task["example_question"],
             "parameter_template": task["parameter_template"],
+            "topic_anchor": topic_anchor_terms(task),
             "acceptable_tool_paths": task["acceptable_tool_paths"],
             "required_tools": task["required_tools"],
             "forbidden_tools": task["forbidden_tools"],
@@ -962,6 +1205,7 @@ def _generate_for_task(
                     pool_id=pool.pool_id,
                     input_news_pool=pool_map[pool.pool_id],
                 )
+                _validate_generated_case_alignment(normalized, task)
                 out_cases.append(normalized)
         except Exception as exc:
             # Cost/stability trade-off: try larger chunk first, fallback to single-pool calls on failure.
@@ -1167,13 +1411,15 @@ def _generate_single_case_attempt(
         raise ValueError(f"{task['task_id']}: missing generated case for pool={pool.pool_id}")
     case_id = _case_id_for_pool(task, pool)
     raw_case = _repair_generated_case(by_pool[pool.pool_id], task, pool.docs)
-    return normalize_case(
+    normalized = normalize_case(
         raw_case,
         task_type=task,
         case_id=case_id,
         pool_id=pool.pool_id,
         input_news_pool=pool.docs,
     )
+    _validate_generated_case_alignment(normalized, task)
+    return normalized
 
 
 def _generate_case_for_seed(
@@ -1644,8 +1890,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--pools-per-generation-call",
         type=int,
-        default=int(os.getenv("TASK_EVAL_POOLS_PER_GENERATION_CALL", "2")),
-        help="If > 0, split one task's pools into multiple generation calls. Default 2.",
+        default=int(os.getenv("TASK_EVAL_POOLS_PER_GENERATION_CALL", "1")),
+        help="If > 0, split one task's pools into multiple generation calls. Default 1.",
     )
     parser.add_argument(
         "--regen-pools-per-generation-call",
@@ -1761,6 +2007,54 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp_path.replace(path)
+
+
+def _pool_quality_manifest(
+    pools: list[Pool],
+    pool_meta_by_id: dict[str, dict[str, Any]],
+    task: dict[str, Any],
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    reason_counts: dict[str, int] = {}
+    passed = 0
+    failed = 0
+    for pool in pools:
+        meta = pool_meta_by_id.get(pool.pool_id, pool.meta if isinstance(pool.meta, dict) else {})
+        if not isinstance(meta, dict):
+            meta = {}
+        quality = meta.get("pool_quality", {}) if isinstance(meta.get("pool_quality", {}), dict) else {}
+        if not quality:
+            quality = pool_quality_summary(pool.docs, task)
+        quality_passed = bool(quality.get("pool_quality_passed", meta.get("pool_quality_passed", False)))
+        if quality_passed:
+            passed += 1
+        else:
+            failed += 1
+        reasons = quality.get("pool_quality_reasons", meta.get("pool_quality_reasons", [])) or []
+        for reason in reasons:
+            reason_text = str(reason or "unknown")
+            reason_counts[reason_text] = reason_counts.get(reason_text, 0) + 1
+        rows.append(
+            {
+                "pool_id": pool.pool_id,
+                "pool_quality_passed": quality_passed,
+                "pool_quality_reasons": reasons,
+                "topic_anchor_terms": quality.get("topic_anchor_terms", []),
+                "topic_match_ratio": quality.get("topic_match_ratio", 0.0),
+                "avg_topic_match_score": quality.get("avg_topic_match_score", 0.0),
+                "embedding_coherence": quality.get("embedding_coherence"),
+                "source_count": quality.get("source_count", 0),
+                "time_span_days": quality.get("time_span_days"),
+                "selected_docs": len(pool.docs),
+            }
+        )
+    return {
+        "pool_count": len(pools),
+        "passed": passed,
+        "failed": failed,
+        "failed_reasons": reason_counts,
+        "pools": rows,
+    }
 
 
 def _load_checkpoint(path: Path) -> dict[str, Any] | None:
@@ -1895,7 +2189,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             sample = build_eval_sample(task, pools_per_task=pools_per_task, rng=rng)
             candidates = sample.candidates
-            pools = [Pool(pool_id=pool.pool_id, docs=pool.docs) for pool in sample.pools]
+            pools = [Pool(pool_id=pool.pool_id, docs=pool.docs, meta=pool.meta) for pool in sample.pools]
             sample_meta = sample.meta
             pool_meta_by_id = {pool.pool_id: pool.meta for pool in sample.pools}
         except Exception as exc:  # noqa: BLE001
@@ -2004,7 +2298,11 @@ def main(argv: list[str] | None = None) -> int:
                 "cluster_count": sample_meta.get("cluster_count", 0),
                 "cluster_fallback": bool(sample_meta.get("cluster_fallback", False)),
                 "cluster_fallback_reason": sample_meta.get("cluster_fallback_reason", ""),
+                "topic_strong_candidate_docs": int(sample_meta.get("topic_strong_candidate_docs", 0) or 0),
+                "pool_quality_failed_count": int(sample_meta.get("pool_quality_failed_count", 0) or 0),
+                "pool_quality_failed_reasons": sample_meta.get("pool_quality_failed_reasons", {}),
                 "pool_count": len(pools),
+                "pool_quality": _pool_quality_manifest(pools, pool_meta_by_id, task),
                 "generated_cases": len(generated_cases),
                 "dropped_seed_count": len(dropped_for_task),
                 "seed_attempt_temperatures": seed_temperatures,

@@ -15,9 +15,11 @@ from typing import Any
 
 try:
     from corpus_sampler import build_eval_sample, topic_side_for_doc
+    from pool_quality import pool_quality_summary, quality_required
     from task_eval_schema import load_task_types
 except ImportError:
     from .corpus_sampler import build_eval_sample, topic_side_for_doc
+    from .pool_quality import pool_quality_summary, quality_required
     from .task_eval_schema import load_task_types
 
 
@@ -208,6 +210,22 @@ def _pool_docs(pool: Any) -> list[dict[str, Any]]:
     return [doc for doc in docs if isinstance(doc, dict)]
 
 
+def _pool_meta(pool: Any) -> dict[str, Any]:
+    if isinstance(pool, dict):
+        meta = pool.get("meta", {})
+    else:
+        meta = getattr(pool, "meta", {})
+    return meta if isinstance(meta, dict) else {}
+
+
+def _pool_quality(pool: Any, task: dict[str, Any]) -> dict[str, Any]:
+    meta = _pool_meta(pool)
+    quality = meta.get("pool_quality", {})
+    if isinstance(quality, dict) and quality:
+        return quality
+    return pool_quality_summary(_pool_docs(pool), task)
+
+
 def _topic_side_counts(candidates: list[dict[str, Any]]) -> dict[str, int]:
     counts = {"A": 0, "B": 0}
     for doc in candidates:
@@ -288,6 +306,35 @@ def audit_task_with_sample(
         "points_used": False,
     }
 
+    pool_quality_rows = [_pool_quality(pool, task) for pool in pools]
+    pool_quality_passed = sum(1 for row in pool_quality_rows if bool(row.get("pool_quality_passed", False)))
+    pool_quality_failed = len(pool_quality_rows) - pool_quality_passed
+    result["coverage"]["pool_quality"] = {
+        "required": quality_required(task),
+        "passed": pool_quality_passed,
+        "failed": pool_quality_failed,
+        "failed_reasons": dict(
+            Counter(
+                str(reason)
+                for row in pool_quality_rows
+                for reason in (row.get("pool_quality_reasons", []) or [])
+            )
+        ),
+        "topic_match_ratio_min": min(
+            (float(row.get("topic_match_ratio", 0.0) or 0.0) for row in pool_quality_rows),
+            default=0.0,
+        ),
+        "topic_match_ratio_avg": (
+            round(
+                sum(float(row.get("topic_match_ratio", 0.0) or 0.0) for row in pool_quality_rows)
+                / len(pool_quality_rows),
+                4,
+            )
+            if pool_quality_rows
+            else 0.0
+        ),
+    }
+
     if retrieval_evaluable and scenario in {"normal", "boundary"}:
         if candidate_docs < MIN_CANDIDATE_DOCS:
             issues.append(
@@ -314,6 +361,17 @@ def audit_task_with_sample(
                     "normal/boundary task must produce at least three valid packed pools.",
                     actual=len(pools),
                     minimum=MIN_VALID_POOLS,
+                )
+            )
+        if quality_required(task) and pool_quality_passed < MIN_VALID_POOLS:
+            issues.append(
+                _issue(
+                    "pool_quality_insufficient",
+                    "normal/boundary task must produce at least three topic-consistent pools.",
+                    actual=pool_quality_passed,
+                    failed=pool_quality_failed,
+                    minimum=MIN_VALID_POOLS,
+                    failed_reasons=result["coverage"]["pool_quality"]["failed_reasons"],
                 )
             )
 

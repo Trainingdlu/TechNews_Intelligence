@@ -56,11 +56,25 @@
 PYTHONPATH=. python eval/build_task_dataset.py --help
 ```
 
+生成后先做只读检查，再决定是否进入 preflight / 正式生成：
+
+```bash
+PYTHONPATH=. python -m eval.inspect_task_dataset \
+  --dataset eval/datasets/task_eval_cases_smoke.jsonl \
+  --manifest eval/datasets/task_eval_manifest_smoke.json \
+  --min-per-task 6 \
+  --samples-per-task 2
+```
+
+题集生成默认按单个 pool 分批调用模型：`--pools-per-generation-call 1`、`--regen-pools-per-generation-call 1`。这样速度更慢，但能减少批量生成时漏 pool 和主题漂移的问题；只有在 smoke / preflight 稳定后，才建议把正式全量生成调大到 2。
+
 构建题集默认使用 DeepSeek（`deepseek-v4-pro`），可通过 `TASK_EVAL_PROVIDER` 和 `TASK_EVAL_MODEL` 覆盖。正式生成建议先跑 `task_types_smoke.json`，再跑 `task_types_preflight.json`，最后用 `task_types_retrieval.json` 生成正式题集。
 
 smoke / preflight 是抽样预检配置，不要求覆盖所有工具和所有场景，运行时应带上 `--no-enforce-coverage-policy`。正式配置 `task_types_retrieval.json` 才启用完整覆盖校验。所有配置都可以开启 `--enforce-scenario-retrieval-map`，确保 `normal/boundary` 被当作可检索题，`conflict/empty` 被当作澄清或非检索题。
 
 `should_clarify=true` 的冲突、空结果类场景不再要求工具路径命中：生成时 `expected_tool_paths=[]`、`required_tools=[]`、检索 gold 为空，评分时重点检查是否正确触发澄清，避免把澄清题和检索题混在同一套工具指标里。
+
+不适合自动采样的问题应移出 smoke / preflight：例如“读取一个不存在的 URL”和“新词没有上一周期基线”这类固定边界题，更适合手写成回归 case，而不是从新闻库自动采样生成。否则 TopicAudit 会把真实新闻候选误判为 empty 场景污染，导致小批量生成结果不稳定。
 
 单条 case 的核心字段：
 

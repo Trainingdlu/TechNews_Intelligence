@@ -425,8 +425,11 @@ def normalize_case(
     if not _contains_zh(expected_answer):
         raise ValueError(f"{case_id}: expected_answer must contain Chinese text.")
 
-    case_should_clarify = bool(raw_case.get("should_clarify", task_type["should_clarify"]))
-    raw_expected_tool_paths = raw_case.get("expected_tool_paths", [] if case_should_clarify else task_type["acceptable_tool_paths"])
+    case_should_clarify = bool(task_type["should_clarify"])
+    raw_expected_tool_paths = [] if case_should_clarify else raw_case.get(
+        "expected_tool_paths",
+        task_type["acceptable_tool_paths"],
+    )
     if case_should_clarify:
         if raw_expected_tool_paths:
             raise ValueError(f"{case_id}: should_clarify cases must not define expected_tool_paths.")
@@ -442,14 +445,14 @@ def normalize_case(
     )
     if expected_tool_paths and not _paths_subset(expected_tool_paths, acceptable_tool_paths):
         raise ValueError(f"{case_id}: expected_tool_paths must be subset of task acceptable_tool_paths.")
-    required_tools = _as_str_list(raw_case.get("required_tools", [] if case_should_clarify else task_type["required_tools"]))
-    forbidden_tools = _as_str_list(raw_case.get("forbidden_tools", task_type["forbidden_tools"]))
+    required_tools = [] if case_should_clarify else _as_str_list(task_type["required_tools"])
+    forbidden_tools = _as_str_list(task_type["forbidden_tools"])
     if set(required_tools).intersection(forbidden_tools):
         raise ValueError(f"{case_id}: required_tools overlaps forbidden_tools.")
 
-    retrieval_evaluable = bool(raw_case.get("retrieval_evaluable", task_type["retrieval_mode"] == "evaluable"))
+    retrieval_evaluable = (not case_should_clarify) and task_type["retrieval_mode"] == "evaluable"
 
-    claims_raw = raw_case.get("verifiable_claims", [])
+    claims_raw = raw_case.get("verifiable_claims", []) if retrieval_evaluable else []
     if not isinstance(claims_raw, list):
         raise ValueError(f"{case_id}: verifiable_claims must be a list.")
     if retrieval_evaluable and not claims_raw:
@@ -576,6 +579,9 @@ def validate_case(case: dict[str, Any], *, strict_tool: bool = True) -> None:
         urls.add(url)
 
     should_clarify = bool(case.get("should_clarify"))
+    retrieval_evaluable = bool(case.get("retrieval_evaluable"))
+    if should_clarify and retrieval_evaluable:
+        raise ValueError(f"{case_id}: should_clarify cases must not be retrieval_evaluable.")
     raw_expected_tool_paths = case.get("expected_tool_paths")
     if should_clarify:
         if raw_expected_tool_paths:
@@ -611,7 +617,6 @@ def validate_case(case: dict[str, Any], *, strict_tool: bool = True) -> None:
     if set(required_tools).intersection(forbidden_tools):
         raise ValueError(f"{case_id}: required_tools overlaps forbidden_tools.")
 
-    retrieval_evaluable = bool(case.get("retrieval_evaluable"))
     retrieval_gold_doc_ids = _dedupe_keep_order(_as_str_list(case.get("retrieval_gold_doc_ids")))
     retrieval_gold_urls = _dedupe_keep_order(_as_str_list(case.get("retrieval_gold_urls")))
     pool_id_to_url = {
@@ -646,6 +651,8 @@ def validate_case(case: dict[str, Any], *, strict_tool: bool = True) -> None:
     claims = case.get("verifiable_claims")
     if not isinstance(claims, list):
         raise ValueError(f"{case_id}: verifiable_claims must be list.")
+    if (not retrieval_evaluable) and claims:
+        raise ValueError(f"{case_id}: non-retrieval case must not contain verifiable_claims.")
     if retrieval_evaluable and not claims:
         raise ValueError(f"{case_id}: retrieval_evaluable requires verifiable_claims.")
     for idx, item in enumerate(claims, 1):

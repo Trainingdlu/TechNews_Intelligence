@@ -18,6 +18,11 @@ from typing import Any
 from services.db import get_conn, put_conn
 
 try:
+    from pool_quality import annotate_doc_topic_match, pool_quality_summary, quality_required
+except ImportError:  # pragma: no cover
+    from .pool_quality import annotate_doc_topic_match, pool_quality_summary, quality_required
+
+try:
     from agent.tools.embeddings import get_query_embedding
 except Exception:  # pragma: no cover
     get_query_embedding = None  # type: ignore[assignment]
@@ -482,6 +487,7 @@ def sample_candidates(task: dict[str, Any], *, rng: random.Random) -> tuple[list
     for doc in docs:
         emb = doc.get("embedding")
         doc["seed_similarity"] = max((_cosine(emb, vec) for vec in seed_vectors), default=0.0)
+        annotate_doc_topic_match(doc, task)
         side = topic_side_for_doc(doc)
         if side:
             doc["topic_group"] = side
@@ -490,6 +496,8 @@ def sample_candidates(task: dict[str, Any], *, rng: random.Random) -> tuple[list
 
     docs.sort(
         key=lambda doc: (
+            float(doc.get("topic_match_score", 0.0) or 0.0),
+            bool(doc.get("topic_match_passed", False)),
             float(doc.get("seed_similarity", 0.0) or 0.0),
             len(doc.get("channels", [])),
             str(doc.get("published_at", "")),
@@ -603,7 +611,15 @@ def _round_robin_by_source(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for doc in docs:
         groups.setdefault(str(doc.get("source", "unknown")) or "unknown", []).append(doc)
     for rows in groups.values():
-        rows.sort(key=lambda doc: (float(doc.get("seed_similarity", 0.0) or 0.0), doc.get("published_at", "")), reverse=True)
+        rows.sort(
+            key=lambda doc: (
+                float(doc.get("topic_match_score", 0.0) or 0.0),
+                bool(doc.get("topic_match_passed", False)),
+                float(doc.get("seed_similarity", 0.0) or 0.0),
+                doc.get("published_at", ""),
+            ),
+            reverse=True,
+        )
     ordered: list[dict[str, Any]] = []
     while True:
         progressed = False
@@ -656,14 +672,29 @@ def _pack_compare_sources(task: dict[str, Any], cluster_docs: list[dict[str, Any
     for doc in cluster_docs:
         by_source.setdefault(str(doc.get("source", "unknown")) or "unknown", []).append(doc)
     for rows in by_source.values():
-        rows.sort(key=lambda doc: float(doc.get("seed_similarity", 0.0) or 0.0), reverse=True)
+        rows.sort(
+            key=lambda doc: (
+                float(doc.get("topic_match_score", 0.0) or 0.0),
+                bool(doc.get("topic_match_passed", False)),
+                float(doc.get("seed_similarity", 0.0) or 0.0),
+            ),
+            reverse=True,
+        )
     target_sources = sources or sorted(by_source)
     selected: list[dict[str, Any]] = []
     for source in target_sources:
         _append_unique(selected, by_source.get(source, [])[:2], limit=pool_size)
     if sources and any(not any(str(doc.get("source")) == source for doc in selected) for source in sources):
         return selected, False
-    rest = sorted(cluster_docs, key=lambda doc: float(doc.get("seed_similarity", 0.0) or 0.0), reverse=True)
+    rest = sorted(
+        cluster_docs,
+        key=lambda doc: (
+            float(doc.get("topic_match_score", 0.0) or 0.0),
+            bool(doc.get("topic_match_passed", False)),
+            float(doc.get("seed_similarity", 0.0) or 0.0),
+        ),
+        reverse=True,
+    )
     _append_unique(selected, rest, limit=pool_size)
     return selected, len({doc.get("source") for doc in selected}) >= min(2, len(by_source))
 
@@ -673,8 +704,22 @@ def _pack_compare_topics(cluster_docs: list[dict[str, Any]], pool_size: int) -> 
     b_docs = [doc for doc in cluster_docs if topic_side_for_doc(doc) == "B"]
     if not a_docs or not b_docs:
         return [], False
-    a_docs.sort(key=lambda doc: float(doc.get("seed_similarity", 0.0) or 0.0), reverse=True)
-    b_docs.sort(key=lambda doc: float(doc.get("seed_similarity", 0.0) or 0.0), reverse=True)
+    a_docs.sort(
+        key=lambda doc: (
+            float(doc.get("topic_match_score", 0.0) or 0.0),
+            bool(doc.get("topic_match_passed", False)),
+            float(doc.get("seed_similarity", 0.0) or 0.0),
+        ),
+        reverse=True,
+    )
+    b_docs.sort(
+        key=lambda doc: (
+            float(doc.get("topic_match_score", 0.0) or 0.0),
+            bool(doc.get("topic_match_passed", False)),
+            float(doc.get("seed_similarity", 0.0) or 0.0),
+        ),
+        reverse=True,
+    )
     half = max(1, pool_size // 2)
     selected = a_docs[:half] + b_docs[: pool_size - half]
     a_selected = len([doc for doc in selected if topic_side_for_doc(doc) == "A"])
@@ -684,7 +729,15 @@ def _pack_compare_topics(cluster_docs: list[dict[str, Any]], pool_size: int) -> 
 
 def _pack_timeline(cluster_docs: list[dict[str, Any]], pool_size: int) -> tuple[list[dict[str, Any]], bool]:
     selected = _pick_time_strata(cluster_docs, min(3, pool_size))
-    rest = sorted(cluster_docs, key=lambda doc: float(doc.get("seed_similarity", 0.0) or 0.0), reverse=True)
+    rest = sorted(
+        cluster_docs,
+        key=lambda doc: (
+            float(doc.get("topic_match_score", 0.0) or 0.0),
+            bool(doc.get("topic_match_passed", False)),
+            float(doc.get("seed_similarity", 0.0) or 0.0),
+        ),
+        reverse=True,
+    )
     _append_unique(selected, rest, limit=pool_size)
     return selected, len(selected) >= min(3, pool_size)
 
@@ -692,7 +745,15 @@ def _pack_timeline(cluster_docs: list[dict[str, Any]], pool_size: int) -> tuple[
 def _pack_default(cluster_docs: list[dict[str, Any]], pool_size: int) -> tuple[list[dict[str, Any]], bool]:
     selected: list[dict[str, Any]] = []
     _append_unique(selected, _round_robin_by_source(cluster_docs), limit=min(pool_size, max(2, pool_size // 2)))
-    rest = sorted(cluster_docs, key=lambda doc: float(doc.get("seed_similarity", 0.0) or 0.0), reverse=True)
+    rest = sorted(
+        cluster_docs,
+        key=lambda doc: (
+            float(doc.get("topic_match_score", 0.0) or 0.0),
+            bool(doc.get("topic_match_passed", False)),
+            float(doc.get("seed_similarity", 0.0) or 0.0),
+        ),
+        reverse=True,
+    )
     _append_unique(selected, rest, limit=pool_size)
     source_count = len({doc.get("source") for doc in selected})
     return selected, bool(selected) and source_count >= min(2, len({doc.get("source") for doc in cluster_docs}))
@@ -702,6 +763,8 @@ def pack_cluster(task: dict[str, Any], cluster_docs: list[dict[str, Any]], *, po
     tool = str(task.get("tool", "")).strip()
     scenario = str(task.get("scenario", "")).strip().lower()
     pool_size = _normalize_pool_size(pool_size)
+    for doc in cluster_docs:
+        annotate_doc_topic_match(doc, task)
     strategy = "default_source_diverse"
     if scenario == "empty":
         selected, ok = _pack_default(cluster_docs, pool_size)
@@ -722,12 +785,20 @@ def pack_cluster(task: dict[str, Any], cluster_docs: list[dict[str, Any]], *, po
         text = str(doc.get("evidence_text") or doc.get("summary") or "")
         if len(text) > 900:
             doc["evidence_text"] = text[:900]
+    quality_meta = pool_quality_summary(selected, task)
+    ok = bool(ok) and bool(quality_meta.get("pool_quality_passed", False))
     return selected, {
         "packing_strategy": strategy,
         "packing_constraints_passed": bool(ok),
         "selected_docs": len(selected),
         "cluster_docs": len(cluster_docs),
         "token_budget": 9000,
+        "pool_quality": quality_meta,
+        "pool_quality_passed": bool(quality_meta.get("pool_quality_passed", False)),
+        "pool_quality_reasons": quality_meta.get("pool_quality_reasons", []),
+        "topic_match_ratio": quality_meta.get("topic_match_ratio", 0.0),
+        "avg_topic_match_score": quality_meta.get("avg_topic_match_score", 0.0),
+        "embedding_coherence": quality_meta.get("embedding_coherence"),
     }
 
 
@@ -764,6 +835,7 @@ def _cluster_score(docs: list[dict[str, Any]]) -> float:
     if not docs:
         return 0.0
     seed_similarity = sum(float(doc.get("seed_similarity", 0.0) or 0.0) for doc in docs) / len(docs)
+    topic_score = sum(float(doc.get("topic_match_score", 0.0) or 0.0) for doc in docs) / len(docs)
     channels = {channel for doc in docs for channel in doc.get("channels", [])}
     sources = {str(doc.get("source", "")) for doc in docs if str(doc.get("source", ""))}
     channel_coverage = min(1.0, len(channels) / 4.0)
@@ -771,11 +843,12 @@ def _cluster_score(docs: list[dict[str, Any]]) -> float:
     time_spread = 1.0 if len({_time_key(doc)[:10] for doc in docs if _time_key(doc)}) >= 3 else 0.4
     size_score = min(1.0, len(docs) / 12.0)
     return (
-        0.40 * seed_similarity
-        + 0.20 * channel_coverage
+        0.34 * topic_score
+        + 0.24 * seed_similarity
+        + 0.16 * channel_coverage
         + 0.15 * source_diversity
-        + 0.15 * time_spread
-        + 0.10 * size_score
+        + 0.07 * time_spread
+        + 0.04 * size_score
     )
 
 
@@ -812,12 +885,18 @@ def build_pools(task: dict[str, Any], candidates: list[dict[str, Any]], *, pools
             }
         )
     else:
-        clusters, cluster_meta = _cluster_with_hdbscan(candidates)
+        working_candidates = candidates
+        if quality_required(task):
+            strong_candidates = [doc for doc in candidates if bool(doc.get("topic_match_passed"))]
+            if len(strong_candidates) >= min(pool_size, max(3, pools_per_task)):
+                working_candidates = strong_candidates
+            meta["topic_strong_candidate_docs"] = len(strong_candidates)
+        clusters, cluster_meta = _cluster_with_hdbscan(working_candidates)
         meta.update(cluster_meta)
         if clusters:
             groups = sorted(clusters.values(), key=_cluster_score, reverse=True)
         else:
-            groups = _greedy_positive_groups(candidates, pool_size=pool_size, sim_floor=sim_floor)
+            groups = _greedy_positive_groups(working_candidates, pool_size=pool_size, sim_floor=sim_floor)
             meta.update(
                 {
                     "cluster_mode": "greedy_embedding" if groups else "round_robin",
@@ -827,7 +906,7 @@ def build_pools(task: dict[str, Any], candidates: list[dict[str, Any]], *, pools
                 }
             )
             if not groups:
-                ordered = _round_robin_by_source(candidates)
+                ordered = _round_robin_by_source(working_candidates)
                 groups = [ordered[idx : idx + pool_size] for idx in range(0, len(ordered), pool_size)]
 
     pools: list[SampledPool] = []
@@ -841,6 +920,15 @@ def build_pools(task: dict[str, Any], candidates: list[dict[str, Any]], *, pools
             continue
         selected, packing_meta = pack_cluster(task, cluster_docs, pool_size=pool_size)
         if scenario != "empty" and not packing_meta.get("packing_constraints_passed"):
+            meta["pool_quality_failed_count"] = int(meta.get("pool_quality_failed_count", 0) or 0) + 1
+            reasons = packing_meta.get("pool_quality_reasons", [])
+            if reasons:
+                meta.setdefault("pool_quality_failed_reasons", {})
+                for reason in reasons:
+                    reason_text = str(reason or "unknown")
+                    meta["pool_quality_failed_reasons"][reason_text] = (
+                        int(meta["pool_quality_failed_reasons"].get(reason_text, 0) or 0) + 1
+                    )
             continue
         if not selected:
             continue
@@ -860,7 +948,7 @@ def build_pools(task: dict[str, Any], candidates: list[dict[str, Any]], *, pools
             )
         )
         print(
-            "[Packing] task=%s pool=%s strategy=%s selected=%s cluster_docs=%s constraints=%s"
+            "[Packing] task=%s pool=%s strategy=%s selected=%s cluster_docs=%s constraints=%s pool_quality=%s"
             % (
                 task["task_id"],
                 pool_id,
@@ -868,6 +956,7 @@ def build_pools(task: dict[str, Any], candidates: list[dict[str, Any]], *, pools
                 len(selected),
                 len(cluster_docs),
                 "pass" if packing_meta.get("packing_constraints_passed") else "fail",
+                "pass" if packing_meta.get("pool_quality_passed") else "fail",
             )
         )
 
