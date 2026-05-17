@@ -76,7 +76,58 @@ def test_retrieval_questions_do_not_copy_full_title() -> None:
     questions = _retrieval_questions(card)
     assert _primary_entity(card) == "OpenAI"
     assert all(full_title not in question for _, question in questions)
+    assert all("「" not in question and "」" not in question for _, question in questions)
+    assert all("这条和" not in question and "重点看" not in question for _, question in questions)
     assert any("个人理财" in question for _, question in questions)
+
+
+def test_retrieval_questions_use_query_archetypes_not_fact_fragments() -> None:
+    card = validate_event_card(
+        {
+            "event_id": "ghostty_github_migration_2026_04",
+            "event_title": "[生态] Ghostty项目宣布因频繁宕机将全面迁出GitHub",
+            "entities": ["Ghostty", "GitHub"],
+            "time_window": {"start": "2026-04-28", "end": "2026-04-28"},
+            "core_urls": ["https://mitchellh.com/writing/ghostty-leaving-github"],
+            "related_urls": [],
+            "facts": [
+                {
+                    "claim": "Ghostty项目宣布因GitHub平台频繁故障将启动迁移",
+                    "quote": "Ghostty项目宣布因GitHub平台频繁故障将启动迁移",
+                    "url": "https://mitchellh.com/writing/ghostty-leaving-github",
+                }
+            ],
+            "suitable_tasks": ["single_event", "latest_update", "deep_reading"],
+            "sources": ["Blog"],
+        }
+    )
+    questions = [question for _, question in _retrieval_questions(card)]
+    assert questions
+    assert any("Ghostty 为什么要迁出 GitHub" in question for question in questions)
+    assert all("因GitHub平台频繁故障将启动迁移" not in question for question in questions)
+
+
+def test_retrieval_questions_skip_event_without_clear_anchor() -> None:
+    card = validate_event_card(
+        {
+            "event_id": "generic_social_experiment_2026_05",
+            "event_title": "[生态] 作者通过一个月与35名健身房陌生人交谈的实验克服社交焦虑",
+            "entities": ["作者"],
+            "time_window": {"start": "2026-05-01", "end": "2026-05-01"},
+            "core_urls": ["https://example.com/social-experiment"],
+            "related_urls": [],
+            "facts": [
+                {
+                    "claim": "本文记录了一项为期30天的社交实验",
+                    "quote": "本文记录了一项为期30天的社交实验",
+                    "url": "https://example.com/social-experiment",
+                }
+            ],
+            "suitable_tasks": ["single_event"],
+            "sources": ["Blog"],
+        }
+    )
+    assert _retrieval_questions(card) == []
 
 
 def test_generation_case_rejects_missing_evidence() -> None:

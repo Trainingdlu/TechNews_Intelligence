@@ -76,11 +76,11 @@ nohup docker compose --env-file deployment/.env -f deployment/docker-compose.yml
     --manifest-output eval/datasets/event_eval_manifest_smoke.json \
     --max-events 20 \
     --questions-per-event 3 \
-    --question-mode llm \
-    --question-provider deepseek \
-    --question-model deepseek-v4-pro \
+    --question-mode archetype \
   > eval/logs/build_event_eval_datasets_smoke.log 2>&1 &
 ```
+
+`archetype` 是默认模式：程序先从事件卡片抽取公司、产品、事件类型，再按真实用户问题类型生成问题。不要默认用新闻标题或事实句改写问题，否则题目会像“摘要改写”而不是用户查询。`llm` 模式只作为后续辅助，不作为正式题集的主入口。
 
 查看日志：
 
@@ -118,7 +118,7 @@ for line in p.read_text(encoding="utf-8").splitlines()[:12]:
 PY
 ```
 
-如果问题里仍然出现完整新闻标题、半截句子、`核心议题`、`本文记录`、`分析显示` 这类内部摘要词，先不要继续跑检索评测，应该回到问题生成层调整。
+如果问题里仍然出现完整新闻标题、半截句子、`核心议题`、`本文记录`、`分析显示`、`这条和`、`重点看` 这类内部摘要词，先不要继续跑检索评测，应该回到问题生成层调整。
 
 ## 4. 第一优先级：先跑检索评测
 
