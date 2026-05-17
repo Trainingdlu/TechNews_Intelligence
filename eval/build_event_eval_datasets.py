@@ -110,7 +110,9 @@ DOMAIN_HINTS: tuple[tuple[str, str], ...] = (
     (r"AI\s*模型|本地AI|静默安装|4GB", "AI 模型安装"),
     (r"开发者.*实名|实名.*开发者|侧载", "开发者验证和侧载限制"),
     (r"reCAPTCHA", "reCAPTCHA 验证"),
+    (r"硬件证明|attestation|Play Integrity|移动生态|API锁", "硬件证明和移动生态限制"),
     (r"CEO|接任|交接|执行董事长", "管理层交接"),
+    (r"拒答|特定关键词|加价", "拒答和计费规则"),
     (r"计费|成本|Token|额度|加价|价格", "计费和成本"),
     (r"CAD|图纸|\.STP|STP", "CAD 图纸"),
     (r"GitHub.*迁|迁.*GitHub|迁出|迁移", "迁出 GitHub"),
@@ -124,11 +126,11 @@ EVENT_TYPE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("migration", ("迁出", "迁移")),
     ("legal", ("起诉", "诉讼", "法院", "庭审", "法律", "威胁起诉")),
     ("leadership", ("CEO", "接任", "交接", "执行董事长")),
-    ("incident", ("故障", "宕机", "中断", "异常", "拒答", "耗尽", "修复", "下滑")),
-    ("policy", ("政策", "限制", "实名", "验证", "侧载", "隐私", "绑定", "未授权", "未经同意")),
+    ("opinion", ("指出", "认为", "呼吁", "建议", "批评", "应成为")),
+    ("policy", ("政策", "限制", "实名", "验证", "侧载", "隐私", "绑定", "未授权", "未经同意", "拒答", "特定关键词")),
+    ("incident", ("故障", "宕机", "中断", "异常", "耗尽", "修复", "下滑")),
     ("release", ("发布", "推出", "上线", "正式版", "预览版", "开源", "接入", "集成")),
     ("business", ("营收", "融资", "IPO", "交易", "成本", "价格", "计费", "商业化")),
-    ("opinion", ("指出", "认为", "呼吁", "建议", "批评")),
     ("controversy", ("争议", "反对", "质疑", "担忧", "滥用", "垄断")),
 )
 
@@ -162,7 +164,6 @@ def _card_haystack(card: dict[str, Any]) -> str:
 
 def _primary_entity(card: dict[str, Any]) -> str:
     title = _clean_event_title(str(card.get("event_title", "")))
-    haystack = _card_haystack(card)
     title_matches: list[tuple[int, str]] = []
     for pattern, label in ENTITY_ALIASES:
         match = re.search(re.escape(pattern), title, flags=re.IGNORECASE)
@@ -171,12 +172,10 @@ def _primary_entity(card: dict[str, Any]) -> str:
     if title_matches:
         return sorted(title_matches, key=lambda item: item[0])[0][1]
 
-    for pattern, label in ENTITY_ALIASES:
-        if re.search(re.escape(pattern), haystack, flags=re.IGNORECASE):
-            return label
-
     entities = [str(item).strip() for item in card.get("entities", []) if str(item).strip()]
     for entity in entities:
+        if not re.search(re.escape(entity), title, flags=re.IGNORECASE):
+            continue
         if entity.lower() not in GENERIC_ENTITIES:
             return entity
 
@@ -225,6 +224,10 @@ def _topic_phrase(card: dict[str, Any], entity: str) -> str:
 
 
 def _event_type(card: dict[str, Any]) -> str:
+    title = _clean_event_title(str(card.get("event_title", "")))
+    for event_type, keywords in EVENT_TYPE_KEYWORDS:
+        if any(keyword in title for keyword in keywords):
+            return event_type
     haystack = _card_haystack(card)
     for event_type, keywords in EVENT_TYPE_KEYWORDS:
         if any(keyword in haystack for keyword in keywords):
@@ -250,6 +253,8 @@ def _find_product(card: dict[str, Any], entity: str) -> str:
     for item in card.get("entities", []) or []:
         candidate = str(item or "").strip()
         if not candidate or candidate.lower() in GENERIC_ENTITIES:
+            continue
+        if not re.search(re.escape(candidate), title, flags=re.IGNORECASE):
             continue
         if entity and candidate.lower() == entity.lower():
             continue
@@ -360,16 +365,16 @@ def _retrieval_questions(card: dict[str, Any]) -> list[tuple[str, str]]:
     elif event_type == "policy":
         focus = domain or "政策和限制"
         focus_event = f"这次 {focus}争议" if re.search(r"[A-Za-z]", focus) else f"这次{focus}争议"
-        _add_question(rows, "single_event", f"{entity} 最近{_focus_phrase(focus)}有什么新动作", card)
+        _add_question(rows, "single_event", f"{subject} 最近{_focus_phrase(focus)}有什么新动作", card)
         _add_question(rows, "latest_update", f"帮我查一下 {subject} 最近的限制或政策变化", card)
-        _add_question(rows, "deep_reading", f"整理一下 {entity} {focus_event}的背景和影响", card)
+        _add_question(rows, "deep_reading", f"整理一下 {subject} {focus_event}的背景和影响", card)
     elif event_type == "legal":
         _add_question(rows, "single_event", f"{entity} 最近卷入了什么法律争议", card)
         _add_question(rows, "latest_update", f"帮我查一下 {entity} 最近的诉讼相关进展", card)
         _add_question(rows, "deep_reading", f"整理一下 {entity} 这起法律事件的关键事实和来源", card)
     elif event_type == "release":
         if product and product.lower() != entity.lower():
-            if domain and domain != "产品发布":
+            if domain and domain not in {"计费和成本", "拒答和计费规则", "产品发布"}:
                 _add_question(rows, "single_event", f"{entity} 最近在 {product} 的{domain}上有什么新动作", card)
                 _add_question(rows, "latest_update", f"帮我查一下 {product} 最近和{domain}有关的发布消息", card)
                 _add_question(rows, "deep_reading", f"整理一下 {product} 这次{domain}更新的关键信息和来源", card)

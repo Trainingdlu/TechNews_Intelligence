@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from eval.build_event_eval_datasets import _primary_entity, _retrieval_questions, build_datasets
+from eval.build_event_eval_datasets import _event_type, _primary_entity, _retrieval_questions, build_datasets
 from eval.news_eval_metrics import build_url_event_index, score_retrieval_prediction
 from eval.news_eval_schema import validate_event_card, validate_generation_case, validate_retrieval_case
 
@@ -128,6 +128,105 @@ def test_retrieval_questions_skip_event_without_clear_anchor() -> None:
         }
     )
     assert _retrieval_questions(card) == []
+
+
+def test_primary_entity_must_come_from_title_not_summary() -> None:
+    card = validate_event_card(
+        {
+            "event_id": "local_ai_opinion_2026_05",
+            "event_title": "[AI] 本地AI应成为软件开发常态",
+            "entities": ["苹果"],
+            "time_window": {"start": "2026-05-10", "end": "2026-05-10"},
+            "core_urls": ["https://unix.foo/posts/local-ai-needs-to-be-norm/"],
+            "related_urls": [],
+            "facts": [
+                {
+                    "claim": "文章讨论本地 AI 和苹果生态限制",
+                    "quote": "文章讨论本地 AI 和苹果生态限制",
+                    "url": "https://unix.foo/posts/local-ai-needs-to-be-norm/",
+                }
+            ],
+            "suitable_tasks": ["single_event"],
+            "sources": ["Blog"],
+        }
+    )
+    assert _primary_entity(card) == ""
+    assert _retrieval_questions(card) == []
+
+
+def test_title_opinion_takes_priority_over_incident_words_in_facts() -> None:
+    card = validate_event_card(
+        {
+            "event_id": "mitchell_ai_hype_2026_05",
+            "event_title": "[AI] Mitchell Hashimoto指出多家公司深陷“AI狂热”，理性技术对话受阻",
+            "entities": ["Mitchell"],
+            "time_window": {"start": "2026-05-15", "end": "2026-05-15"},
+            "core_urls": ["https://twitter.com/mitchellh/status/2055380239711457578"],
+            "related_urls": [],
+            "facts": [
+                {
+                    "claim": "讨论 AI 狂热导致技术讨论异常",
+                    "quote": "讨论 AI 狂热导致技术讨论异常",
+                    "url": "https://twitter.com/mitchellh/status/2055380239711457578",
+                }
+            ],
+            "suitable_tasks": ["single_event"],
+            "sources": ["Twitter"],
+        }
+    )
+    assert _event_type(card) == "opinion"
+    questions = [question for _, question in _retrieval_questions(card)]
+    assert any("技术观点" in question or "AI 开发" in question for question in questions)
+    assert all("故障" not in question and "异常" not in question for question in questions)
+
+
+def test_release_title_ignores_cost_domain_in_facts() -> None:
+    card = validate_event_card(
+        {
+            "event_id": "openai_gpt55_release_2026_04",
+            "event_title": "[AI] OpenAI正式发布GPT-5.5模型",
+            "entities": ["OpenAI", "GPT-5.5"],
+            "time_window": {"start": "2026-04-23", "end": "2026-04-23"},
+            "core_urls": ["https://openai.com/index/introducing-gpt-5-5/"],
+            "related_urls": [],
+            "facts": [
+                {
+                    "claim": "GPT-5.5 Pro API 定价更高",
+                    "quote": "GPT-5.5 Pro API 定价更高",
+                    "url": "https://openai.com/index/introducing-gpt-5-5/",
+                }
+            ],
+            "suitable_tasks": ["single_event"],
+            "sources": ["OpenAI"],
+        }
+    )
+    questions = [question for _, question in _retrieval_questions(card)]
+    assert any("GPT-5.5" in question and "发布" in question for question in questions)
+    assert all("计费和成本" not in question for question in questions)
+
+
+def test_policy_questions_use_product_subject_when_available() -> None:
+    card = validate_event_card(
+        {
+            "event_id": "chrome_silent_ai_model_2026_05",
+            "event_title": "[生态] Google Chrome未经同意静默安装4GB AI模型引发隐私与环保争议",
+            "entities": ["Google", "Chrome"],
+            "time_window": {"start": "2026-05-05", "end": "2026-05-05"},
+            "core_urls": ["https://www.thatprivacyguy.com/blog/chrome-silent-nano-install/"],
+            "related_urls": [],
+            "facts": [
+                {
+                    "claim": "Chrome 静默安装 AI 模型",
+                    "quote": "Chrome 静默安装 AI 模型",
+                    "url": "https://www.thatprivacyguy.com/blog/chrome-silent-nano-install/",
+                }
+            ],
+            "suitable_tasks": ["single_event"],
+            "sources": ["Blog"],
+        }
+    )
+    questions = [question for _, question in _retrieval_questions(card)]
+    assert any(question.startswith("Chrome 最近") for question in questions)
 
 
 def test_title_entity_prevents_fact_only_product_contamination() -> None:
