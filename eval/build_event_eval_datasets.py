@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from services.llm_provider import DEFAULT_DEEPSEEK_MODEL, build_chat_model, resolve_model_config
 
 try:
     from news_eval_schema import (
@@ -62,6 +68,13 @@ GENERIC_ENTITIES = {
     "ai",
     "model",
 }
+
+QUESTION_SYSTEM_PROMPT = (
+    "你负责为科技新闻智能体评测生成真实用户问题。"
+    "你只能把给定事件改写成自然问题，不能新增事实，不能输出 URL，不能决定 gold 标签。"
+    "问题要像用户实际会问的中文问题，不要照抄新闻完整标题，不要出现“核心议题”“本文记录”“分析显示”等内部摘要词。"
+    "返回 JSON，不要 markdown。"
+)
 
 
 def _slug(value: str) -> str:
@@ -148,17 +161,31 @@ def _topic_phrase(card: dict[str, Any], entity: str) -> str:
     title = _clean_event_title(str(card.get("event_title", "")))
     claim = _first_fact_claim(card)
     claim_clean = _clean_event_title(claim)
-    if re.match(r"^(该|此|这|上述)", claim_clean):
+    if re.match(r"^(该|此|这|上述|本文|分析显示|核心议题)", claim_clean):
         base = title
     else:
         base = _clean_event_title(claim_clean or title)
     base = _remove_leading_entity(base, entity)
+    base = re.sub(r"^(核心议题|分析显示|本文记录|近日|最近)(：|:)?", "", base).strip()
     base = re.sub(r"^(：|:|，|,|。|\s)+", "", base).strip()
     if not base:
         base = title
-    if len(base) > 34:
-        base = base[:34].rstrip("，,。；;：:")
+    base = _compact_topic(base)
     return base or "这条消息"
+
+
+def _compact_topic(value: str, *, max_chars: int = 24) -> str:
+    text = str(value or "").strip()
+    text = re.sub(r"\s+", " ", text)
+    for sep in ("，", ",", "；", ";", "。", "：", ":"):
+        if sep in text and text.index(sep) >= 6:
+            text = text.split(sep, 1)[0]
+            break
+    if len(text) <= max_chars:
+        return text.strip("，,。；;：: ")
+    cut = text[:max_chars]
+    cut = re.sub(r"[A-Za-z0-9.+-]+$", "", cut).strip()
+    return (cut or text[:max_chars]).strip("，,。；;：: ")
 
 
 def _time_window_days(card: dict[str, Any]) -> str:
@@ -184,6 +211,146 @@ def _retrieval_questions(card: dict[str, Any]) -> list[tuple[str, str]]:
     if source:
         questions.append(("source_limited", f"请从 {source} 相关报道里找一下 {entity} 和「{topic}」有关的消息。"))
     return questions
+
+
+def _extract_json_object(text: str) -> dict[str, Any]:
+    raw = str(text or "").strip()
+    if raw.startswith("{") and raw.endswith("}"):
+        return json.loads(raw)
+    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, flags=re.DOTALL | re.IGNORECASE)
+    if match:
+        return json.loads(match.group(1))
+    start = raw.find("{")
+    if start < 0:
+        raise ValueError("No JSON object found in question-generation response.")
+    depth = 0
+    for idx, ch in enumerate(raw[start:], start=start):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return json.loads(raw[start : idx + 1])
+    raise ValueError("Incomplete JSON object in question-generation response.")
+
+
+def _coerce_text_content(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        chunks: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                chunks.append(item)
+            elif isinstance(item, dict):
+                chunks.append(str(item.get("text", item)))
+            else:
+                chunks.append(str(item))
+        return "\n".join(chunks)
+    return str(content or "")
+
+
+def _question_is_usable(question: str, card: dict[str, Any]) -> bool:
+    text = str(question or "").strip()
+    if len(text) < 8 or len(text) > 90:
+        return False
+    if "http://" in text.lower() or "https://" in text.lower():
+        return False
+    blocked = ("核心议题", "本文记录", "分析显示", "该功能", "该模型", "该公司")
+    if any(item in text for item in blocked):
+        return False
+    title = _clean_event_title(str(card.get("event_title", "")))
+    if len(title) >= 16 and title in text:
+        return False
+    return True
+
+
+def _parse_llm_questions(payload: dict[str, Any], card: dict[str, Any]) -> list[tuple[str, str]]:
+    raw_questions = payload.get("questions")
+    if not isinstance(raw_questions, list):
+        return []
+    rows: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for item in raw_questions:
+        if not isinstance(item, dict):
+            continue
+        query_type = str(item.get("query_type") or "").strip() or "single_event"
+        question = str(item.get("question") or "").strip()
+        if not _question_is_usable(question, card):
+            continue
+        if question in seen:
+            continue
+        seen.add(question)
+        rows.append((query_type, question))
+    return rows
+
+
+def _llm_question_prompt(card: dict[str, Any], *, questions_per_event: int) -> str:
+    entity = _primary_entity(card)
+    topic = _topic_phrase(card, entity)
+    facts = [
+        str(item.get("claim") or item.get("quote") or "").strip()
+        for item in card.get("facts", []) or []
+        if isinstance(item, dict) and str(item.get("claim") or item.get("quote") or "").strip()
+    ][:4]
+    sources = [str(item).strip() for item in card.get("sources", []) if str(item).strip()]
+    return json.dumps(
+        {
+            "task": f"生成 {max(1, questions_per_event)} 个真实用户可能提出的科技新闻检索问题。",
+            "constraints": [
+                "不要照抄完整新闻标题。",
+                "不要出现 URL。",
+                "不要出现“核心议题”“本文记录”“分析显示”等内部摘要词。",
+                "问题可以包含公司/产品名和短主题，但要像真实用户自然提问。",
+                "query_type 只能从 single_event/latest_update/deep_reading/source_limited 中选择。",
+            ],
+            "event": {
+                "title": _clean_event_title(str(card.get("event_title", ""))),
+                "entity": entity,
+                "short_topic": topic,
+                "facts": facts,
+                "sources": sources,
+            },
+            "output_schema": {
+                "questions": [
+                    {"query_type": "single_event", "question": "自然中文问题"}
+                ]
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
+def _build_question_model(provider: str | None, model: str | None) -> Any:
+    resolved = resolve_model_config(
+        provider=provider or os.getenv("TASK_EVAL_PROVIDER", "deepseek"),
+        model_name=model or os.getenv("TASK_EVAL_MODEL", "") or None,
+        default_provider="deepseek",
+        default_model=DEFAULT_DEEPSEEK_MODEL,
+    )
+    return build_chat_model(
+        provider=resolved.provider,
+        model_name=resolved.model,
+        temperature=0.2,
+        default_provider="deepseek",
+        default_model=DEFAULT_DEEPSEEK_MODEL,
+    )
+
+
+def _llm_retrieval_questions(
+    model: Any,
+    card: dict[str, Any],
+    *,
+    questions_per_event: int,
+) -> list[tuple[str, str]]:
+    raw = model.invoke(
+        [
+            SystemMessage(content=QUESTION_SYSTEM_PROMPT),
+            HumanMessage(content=_llm_question_prompt(card, questions_per_event=questions_per_event)),
+        ]
+    )
+    payload = _extract_json_object(_coerce_text_content(getattr(raw, "content", raw)))
+    return _parse_llm_questions(payload, card)
 
 
 def _generation_question(card: dict[str, Any]) -> str:
@@ -213,6 +380,7 @@ def build_datasets(
     *,
     max_events: int,
     questions_per_event: int,
+    question_model: Any | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     retrieval_cases: list[dict[str, Any]] = []
     generation_cases: list[dict[str, Any]] = []
@@ -224,7 +392,26 @@ def build_datasets(
         gold_urls = [str(item).strip() for item in card.get("core_urls", []) if str(item).strip()]
         if not gold_urls:
             continue
-        question_rows = _retrieval_questions(card)[: max(1, questions_per_event)]
+        question_rows: list[tuple[str, str]] = []
+        if question_model is not None:
+            try:
+                question_rows = _llm_retrieval_questions(
+                    question_model,
+                    card,
+                    questions_per_event=max(1, questions_per_event),
+                )
+            except Exception as exc:
+                print(f"[EventEvalDatasets][Warn] LLM question generation failed for {event_id}: {exc}")
+        if len(question_rows) < max(1, questions_per_event):
+            fallback = _retrieval_questions(card)
+            existing = {question for _, question in question_rows}
+            for row in fallback:
+                if row[1] not in existing:
+                    question_rows.append(row)
+                    existing.add(row[1])
+                if len(question_rows) >= max(1, questions_per_event):
+                    break
+        question_rows = question_rows[: max(1, questions_per_event)]
         for idx, (query_type, question) in enumerate(question_rows, 1):
             retrieval_cases.append(
                 validate_retrieval_case(
@@ -285,16 +472,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest-output", type=Path, default=Path("eval/datasets/event_eval_manifest.json"))
     parser.add_argument("--max-events", type=int, default=100)
     parser.add_argument("--questions-per-event", type=int, default=3)
+    parser.add_argument("--question-mode", choices=["llm", "template"], default="llm")
+    parser.add_argument("--question-provider", type=str, default=None)
+    parser.add_argument("--question-model", type=str, default=None)
+    parser.add_argument("--env-file", type=Path, default=None)
     return parser.parse_args()
+
+
+def _load_eval_env(env_file: Path | None) -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    default_env = project_root / "agent" / ".env"
+    if default_env.exists():
+        load_dotenv(dotenv_path=default_env, override=True)
+    if env_file:
+        load_dotenv(dotenv_path=env_file.resolve(), override=True)
 
 
 def main() -> None:
     args = parse_args()
+    _load_eval_env(args.env_file)
     event_cards = load_event_cards(args.events)
+    question_model = None
+    if str(args.question_mode).strip().lower() == "llm":
+        question_model = _build_question_model(args.question_provider, args.question_model)
     retrieval_cases, generation_cases, e2e_cases = build_datasets(
         event_cards,
         max_events=max(1, int(args.max_events)),
         questions_per_event=max(1, int(args.questions_per_event)),
+        question_model=question_model,
     )
     write_jsonl(args.retrieval_output, retrieval_cases)
     write_jsonl(args.generation_output, generation_cases)
@@ -306,6 +511,9 @@ def main() -> None:
         "retrieval_cases": len(retrieval_cases),
         "generation_cases": len(generation_cases),
         "e2e_cases": len(e2e_cases),
+        "question_mode": str(args.question_mode),
+        "question_provider": str(args.question_provider or os.getenv("TASK_EVAL_PROVIDER", "deepseek")),
+        "question_model": str(args.question_model or os.getenv("TASK_EVAL_MODEL", DEFAULT_DEEPSEEK_MODEL)),
         "retrieval_output": str(args.retrieval_output),
         "generation_output": str(args.generation_output),
         "e2e_output": str(args.e2e_output),

@@ -65,6 +65,8 @@ PY
 nohup docker compose --env-file deployment/.env -f deployment/docker-compose.yml run --rm --no-deps \
   -w /app \
   -e PYTHONUNBUFFERED=1 \
+  -e TASK_EVAL_PROVIDER=deepseek \
+  -e TASK_EVAL_MODEL=deepseek-v4-pro \
   -v "$PWD:/app" \
   bot python -u -m eval.build_event_eval_datasets \
     --events eval/datasets/event_cards_smoke.jsonl \
@@ -74,6 +76,9 @@ nohup docker compose --env-file deployment/.env -f deployment/docker-compose.yml
     --manifest-output eval/datasets/event_eval_manifest_smoke.json \
     --max-events 20 \
     --questions-per-event 3 \
+    --question-mode llm \
+    --question-provider deepseek \
+    --question-model deepseek-v4-pro \
   > eval/logs/build_event_eval_datasets_smoke.log 2>&1 &
 ```
 
@@ -96,6 +101,24 @@ for name in ["retrieval_cases_smoke.jsonl", "generation_cases_smoke.jsonl", "e2e
     print(name, sum(1 for line in p.read_text(encoding="utf-8").splitlines() if line.strip()))
 PY
 ```
+
+抽样检查生成的问题是否像真实用户会问的问题：
+
+```bash
+docker compose --env-file deployment/.env -f deployment/docker-compose.yml run -T --rm --no-deps \
+  -w /app \
+  -v "$PWD:/app" \
+  bot python - <<'PY'
+import json
+from pathlib import Path
+p = Path("eval/datasets/retrieval_cases_smoke.jsonl")
+for line in p.read_text(encoding="utf-8").splitlines()[:12]:
+    row = json.loads(line)
+    print(row["query_type"], "=>", row["question"])
+PY
+```
+
+如果问题里仍然出现完整新闻标题、半截句子、`核心议题`、`本文记录`、`分析显示` 这类内部摘要词，先不要继续跑检索评测，应该回到问题生成层调整。
 
 ## 4. 第一优先级：先跑检索评测
 
@@ -232,4 +255,3 @@ nohup docker compose --env-file deployment/.env -f deployment/docker-compose.yml
 - 固定证据生成层事实覆盖低：先修最终综合 prompt 或模型选择。
 - 端到端失败主要是 `TOOL_PATH_FAIL`：先修意图判断和工具规划。
 - 端到端失败主要是 `RETRIEVAL_FAIL`：回到检索层优化。
-
