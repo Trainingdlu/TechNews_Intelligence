@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from eval.build_event_eval_datasets import build_datasets
+from eval.build_event_eval_datasets import _primary_entity, _retrieval_questions, build_datasets
 from eval.news_eval_metrics import build_url_event_index, score_retrieval_prediction
 from eval.news_eval_schema import validate_event_card, validate_generation_case, validate_retrieval_case
 
@@ -70,6 +70,15 @@ def test_build_datasets_from_event_card() -> None:
     assert e2e[0]["expected_behavior"] == "retrieve_then_answer"
 
 
+def test_retrieval_questions_do_not_copy_full_title() -> None:
+    card = validate_event_card(_event_card())
+    full_title = card["event_title"]
+    questions = _retrieval_questions(card)
+    assert _primary_entity(card) == "OpenAI"
+    assert all(full_title not in question for _, question in questions)
+    assert any("个人理财" in question for _, question in questions)
+
+
 def test_generation_case_rejects_missing_evidence() -> None:
     try:
         validate_generation_case(
@@ -85,4 +94,3 @@ def test_generation_case_rejects_missing_evidence() -> None:
         assert "evidence" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("validate_generation_case should reject empty evidence")
-
