@@ -14,10 +14,20 @@ from typing import Any
 from dotenv import load_dotenv
 
 try:
-    from news_eval_metrics import build_url_event_index, score_retrieval_prediction, summarize_retrieval_scores
+    from news_eval_metrics import (
+        build_event_metadata_index,
+        build_url_event_index,
+        score_retrieval_prediction,
+        summarize_retrieval_scores,
+    )
     from news_eval_schema import load_event_cards, load_retrieval_cases
 except ImportError:  # pragma: no cover
-    from .news_eval_metrics import build_url_event_index, score_retrieval_prediction, summarize_retrieval_scores
+    from .news_eval_metrics import (
+        build_event_metadata_index,
+        build_url_event_index,
+        score_retrieval_prediction,
+        summarize_retrieval_scores,
+    )
     from .news_eval_schema import load_event_cards, load_retrieval_cases
 
 
@@ -56,18 +66,34 @@ def _summary_by_query_type(results: list[dict[str, Any]]) -> dict[str, dict[str,
     for row in results:
         grouped[str(row.get("query_type") or "unknown")].append(row)
     summary: dict[str, dict[str, Any]] = {}
+
+    def mean_score(rows: list[dict[str, Any]], key: str) -> float | None:
+        vals: list[float] = []
+        for row in rows:
+            value = row.get("scores", {}).get(key)
+            if value is None:
+                continue
+            try:
+                vals.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        return (sum(vals) / len(vals)) if vals else None
+
     for query_type, rows in sorted(grouped.items()):
         count = len(rows)
         if not count:
             continue
-        exact_hits = sum(float(row.get("scores", {}).get("exact_hit_at_k", 0.0)) for row in rows)
-        event_hits = sum(float(row.get("scores", {}).get("event_hit_at_k", 0.0)) for row in rows)
-        mrr_sum = sum(float(row.get("scores", {}).get("mrr_at_k", 0.0)) for row in rows)
         summary[query_type] = {
             "case_count": count,
-            "exact_hit_rate": exact_hits / count,
-            "event_hit_rate": event_hits / count,
-            "avg_mrr_at_k": mrr_sum / count,
+            "single_event_case_count": sum(1 for row in rows if row.get("case_kind") == "single_event"),
+            "broad_topic_case_count": sum(1 for row in rows if row.get("case_kind") == "broad_topic"),
+            "exact_hit_rate": mean_score(rows, "exact_hit_at_k"),
+            "event_hit_rate": mean_score(rows, "event_hit_at_k"),
+            "avg_mrr_at_k": mean_score(rows, "mrr_at_k"),
+            "avg_event_set_recall_at_k": mean_score(rows, "event_set_recall_at_k"),
+            "avg_event_diversity_at_k": mean_score(rows, "event_diversity_at_k"),
+            "avg_irrelevant_event_ratio_at_k": mean_score(rows, "irrelevant_event_ratio_at_k"),
+            "avg_source_diversity_at_k": mean_score(rows, "source_diversity_at_k"),
         }
     return summary
 
@@ -107,6 +133,7 @@ def main() -> None:
         cases = cases[: int(args.max_cases)]
     event_cards = load_event_cards(args.events)
     url_event_index = build_url_event_index(event_cards)
+    event_metadata_index = build_event_metadata_index(event_cards)
 
     results: list[dict[str, Any]] = []
     for case in cases:
@@ -122,7 +149,11 @@ def main() -> None:
             pred_urls=run.get("pred_urls", []),
             gold_urls=case.get("gold_urls", []),
             gold_event_id=str(case.get("gold_event_id", "")),
+            gold_event_ids=case.get("gold_event_ids", []),
+            acceptable_event_ids=case.get("acceptable_event_ids", []),
+            case_kind=str(case.get("case_kind", "single_event")),
             url_event_index=url_event_index,
+            event_metadata_index=event_metadata_index,
             k=int(args.k),
         )
         results.append(
@@ -130,8 +161,14 @@ def main() -> None:
                 "case_id": case["case_id"],
                 "question": case["question"],
                 "query_type": case["query_type"],
+                "case_kind": case.get("case_kind", "single_event"),
                 "gold_event_id": case["gold_event_id"],
+                "gold_event_ids": case.get("gold_event_ids", []),
                 "gold_urls": case.get("gold_urls", []),
+                "acceptable_event_ids": case.get("acceptable_event_ids", []),
+                "topic": case.get("topic", ""),
+                "expected_entities": case.get("expected_entities", []),
+                "expected_event_types": case.get("expected_event_types", []),
                 "pred_urls": run.get("pred_urls", []),
                 "status": run.get("status"),
                 "started_at": started.isoformat(),
@@ -154,8 +191,9 @@ def main() -> None:
         "summary_by_query_type": _summary_by_query_type(results),
         "results": results,
         "env": {
-            "AGENT_RETRIEVAL_RERANK_MODE": os.getenv("AGENT_RETRIEVAL_RERANK_MODE", ""),
-            "AGENT_RECALL_PROFILE": os.getenv("AGENT_RECALL_PROFILE", ""),
+            "EVAL_RECALL_PROFILE": os.getenv("EVAL_RECALL_PROFILE", ""),
+            "NEWS_RERANK_MODE": os.getenv("NEWS_RERANK_MODE", ""),
+            "JINA_API_KEY_PRESENT": bool(os.getenv("JINA_API_KEY")),
         },
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

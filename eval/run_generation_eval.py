@@ -107,9 +107,11 @@ def _score_generation(case: dict[str, Any], answer: str) -> dict[str, Any]:
         "evidence_url_count": len(evidence_urls),
         "answer_url_count": len(answer_urls),
         "unsupported_url_count": len(unsupported_urls),
+        "unsupported_url_rate": (len(unsupported_urls) / len(answer_urls)) if answer_urls else 0.0,
         "unsupported_urls": unsupported_urls,
         "forbidden_hit_count": len(forbidden_hits),
         "forbidden_hits": forbidden_hits,
+        "required_claim_sources": case.get("required_claim_sources", []),
     }
 
 
@@ -167,6 +169,7 @@ def main() -> None:
         "case_count": len(results),
         "avg_claim_coverage": _mean(score_rows, "claim_coverage"),
         "avg_unsupported_url_count": _mean(score_rows, "unsupported_url_count"),
+        "avg_unsupported_url_rate": _mean(score_rows, "unsupported_url_rate"),
         "avg_forbidden_hit_count": _mean(score_rows, "forbidden_hit_count"),
         "error_count": sum(1 for row in results if row.get("error")),
     }
@@ -186,4 +189,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

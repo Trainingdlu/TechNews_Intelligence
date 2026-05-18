@@ -23,12 +23,10 @@ EVENT_CARD_REQUIRED_FIELDS = (
     "suitable_tasks",
 )
 
-RETRIEVAL_CASE_REQUIRED_FIELDS = (
+RETRIEVAL_CASE_BASE_FIELDS = (
     "case_id",
     "question",
     "query_type",
-    "gold_event_id",
-    "gold_urls",
 )
 
 GENERATION_CASE_REQUIRED_FIELDS = (
@@ -39,11 +37,9 @@ GENERATION_CASE_REQUIRED_FIELDS = (
     "forbidden_claims",
 )
 
-E2E_CASE_REQUIRED_FIELDS = (
+E2E_CASE_BASE_FIELDS = (
     "case_id",
     "question",
-    "gold_event_id",
-    "gold_urls",
     "expected_behavior",
 )
 
@@ -176,15 +172,43 @@ def validate_event_card(card: dict[str, Any]) -> dict[str, Any]:
 
 def validate_retrieval_case(case: dict[str, Any]) -> dict[str, Any]:
     label = f"retrieval_case[{case.get('case_id', '?')}]"
-    _require_fields(case, RETRIEVAL_CASE_REQUIRED_FIELDS, label=label)
-    gold_urls = _as_url_list(case.get("gold_urls", []), field="gold_urls", label=label, min_items=1)
+    _require_fields(case, RETRIEVAL_CASE_BASE_FIELDS, label=label)
+
+    raw_kind = str(case.get("case_kind") or "").strip().lower()
+    if not raw_kind:
+        raw_kind = "broad_topic" if case.get("gold_event_ids") else "single_event"
+    if raw_kind not in {"single_event", "broad_topic"}:
+        raise ValueError(f"{label}.case_kind must be single_event or broad_topic.")
+
+    gold_event_id = ""
+    gold_event_ids: list[str] = []
+    min_gold_urls = 0
+    if raw_kind == "single_event":
+        gold_event_id = _as_non_empty_string(case.get("gold_event_id"), field="gold_event_id", label=label)
+        gold_event_ids = [gold_event_id]
+        min_gold_urls = 1
+    else:
+        gold_event_ids = _as_string_list(case.get("gold_event_ids", []), field="gold_event_ids", label=label, min_items=1)
+
+    gold_urls = _as_url_list(case.get("gold_urls", []), field="gold_urls", label=label, min_items=min_gold_urls)
+    acceptable_event_ids = _as_string_list(
+        case.get("acceptable_event_ids", []),
+        field="acceptable_event_ids",
+        label=label,
+    )
     return {
         **case,
         "case_id": _as_non_empty_string(case.get("case_id"), field="case_id", label=label),
         "question": _as_non_empty_string(case.get("question"), field="question", label=label),
         "query_type": _as_non_empty_string(case.get("query_type"), field="query_type", label=label),
-        "gold_event_id": _as_non_empty_string(case.get("gold_event_id"), field="gold_event_id", label=label),
+        "case_kind": raw_kind,
+        "gold_event_id": gold_event_id,
+        "gold_event_ids": gold_event_ids,
         "gold_urls": gold_urls,
+        "acceptable_event_ids": acceptable_event_ids,
+        "topic": str(case.get("topic") or "").strip(),
+        "expected_entities": _as_string_list(case.get("expected_entities", []), field="expected_entities", label=label),
+        "expected_event_types": _as_string_list(case.get("expected_event_types", []), field="expected_event_types", label=label),
     }
 
 
@@ -204,31 +228,86 @@ def validate_generation_case(case: dict[str, Any]) -> dict[str, Any]:
         if not normalize_url_for_retrieval(url):
             raise ValueError(f"{label}.evidence[{idx}].url must be a valid URL.")
         evidence.append({"title": title, "quote": quote, "url": url})
+    required_claims = _as_string_list(
+        case.get("required_claims", []),
+        field="required_claims",
+        label=label,
+        min_items=1,
+    )
+    raw_claim_sources = case.get("required_claim_sources", [])
+    claim_sources: list[dict[str, str]] = []
+    if raw_claim_sources:
+        if not isinstance(raw_claim_sources, list):
+            raise ValueError(f"{label}.required_claim_sources must be a list.")
+        for idx, item in enumerate(raw_claim_sources, 1):
+            if not isinstance(item, dict):
+                raise ValueError(f"{label}.required_claim_sources[{idx}] must be an object.")
+            claim = _as_non_empty_string(
+                item.get("claim"),
+                field="claim",
+                label=f"{label}.required_claim_sources[{idx}]",
+            )
+            url = _as_non_empty_string(
+                item.get("url"),
+                field="url",
+                label=f"{label}.required_claim_sources[{idx}]",
+            )
+            if not normalize_url_for_retrieval(url):
+                raise ValueError(f"{label}.required_claim_sources[{idx}].url must be a valid URL.")
+            claim_sources.append({"claim": claim, "url": url})
+    else:
+        evidence_url = evidence[0]["url"]
+        claim_sources = [{"claim": claim, "url": evidence_url} for claim in required_claims]
+
     return {
         **case,
         "case_id": _as_non_empty_string(case.get("case_id"), field="case_id", label=label),
         "question": _as_non_empty_string(case.get("question"), field="question", label=label),
         "evidence": evidence,
-        "required_claims": _as_string_list(
-            case.get("required_claims", []),
-            field="required_claims",
-            label=label,
-            min_items=1,
-        ),
+        "required_claims": required_claims,
+        "required_claim_sources": claim_sources,
         "forbidden_claims": _as_string_list(case.get("forbidden_claims", []), field="forbidden_claims", label=label),
     }
 
 
 def validate_e2e_case(case: dict[str, Any]) -> dict[str, Any]:
     label = f"e2e_case[{case.get('case_id', '?')}]"
-    _require_fields(case, E2E_CASE_REQUIRED_FIELDS, label=label)
-    gold_urls = _as_url_list(case.get("gold_urls", []), field="gold_urls", label=label, min_items=1)
+    _require_fields(case, E2E_CASE_BASE_FIELDS, label=label)
+
+    raw_kind = str(case.get("case_kind") or "").strip().lower()
+    if not raw_kind:
+        raw_kind = "broad_topic" if case.get("gold_event_ids") else "single_event"
+    if raw_kind not in {"single_event", "broad_topic"}:
+        raise ValueError(f"{label}.case_kind must be single_event or broad_topic.")
+
+    gold_event_id = ""
+    gold_event_ids: list[str] = []
+    min_gold_urls = 0
+    if raw_kind == "single_event":
+        gold_event_id = _as_non_empty_string(case.get("gold_event_id"), field="gold_event_id", label=label)
+        gold_event_ids = [gold_event_id]
+        min_gold_urls = 1
+    else:
+        gold_event_ids = _as_string_list(case.get("gold_event_ids", []), field="gold_event_ids", label=label, min_items=1)
+
+    gold_urls = _as_url_list(case.get("gold_urls", []), field="gold_urls", label=label, min_items=min_gold_urls)
+    acceptable_event_ids = _as_string_list(
+        case.get("acceptable_event_ids", []),
+        field="acceptable_event_ids",
+        label=label,
+    )
     return {
         **case,
         "case_id": _as_non_empty_string(case.get("case_id"), field="case_id", label=label),
         "question": _as_non_empty_string(case.get("question"), field="question", label=label),
-        "gold_event_id": _as_non_empty_string(case.get("gold_event_id"), field="gold_event_id", label=label),
+        "case_kind": raw_kind,
+        "gold_event_id": gold_event_id,
+        "gold_event_ids": gold_event_ids,
         "gold_urls": gold_urls,
+        "acceptable_event_ids": acceptable_event_ids,
+        "topic": str(case.get("topic") or "").strip(),
+        "expected_entities": _as_string_list(case.get("expected_entities", []), field="expected_entities", label=label),
+        "expected_event_types": _as_string_list(case.get("expected_event_types", []), field="expected_event_types", label=label),
         "expected_behavior": _as_non_empty_string(case.get("expected_behavior"), field="expected_behavior", label=label),
     }
 
@@ -247,4 +326,3 @@ def load_generation_cases(path: Path) -> list[dict[str, Any]]:
 
 def load_e2e_cases(path: Path) -> list[dict[str, Any]]:
     return [validate_e2e_case(row) for row in read_jsonl(path)]
-

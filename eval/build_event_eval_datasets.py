@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ except ImportError:  # pragma: no cover
 
 
 ENTITY_ALIASES: tuple[tuple[str, str], ...] = (
+    ("Mitchell Hashimoto", "Mitchell Hashimoto"),
     ("OpenAI", "OpenAI"),
     ("Anthropic", "Anthropic"),
     ("Claude", "Claude"),
@@ -96,6 +98,7 @@ PRODUCT_PATTERNS: tuple[str, ...] = (
     r"VS Code",
     r"Steam(?:\s*手柄|\s*Controller)?",
     r"Framework\s+Laptop\s+\d+\s*Pro",
+    r"Laptop\s+\d+\s*Pro",
     r"Bambu\s+Lab",
     r"OrcaSlicer",
     r"reCAPTCHA",
@@ -133,6 +136,42 @@ EVENT_TYPE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("business", ("营收", "融资", "IPO", "交易", "成本", "价格", "计费", "商业化")),
     ("controversy", ("争议", "反对", "质疑", "担忧", "滥用", "垄断")),
 )
+
+BROAD_TOPIC_DEFINITIONS: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
+    (
+        "ai",
+        "AI",
+        ("AI", "OpenAI", "Anthropic", "Claude", "ChatGPT", "DeepSeek", "Gemini", "GPT", "模型", "智能体"),
+        ("AI 最近有什么值得关注的新闻", "最近 AI 领域有哪些重要变化"),
+    ),
+    (
+        "developer_tools",
+        "开发者工具",
+        ("GitHub", "Ghostty", "Zed", "VS Code", "Claude Code", "Copilot", "开发者", "代码", "编程", "编辑器"),
+        ("最近开发者工具领域有哪些值得关注的变化", "开发者工具最近有什么重要新闻"),
+    ),
+    (
+        "policy_privacy",
+        "平台政策与隐私",
+        ("隐私", "验证", "限制", "实名", "reCAPTCHA", "Play Integrity", "侧载", "政策", "合规", "授权"),
+        ("最近科技平台在政策、隐私或限制上有什么变化", "最近有哪些值得关注的平台政策和隐私争议"),
+    ),
+    (
+        "hardware",
+        "科技硬件",
+        ("硬件", "Framework", "Valve", "Steam", "Laptop", "Bambu", "手柄", "笔记本", "CAD", "图纸"),
+        ("最近科技硬件领域有哪些值得关注的新闻", "最近硬件产品和开发生态有什么变化"),
+    ),
+)
+
+EVENT_TYPE_TOPIC_QUESTIONS: dict[str, str] = {
+    "release": "最近有哪些新产品或新版本发布值得关注",
+    "policy": "最近有哪些平台政策或限制变化值得关注",
+    "incident": "最近有哪些服务故障或异常事件值得关注",
+    "legal": "最近科技公司有哪些法律或诉讼进展",
+    "business": "最近科技公司的商业化或成本变化有哪些",
+    "controversy": "最近科技领域有哪些争议事件值得关注",
+}
 
 
 def _slug(value: str) -> str:
@@ -304,6 +343,16 @@ def _focus_phrase(focus: str) -> str:
     return f"在{text}上"
 
 
+def _compact_for_compare(value: str) -> str:
+    return re.sub(r"\s+", "", str(value or "")).lower()
+
+
+def _domain_mentions_subject(domain: str, subject: str) -> bool:
+    domain_key = _compact_for_compare(domain)
+    subject_key = _compact_for_compare(subject)
+    return bool(domain_key and subject_key and subject_key in domain_key)
+
+
 def _add_question(rows: list[tuple[str, str]], query_type: str, question: str, card: dict[str, Any]) -> None:
     clean = _clean_question(question)
     if not _question_is_usable(clean, card):
@@ -364,10 +413,15 @@ def _retrieval_questions(card: dict[str, Any]) -> list[tuple[str, str]]:
         _add_question(rows, "deep_reading", f"帮我整理 {subject} 这次异常的原因、影响和来源", card)
     elif event_type == "policy":
         focus = domain or "政策和限制"
-        focus_event = f"这次 {focus}争议" if re.search(r"[A-Za-z]", focus) else f"这次{focus}争议"
-        _add_question(rows, "single_event", f"{subject} 最近{_focus_phrase(focus)}有什么新动作", card)
-        _add_question(rows, "latest_update", f"帮我查一下 {subject} 最近的限制或政策变化", card)
-        _add_question(rows, "deep_reading", f"整理一下 {subject} {focus_event}的背景和影响", card)
+        if _domain_mentions_subject(focus, subject):
+            _add_question(rows, "single_event", f"{subject} 最近有什么验证或限制变化", card)
+            _add_question(rows, "latest_update", f"帮我查一下 {subject} 最近的兼容性或限制问题", card)
+            _add_question(rows, "deep_reading", f"整理一下 {subject} 这次争议的背景和影响", card)
+        else:
+            focus_event = f"这次 {focus}争议" if re.search(r"[A-Za-z]", focus) else f"这次{focus}争议"
+            _add_question(rows, "single_event", f"{subject} 最近{_focus_phrase(focus)}有什么新动作", card)
+            _add_question(rows, "latest_update", f"帮我查一下 {subject} 最近的限制或政策变化", card)
+            _add_question(rows, "deep_reading", f"整理一下 {subject} {focus_event}的背景和影响", card)
     elif event_type == "legal":
         _add_question(rows, "single_event", f"{entity} 最近卷入了什么法律争议", card)
         _add_question(rows, "latest_update", f"帮我查一下 {entity} 最近的诉讼相关进展", card)
@@ -375,9 +429,9 @@ def _retrieval_questions(card: dict[str, Any]) -> list[tuple[str, str]]:
     elif event_type == "release":
         if product and product.lower() != entity.lower():
             if domain and domain not in {"计费和成本", "拒答和计费规则", "产品发布"}:
-                _add_question(rows, "single_event", f"{entity} 最近在 {product} 的{domain}上有什么新动作", card)
-                _add_question(rows, "latest_update", f"帮我查一下 {product} 最近和{domain}有关的发布消息", card)
-                _add_question(rows, "deep_reading", f"整理一下 {product} 这次{domain}更新的关键信息和来源", card)
+                _add_question(rows, "single_event", f"{entity} 最近发布了哪些 {product} {domain}", card)
+                _add_question(rows, "latest_update", f"帮我查一下 {product} 最近的 {domain} 发布消息", card)
+                _add_question(rows, "deep_reading", f"整理一下 {product} 这次 {domain} 更新的关键信息和来源", card)
             else:
                 _add_question(rows, "single_event", f"{entity} 最近在 {product} 上推出了什么新功能", card)
                 _add_question(rows, "latest_update", f"帮我查一下 {product} 最近的发布消息", card)
@@ -578,6 +632,234 @@ def _generation_question(card: dict[str, Any]) -> str:
     return f"基于给定证据，总结 {subject} 相关消息的关键事实和影响。"
 
 
+def _event_id(card: dict[str, Any]) -> str:
+    return str(card.get("event_id") or "").strip()
+
+
+def _card_time_key(card: dict[str, Any]) -> tuple[str, str, str]:
+    window = card.get("time_window") or {}
+    if not isinstance(window, dict):
+        window = {}
+    end = str(window.get("end") or "").strip()
+    start = str(window.get("start") or "").strip()
+    return (end, start, _event_id(card))
+
+
+def _event_ids(cards: list[dict[str, Any]]) -> list[str]:
+    return [event_id for event_id in (_event_id(card) for card in cards) if event_id]
+
+
+def _gold_urls_for_cards(cards: list[dict[str, Any]]) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for card in cards:
+        for url in card.get("core_urls", []) or []:
+            text = str(url).strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            urls.append(text)
+    return urls
+
+
+def _broad_time_window(cards: list[dict[str, Any]]) -> str:
+    starts: list[str] = []
+    ends: list[str] = []
+    for card in cards:
+        window = card.get("time_window") or {}
+        if not isinstance(window, dict):
+            continue
+        start = str(window.get("start") or "").strip()
+        end = str(window.get("end") or "").strip()
+        if start:
+            starts.append(start)
+        if end:
+            ends.append(end)
+    if starts and ends:
+        low = min(starts)
+        high = max(ends)
+        return f"{low} 至 {high}" if low != high else high
+    return "最近"
+
+
+def _matches_topic_keywords(card: dict[str, Any], keywords: tuple[str, ...]) -> bool:
+    haystack = "\n".join(
+        [
+            str(card.get("event_title") or ""),
+            " ".join(str(item) for item in card.get("entities", []) or []),
+            _card_haystack(card),
+        ]
+    ).lower()
+    return any(str(keyword).lower() in haystack for keyword in keywords if str(keyword).strip())
+
+
+def _expected_entities(cards: list[dict[str, Any]], *, max_items: int = 8) -> list[str]:
+    entities: list[str] = []
+    for card in cards:
+        profile = _query_profile(card)
+        if profile and profile.get("entity"):
+            entities.append(str(profile["entity"]))
+        for item in card.get("entities", []) or []:
+            entity = str(item).strip()
+            if entity and entity.lower() not in GENERIC_ENTITIES:
+                entities.append(entity)
+    seen: set[str] = set()
+    out: list[str] = []
+    for entity in entities:
+        key = entity.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(entity)
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def _expected_event_types(cards: list[dict[str, Any]]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for card in cards:
+        event_type = _event_type(card)
+        if not event_type or event_type == "generic" or event_type in seen:
+            continue
+        seen.add(event_type)
+        out.append(event_type)
+    return out
+
+
+def _broad_chunks(
+    cards: list[dict[str, Any]],
+    *,
+    min_events: int,
+    max_events_per_case: int,
+) -> list[list[dict[str, Any]]]:
+    ordered = sorted(cards, key=_card_time_key, reverse=True)
+    if len(ordered) < min_events:
+        return []
+    if len(ordered) <= max_events_per_case:
+        return [ordered]
+    chunks: list[list[dict[str, Any]]] = []
+    step = max(1, min_events)
+    for start in range(0, len(ordered), step):
+        chunk = ordered[start : start + max_events_per_case]
+        if len(chunk) >= min_events:
+            chunks.append(chunk)
+    return chunks
+
+
+def _broad_case(
+    *,
+    case_no: int,
+    topic_key: str,
+    topic: str,
+    question: str,
+    gold_cards: list[dict[str, Any]],
+    acceptable_cards: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return validate_retrieval_case(
+        {
+            "case_id": f"retrieval.topic.{_slug(topic_key)}.{case_no:03d}",
+            "question": _clean_question(question),
+            "query_type": "topic_overview",
+            "case_kind": "broad_topic",
+            "gold_event_ids": _event_ids(gold_cards),
+            "acceptable_event_ids": _event_ids(acceptable_cards),
+            "gold_urls": _gold_urls_for_cards(gold_cards),
+            "topic": topic,
+            "time_window": _broad_time_window(gold_cards),
+            "expected_entities": _expected_entities(gold_cards),
+            "expected_event_types": _expected_event_types(gold_cards),
+        }
+    )
+
+
+def _build_broad_topic_cases(
+    event_cards: list[dict[str, Any]],
+    *,
+    min_events: int = 2,
+    max_events_per_case: int = 6,
+) -> list[dict[str, Any]]:
+    cases: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, tuple[str, ...]]] = set()
+    case_no = 0
+
+    def add_cases(topic_key: str, topic: str, questions: tuple[str, ...], cards: list[dict[str, Any]]) -> None:
+        nonlocal case_no
+        acceptable_cards = sorted(cards, key=_card_time_key, reverse=True)
+        for chunk in _broad_chunks(acceptable_cards, min_events=min_events, max_events_per_case=max_events_per_case):
+            gold_ids = tuple(_event_ids(chunk))
+            if not gold_ids:
+                continue
+            for question in questions:
+                signature = (topic_key, question, gold_ids)
+                if signature in seen:
+                    continue
+                seen.add(signature)
+                case_no += 1
+                cases.append(
+                    _broad_case(
+                        case_no=case_no,
+                        topic_key=topic_key,
+                        topic=topic,
+                        question=question,
+                        gold_cards=chunk,
+                        acceptable_cards=acceptable_cards,
+                    )
+                )
+
+    cards = [card for card in event_cards if _event_id(card) and card.get("core_urls")]
+    for topic_key, topic, keywords, questions in BROAD_TOPIC_DEFINITIONS:
+        matched = [card for card in cards if _matches_topic_keywords(card, keywords)]
+        add_cases(topic_key, topic, questions, matched)
+
+    by_entity: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    by_event_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for card in cards:
+        profile = _query_profile(card)
+        entity = str((profile or {}).get("entity") or "").strip()
+        if entity and entity.lower() not in GENERIC_ENTITIES:
+            by_entity[entity].append(card)
+        event_type = _event_type(card)
+        if event_type and event_type != "generic":
+            by_event_type[event_type].append(card)
+
+    for entity, grouped in sorted(by_entity.items()):
+        add_cases(
+            f"entity_{entity}",
+            entity,
+            (f"{entity} 最近有哪些值得关注的动态", f"最近关于 {entity} 有哪些重要新闻"),
+            grouped,
+        )
+
+    for event_type, grouped in sorted(by_event_type.items()):
+        question = EVENT_TYPE_TOPIC_QUESTIONS.get(event_type)
+        if question:
+            add_cases(f"type_{event_type}", event_type, (question,), grouped)
+
+    return cases
+
+
+def _e2e_from_retrieval_case(case: dict[str, Any]) -> dict[str, Any]:
+    expected_behavior = "retrieve_summarize_topic" if case.get("case_kind") == "broad_topic" else "retrieve_then_answer"
+    return validate_e2e_case(
+        {
+            "case_id": str(case.get("case_id", "")).replace("retrieval.", "e2e.", 1),
+            "question": case.get("question"),
+            "case_kind": case.get("case_kind"),
+            "gold_event_id": case.get("gold_event_id"),
+            "gold_event_ids": case.get("gold_event_ids", []),
+            "acceptable_event_ids": case.get("acceptable_event_ids", []),
+            "gold_urls": case.get("gold_urls", []),
+            "topic": case.get("topic", ""),
+            "expected_entities": case.get("expected_entities", []),
+            "expected_event_types": case.get("expected_event_types", []),
+            "expected_behavior": expected_behavior,
+            "time_window": case.get("time_window", ""),
+        }
+    )
+
+
 def _evidence_from_card(card: dict[str, Any]) -> list[dict[str, str]]:
     title = _clean_event_title(str(card.get("event_title", "")))
     evidence: list[dict[str, str]] = []
@@ -594,6 +876,45 @@ def _evidence_from_card(card: dict[str, Any]) -> list[dict[str, str]]:
     return [item for item in evidence if item["quote"] and item["url"]]
 
 
+def _atomic_claims_from_text(text: str) -> list[str]:
+    raw = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not raw:
+        return []
+    parts = [item.strip(" ，,。；;：:") for item in re.split(r"[。！？；;\n]+", raw)]
+    if len(parts) <= 1 and len(raw) > 56:
+        parts = [item.strip(" ，,。；;：:") for item in re.split(r"[，,]", raw)]
+    claims: list[str] = []
+    for part in parts:
+        text_part = re.sub(r"\s+", " ", part).strip()
+        if len(text_part) < 6:
+            continue
+        if len(text_part) > 120:
+            text_part = text_part[:120].rstrip(" ，,。；;：:")
+        if text_part and text_part not in claims:
+            claims.append(text_part)
+    return claims or ([raw[:120].rstrip(" ，,。；;：:")] if raw else [])
+
+
+def _required_claim_sources_from_card(card: dict[str, Any]) -> tuple[list[str], list[dict[str, str]]]:
+    claims: list[str] = []
+    sources: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for fact in card.get("facts", []) or []:
+        if not isinstance(fact, dict):
+            continue
+        url = str(fact.get("url") or "").strip()
+        if not url:
+            continue
+        for claim in _atomic_claims_from_text(str(fact.get("claim") or fact.get("quote") or "")):
+            key = (claim, url)
+            if key in seen:
+                continue
+            seen.add(key)
+            claims.append(claim)
+            sources.append({"claim": claim, "url": url})
+    return claims, sources
+
+
 def build_datasets(
     event_cards: list[dict[str, Any]],
     *,
@@ -601,6 +922,8 @@ def build_datasets(
     questions_per_event: int,
     question_model: Any | None = None,
     question_mode: str = "archetype",
+    min_broad_topic_events: int = 2,
+    max_broad_events_per_case: int = 6,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     retrieval_cases: list[dict[str, Any]] = []
     generation_cases: list[dict[str, Any]] = []
@@ -634,25 +957,22 @@ def build_datasets(
                     break
         question_rows = question_rows[: max(1, questions_per_event)]
         for idx, (query_type, question) in enumerate(question_rows, 1):
-            retrieval_cases.append(
-                validate_retrieval_case(
-                    {
-                        "case_id": f"retrieval.{event_slug}.{idx:03d}",
-                        "question": question,
-                        "query_type": query_type,
-                        "gold_event_id": event_id,
-                        "gold_urls": gold_urls,
-                        "time_window": _time_window_days(card),
-                    }
-                )
+            retrieval_case = validate_retrieval_case(
+                {
+                    "case_id": f"retrieval.{event_slug}.{idx:03d}",
+                    "question": question,
+                    "query_type": query_type,
+                    "case_kind": "single_event",
+                    "gold_event_id": event_id,
+                    "gold_urls": gold_urls,
+                    "time_window": _time_window_days(card),
+                }
             )
+            retrieval_cases.append(retrieval_case)
+            e2e_cases.append(_e2e_from_retrieval_case(retrieval_case))
 
         evidence = _evidence_from_card(card)
-        required_claims = [
-            str(fact.get("claim") or "").strip()
-            for fact in card.get("facts", []) or []
-            if isinstance(fact, dict) and str(fact.get("claim") or "").strip()
-        ]
+        required_claims, required_claim_sources = _required_claim_sources_from_card(card)
         if evidence and required_claims:
             generation_cases.append(
                 validate_generation_case(
@@ -662,25 +982,19 @@ def build_datasets(
                         "event_id": event_id,
                         "evidence": evidence,
                         "required_claims": required_claims,
+                        "required_claim_sources": required_claim_sources,
                         "forbidden_claims": ["证据中没有出现的发布时间、价格、地区或数字"],
                     }
                 )
             )
 
-        if question_rows:
-            first_question = question_rows[0][1]
-            e2e_cases.append(
-                validate_e2e_case(
-                    {
-                        "case_id": f"e2e.{event_slug}.001",
-                        "question": first_question,
-                        "gold_event_id": event_id,
-                        "gold_urls": gold_urls,
-                        "expected_behavior": "retrieve_then_answer",
-                        "time_window": _time_window_days(card),
-                    }
-                )
-            )
+    broad_cases = _build_broad_topic_cases(
+        event_cards[: max(1, max_events)],
+        min_events=max(2, int(min_broad_topic_events)),
+        max_events_per_case=max(2, int(max_broad_events_per_case)),
+    )
+    retrieval_cases.extend(broad_cases)
+    e2e_cases.extend(_e2e_from_retrieval_case(case) for case in broad_cases)
 
     return retrieval_cases, generation_cases, e2e_cases
 
@@ -694,6 +1008,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest-output", type=Path, default=Path("eval/datasets/event_eval_manifest.json"))
     parser.add_argument("--max-events", type=int, default=100)
     parser.add_argument("--questions-per-event", type=int, default=3)
+    parser.add_argument("--min-broad-topic-events", type=int, default=2)
+    parser.add_argument("--max-broad-events-per-case", type=int, default=6)
     parser.add_argument("--question-mode", choices=["archetype", "llm", "template"], default="archetype")
     parser.add_argument("--question-provider", type=str, default=None)
     parser.add_argument("--question-model", type=str, default=None)
@@ -723,6 +1039,8 @@ def main() -> None:
         questions_per_event=max(1, int(args.questions_per_event)),
         question_model=question_model,
         question_mode=str(args.question_mode),
+        min_broad_topic_events=max(2, int(args.min_broad_topic_events)),
+        max_broad_events_per_case=max(2, int(args.max_broad_events_per_case)),
     )
     write_jsonl(args.retrieval_output, retrieval_cases)
     write_jsonl(args.generation_output, generation_cases)
@@ -732,8 +1050,14 @@ def main() -> None:
         "events": str(args.events),
         "event_count": len(event_cards),
         "retrieval_cases": len(retrieval_cases),
+        "single_event_retrieval_cases": sum(1 for case in retrieval_cases if case.get("case_kind") == "single_event"),
+        "broad_topic_retrieval_cases": sum(1 for case in retrieval_cases if case.get("case_kind") == "broad_topic"),
         "generation_cases": len(generation_cases),
         "e2e_cases": len(e2e_cases),
+        "single_event_e2e_cases": sum(1 for case in e2e_cases if case.get("case_kind") == "single_event"),
+        "broad_topic_e2e_cases": sum(1 for case in e2e_cases if case.get("case_kind") == "broad_topic"),
+        "min_broad_topic_events": max(2, int(args.min_broad_topic_events)),
+        "max_broad_events_per_case": max(2, int(args.max_broad_events_per_case)),
         "question_mode": str(args.question_mode),
         "question_provider": str(args.question_provider or os.getenv("TASK_EVAL_PROVIDER", "deepseek")),
         "question_model": str(args.question_model or os.getenv("TASK_EVAL_MODEL", DEFAULT_DEEPSEEK_MODEL)),

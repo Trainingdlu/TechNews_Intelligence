@@ -15,11 +15,21 @@ from dotenv import load_dotenv
 
 try:
     from eval_core import extract_urls, normalize_url_for_retrieval
-    from news_eval_metrics import build_url_event_index, score_retrieval_prediction, summarize_retrieval_scores
+    from news_eval_metrics import (
+        build_event_metadata_index,
+        build_url_event_index,
+        score_retrieval_prediction,
+        summarize_retrieval_scores,
+    )
     from news_eval_schema import load_e2e_cases, load_event_cards
 except ImportError:  # pragma: no cover
     from .eval_core import extract_urls, normalize_url_for_retrieval
-    from .news_eval_metrics import build_url_event_index, score_retrieval_prediction, summarize_retrieval_scores
+    from .news_eval_metrics import (
+        build_event_metadata_index,
+        build_url_event_index,
+        score_retrieval_prediction,
+        summarize_retrieval_scores,
+    )
     from .news_eval_schema import load_e2e_cases, load_event_cards
 
 
@@ -106,7 +116,10 @@ def _attribution(
     tool_calls = _tool_calls_from_trace(trace_summary)
     if not tool_calls:
         return "TOOL_PATH_FAIL"
-    if float(retrieval_score.get("event_hit_at_k") or 0.0) <= 0.0 and float(retrieval_score.get("exact_hit_at_k") or 0.0) <= 0.0:
+    if str(retrieval_score.get("case_kind") or "") == "broad_topic":
+        if float(retrieval_score.get("event_set_recall_at_k") or 0.0) <= 0.0:
+            return "RETRIEVAL_FAIL"
+    elif float(retrieval_score.get("event_hit_at_k") or 0.0) <= 0.0 and float(retrieval_score.get("exact_hit_at_k") or 0.0) <= 0.0:
         return "RETRIEVAL_FAIL"
     if not answer.strip():
         return "GENERATION_FAIL"
@@ -151,6 +164,7 @@ def main() -> None:
         cases = cases[: int(args.max_cases)]
     event_cards = load_event_cards(args.events)
     url_event_index = build_url_event_index(event_cards)
+    event_metadata_index = build_event_metadata_index(event_cards)
     generate_response_eval_payload = _bootstrap_agent()
 
     results: list[dict[str, Any]] = []
@@ -171,7 +185,11 @@ def main() -> None:
             pred_urls=retrieved_urls,
             gold_urls=case.get("gold_urls", []),
             gold_event_id=str(case.get("gold_event_id", "")),
+            gold_event_ids=case.get("gold_event_ids", []),
+            acceptable_event_ids=case.get("acceptable_event_ids", []),
+            case_kind=str(case.get("case_kind", "single_event")),
             url_event_index=url_event_index,
+            event_metadata_index=event_metadata_index,
             k=int(args.k),
         )
         attribution = _attribution(
@@ -186,6 +204,13 @@ def main() -> None:
                 "case_id": case["case_id"],
                 "request_id": request_id,
                 "question": case["question"],
+                "case_kind": case.get("case_kind", "single_event"),
+                "gold_event_id": case.get("gold_event_id", ""),
+                "gold_event_ids": case.get("gold_event_ids", []),
+                "acceptable_event_ids": case.get("acceptable_event_ids", []),
+                "topic": case.get("topic", ""),
+                "expected_entities": case.get("expected_entities", []),
+                "expected_event_types": case.get("expected_event_types", []),
                 "answer": answer,
                 "retrieved_urls": retrieved_urls,
                 "tool_calls": _tool_calls_from_trace(trace_summary),
@@ -211,7 +236,9 @@ def main() -> None:
         "results": results,
         "env": {
             "AGENT_MODEL_PROVIDER": os.getenv("AGENT_MODEL_PROVIDER", ""),
-            "AGENT_RETRIEVAL_RERANK_MODE": os.getenv("AGENT_RETRIEVAL_RERANK_MODE", ""),
+            "EVAL_RECALL_PROFILE": os.getenv("EVAL_RECALL_PROFILE", ""),
+            "NEWS_RERANK_MODE": os.getenv("NEWS_RERANK_MODE", ""),
+            "JINA_API_KEY_PRESENT": bool(os.getenv("JINA_API_KEY")),
         },
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -222,4 +249,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

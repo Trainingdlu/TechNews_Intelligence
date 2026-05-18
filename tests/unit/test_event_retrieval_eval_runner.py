@@ -40,3 +40,35 @@ def test_summary_by_query_type() -> None:
     assert summary["single_event"]["case_count"] == 2
     assert summary["single_event"]["exact_hit_rate"] == 0.5
     assert summary["latest_update"]["avg_mrr_at_k"] == 0.5
+
+
+def test_summary_by_query_type_includes_broad_topic_metrics() -> None:
+    summary = _summary_by_query_type(
+        [
+            {
+                "query_type": "topic_overview",
+                "case_kind": "broad_topic",
+                "scores": {
+                    "event_set_recall_at_k": 0.5,
+                    "event_diversity_at_k": 2,
+                    "irrelevant_event_ratio_at_k": 0.25,
+                    "source_diversity_at_k": 2,
+                },
+            },
+            {
+                "query_type": "topic_overview",
+                "case_kind": "broad_topic",
+                "scores": {
+                    "event_set_recall_at_k": 1.0,
+                    "event_diversity_at_k": 4,
+                    "irrelevant_event_ratio_at_k": 0.0,
+                    "source_diversity_at_k": 3,
+                },
+            },
+        ]
+    )
+    topic = summary["topic_overview"]
+    assert topic["broad_topic_case_count"] == 2
+    assert topic["avg_event_set_recall_at_k"] == 0.75
+    assert topic["avg_event_diversity_at_k"] == 3.0
+    assert topic["avg_irrelevant_event_ratio_at_k"] == 0.125

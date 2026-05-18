@@ -38,6 +38,17 @@ KNOWN_ENTITIES = (
     "Perplexity",
 )
 
+EVENT_TYPE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("migration", ("迁出", "迁移", "leaving github")),
+    ("legal", ("起诉", "诉讼", "法院", "法庭", "legal", "lawsuit")),
+    ("leadership", ("CEO", "接任", "交接", "executive", "leadership")),
+    ("policy", ("政策", "限制", "实名", "验证", "隐私", "授权", "合规", "policy", "privacy")),
+    ("incident", ("故障", "宕机", "中断", "异常", "outage", "incident")),
+    ("release", ("发布", "推出", "上线", "正式版", "预览版", "release", "launch")),
+    ("business", ("营收", "融资", "IPO", "成本", "价格", "计费", "revenue", "pricing")),
+    ("controversy", ("争议", "反对", "质疑", "担忧", "controversy")),
+)
+
 
 def _load_eval_env(env_file: Path | None) -> None:
     project_root = Path(__file__).resolve().parents[1]
@@ -95,6 +106,14 @@ def _iso_date(value: Any) -> str:
 def _split_sentences(text: str) -> list[str]:
     parts = re.split(r"(?<=[。！？.!?])\s+|[。！？!?]\s*", str(text or "").strip())
     return [part.strip(" -\t\r\n") for part in parts if len(part.strip()) >= 8]
+
+
+def _infer_event_type(title: str, summary: str) -> str:
+    haystack = f"{title}\n{summary}".lower()
+    for event_type, keywords in EVENT_TYPE_KEYWORDS:
+        if any(str(keyword).lower() in haystack for keyword in keywords):
+            return event_type
+    return "generic"
 
 
 def _extract_entities(title: str, summary: str) -> list[str]:
@@ -214,6 +233,7 @@ def _build_card(group_rows: list[dict[str, Any]], *, max_facts: int) -> dict[str
         "core_urls": core_urls,
         "related_urls": related_urls,
         "facts": facts,
+        "event_type": _infer_event_type(title, summary),
         "suitable_tasks": ["single_event", "latest_update", "deep_reading"],
         "source_count": len(sources),
         "sources": sources,
