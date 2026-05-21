@@ -1,0 +1,112 @@
+========== gen_10_nvidia_vs_amd  (faith=2) ==========
+Q: 对比 NVIDIA 和 AMD 最近的市场表现
+
+--- JUDGE flagged unsupported_claims ---
+  * NVIDIA近期相关报道达175篇，平均关注度得分为159.5；AMD的相关报道为112篇，平均得分为138.0。
+  * NVIDIA的讨论量出现小幅下滑（-13.8%），而AMD的讨论量则呈现上升趋势（+11.3%）。
+  * NVIDIA获得了60篇正面报道与37篇负面报道；AMD则有33篇正面报道与16篇负面报道。
+
+--- EVIDENCE summaries the judge saw ---
+  [1] QBE – Compiler Back End
+      QBE是一款C语言编写的轻量级编译器后端，旨在以10%的代码量实现工业级编译器70%的性能。该项目保持极小体积，专注于核心优化，支持完整的C ABI及IEEE浮点数规范。其基于SSA的统一中间语言贯穿所有编译阶段，具备拷贝消除、稀疏条件常量传播、智能溢出启发及线性寄存器分配等优化特性。目前支持amd64、arm64和riscv64架构，并提供极快的编译速度，适合用于语言创新与快速集成。
+  [2] Achieving Peak System and Workload Efficiency on NVIDIA GB200 NVL72 with Slurm Block Scheduling
+      本文深入解析NVIDIA GB200 NVL72机柜级NVLink域架构对传统调度模型的挑战，并详解Slurm拓扑块插件的配置实践。内容涵盖通过“topology.yaml”声明计算块、利用“--segment”参数在排队延迟与NVLink局部性之间取得平衡，以及集成IMEX服务实现跨节点内存隔离的完整工作流，为大规模AI集群的生产级编排提供标准化方案。
+  [3] Real-Time Performance Monitoring and Faster Debugging with NCCL Inspector and Prometheus
+      NVIDIA在NCCL 2.30版本中引入Inspector的Prometheus模式，将分布式训练通信指标无缝集成至Prometheus与Grafana监控栈。该方案通过实时上报各GPU节点带宽与延迟数据，替代传统离线JSON存储，支持大模型训练任务的实时可观测性与性能归因，显著缩短网络拥塞或算力瓶颈的排查周期。
+  [4] Making LLM Training Faster with Unsloth and NVIDIA
+      Unsloth与NVIDIA合作针对LLM训练管线实施三项底层优化，综合提升训练速度约25%。首项为打包序列元数据缓存，避免跨层重复构建，在Qwen3-14B QLoRA微调中实现前向传播提速43.3%、单批次提速14.3%。第二项采用双缓冲梯度检查点重载技术，实现数据拷贝与反向计算重叠，在8B至32B密集模型中取得4.6%至8.4%的吞吐量提升，显存额外开销仅0.2至0.5GB。第三项重构MoE路由逻辑，将动态查询开销降至常数级，路由路径前向与反向分别提速23%与13%。
+  [5] Kioxia and Dell cram 10 PB into slim 2RU server
+      Dell基于AMD EPYC 9005平台推出PowerEdge R7725xd服务器，内置40块铠侠LC9 E3.L规格NVMe固态硬盘，单机容量达9.8PB。该系统采用2RU紧凑设计，最高支持5块400Gbps网卡，单机柜部署20台可实现196PB总容量，主要面向AI基础设施与大规模数据湖场景。当前存储市场正快速向高密度演进，铠侠、美光、闪迪、SK海力士及三星等厂商均已布局256TB级及以上企业级SSD研发。
+  [6] Fabricked: Misconfiguring Infinity Fabric to Break AMD SEV-SNP
+      安全团队披露CVE-2025-54510漏洞“Fabricked”，该漏洞利用AMD Infinity Fabric总线错误配置破坏SEV-SNP机密计算环境。攻击者篡改UEFI与监控程序重定向PSP内存写入，致使RMP访问控制表初始化失效，实现CVM内存任意读写。该纯软件漏洞成功率为百分之百，无需物理接触，影响Zen 3至Zen 5架构EPYC处理器，AMD已发布固件修复。
+
+--- ANSWER ---
+基于最近14天的数据，NVIDIA和AMD在市场关注度、发展动能以及技术生态方面呈现出以下对比表现：
+
+- 整体热度与关注度：NVIDIA的整体讨论热度显著高于AMD。NVIDIA近期相关报道达175篇，平均关注度得分为159.5；AMD的相关报道为112篇，平均得分为138.0。
+- 发展动能与趋势：在近期动能方面，NVIDIA的讨论量出现小幅下滑（-13.8%），而AMD的讨论量则呈现上升趋势（+11.3%）。
+- 情感倾向：两家公司的市场情绪均以中性偏正面为主。NVIDIA获得了60篇正面报道与37篇负面报道；AMD则有33篇正面报道与16篇负面报道。
+- NVIDIA近期核心动向：NVIDIA的市场表现高度集中于AI大模型生态优化与下一代数据中心基础设施。NVIDIA与Unsloth合作优化了LLM训练管线，使综合速度提升约25% [1]。在硬件与系统调度方面，NVIDIA发布了关于GB200 NVL72架构的Slurm块调度配置指南 [2]，并推出了集成Prometheus的NCCL Inspector实时性能监控与调试工具 [3]。
+- AMD近期核心动向：AMD近期的关注点部分集中在安全与底层架构方面。安全研究人员近期披露了一项漏洞，指出可以通过利用Infinity Fabric的错误配置来攻破AMD SEV-SNP [4]。
+
+总体而言，NVIDIA在AI训练生态和高端硬件架构上的主导地位依然稳固且讨论热度极高，而AMD虽然近期关注度有所上升，但在核心技术生态的正面曝光度上不及NVIDIA，且面临一定的安全漏洞披露压力。
+
+## 来源
+- [1] [[开发] Unsloth与NVIDIA合作优化LLM训练管线，综合提速约25%](https://unsloth.ai/blog/nvidia-collab)
+- [2] [[硬件] NVIDIA GB200 NVL72架构与Slurm块调度配置指南](https://developer.nvidia.com/blog/achieving-peak-system-and-workload-efficiency-on-nvidia-gb200-nvl72-with-slurm-block-scheduling/)
+- [3] [[开发] NVIDIA NCCL Inspector集成Prometheus实现实时性能监控与快速调试](https://developer.nvidia.com/blog/real-time-performance-monitoring-and-faster-debugging-with-nccl-inspector-and-prometheus/)
+- [4] [[安全] 研究人员披露利用Infinity Fabric错误配置攻破AMD SEV-SNP的漏洞](https://xca-attacks.github.io/fabricked/)
+
+
+========== gen_23_anthropic_stainless  (faith=2) ==========
+Q: Anthropic 收购 Stainless 的情况
+
+--- JUDGE flagged unsupported_claims ---
+  * Stainless 能够将 API 规范转化为涵盖 Java、Kotlin 等多种语言的 SDK
+  * 数百家公司依赖其技术来构建原生开发库和连接器
+  * Anthropic 平台工程主管 Katelyn Lesse 强调：‘智能体的实用性取决于其能连接到什么系统。’她表示将 Stainless 团队纳入麾下，将极大推进 Claude 连接数据和工具的能力
+  * Stainless 创始人兼 CEO Alex Rattray 表示，Anthropic 是最早信任并采用他们技术的团队之一。他认为加入 Anthropic 是一个轻松的决定，能让团队在最重要的平台上继续深耕开发者体验
+
+--- EVIDENCE summaries the judge saw ---
+  [1] The Zulip Foundation
+      Zulip宣布成立非营利基金会，全资接管原运营公司Kandra Labs。创始人Tim Abbott及3名高管离职加入Anthropic，Kim Vandiver出任临时总裁保障过渡。新架构由4名董事与5名顾问组成，旨在确立项目独立性并开放公益捐赠渠道。12人核心维护团队继续负责开发，云服务与自托管业务保持平稳运行。
+  [2] Anthropic warns investors against secondary platforms offering access to its shares
+      Anthropic近期更新官网，明确警告投资者Open Doors Partners、Forge Global等八家二级市场平台未获授权交易其股份。公司强调，任何未经董事会批准的股份或特殊目的载体转让均无效。针对该警告，Forge Global回应称被错误列入，正协商撤下声明。此次警告源于AI企业二级市场投资热度激增，Anthropic传闻正以9000亿美元估值融资，股份流通性极低，导致部分未授权平台及衍生品产品活跃。
+  [3] Anthropic’s Cat Wu says that, in the future, AI will anticipate your needs before you know what they are
+      Anthropic正推进约950亿美元融资，企业级市场份额自2025年5月起已实现四倍增长。产品负责人Cat Wu表示，公司战略聚焦保持技术前沿而非跟随竞品。未来半年产品重心将转向主动式AI，实现从同步交互向自动化例程与智能体管理的演进。Anthropic强调管理者需具备领域专业知识以调试智能体指令，公司旨在通过自动化工具消除重复性任务以提升整体生产力。
+  [4] Anthropic acquires Stainless
+      Anthropic正式宣布收购SDK与MCP服务器工具供应商Stainless。该公司成立于2022年，长期负责为Anthropic API生成涵盖TypeScript、Python、Go等多语言的官方开发工具包与命令行接口。此次并购旨在将Stainless的SDK生成能力与Anthropic的模型连接框架深度整合，以扩展Claude智能体对数据与外部工具的调用能力，进一步强化开发者生态与企业级平台体验。
+  [5] Claude for Small Business
+      Anthropic推出面向小微企业的AI应用方案，深度集成QuickBooks、PayPal、HubSpot等商业软件。该套件内置十五项开箱即用的智能体工作流，覆盖财务对账、营销投放与合同管理等核心业务环节。系统严格采用人工发起加前置审批机制，继承原有平台权限且默认不将企业数据用于模型训练。官方同步联合PayPal上线免费AI素养课程，并启动多城巡回线下工作坊以加速技术落地。
+
+--- ANSWER ---
+关于 Anthropic 收购 Stainless 的情况，以下是核心信息汇总：
+
+- **收购目的与战略意义**：Anthropic 正式宣布收购 SDK 与 MCP（模型上下文协议）服务器工具供应商 Stainless。此次并购的核心目的是将 Stainless 的 SDK 生成能力与 Anthropic 的模型连接框架深度整合，从而扩展 Claude 智能体对外部数据与工具的调用能力，进一步强化开发者生态与企业级平台体验 [1]。
+- **Stainless 公司背景**：Stainless 成立于 2022 年。自 Anthropic API 发布早期，该公司就一直负责为其生成官方开发工具包（SDK）和命令行接口（CLI）。Stainless 能够将 API 规范转化为涵盖 TypeScript、Python、Go、Java、Kotlin 等多种语言的 SDK，且数百家公司依赖其技术来构建原生开发库和连接器 [1]。
+- **双方高管回应**：
+  - Anthropic 平台工程主管 Katelyn Lesse 强调：“智能体的实用性取决于其能连接到什么系统。”她表示将 Stainless 团队纳入麾下，将极大推进 Claude 连接数据和工具的能力 [1]。
+  - Stainless 创始人兼 CEO Alex Rattray 表示，Anthropic 是最早信任并采用他们技术的团队之一。他认为加入 Anthropic 是一个轻松的决定，能让团队在最重要的平台上继续深耕开发者体验 [1]。
+
+总体而言，此次收购标志着 Anthropic 正加速从“回答问题的模型”向“执行任务的智能体”转型，通过强化底层连接工具链来提升 Claude 的实际操作能力。
+
+## 来源
+- [1] [[商业] Anthropic收购AI开发工具链公司Stainless](https://www.anthropic.com/news/anthropic-acquires-stainless)
+
+
+========== gen_25_anthropic_gates  (faith=2) ==========
+Q: Anthropic 与盖茨基金会的合作内容
+
+--- JUDGE flagged unsupported_claims ---
+  * 双方将利用 AI 加速脊髓灰质炎、HPV 以及先兆子痫等疾病的疫苗与疗法研发
+  * Anthropic 还将与盖茨基金会旗下的疾病建模研究所（IDM）合作
+  * 协助相关政府利用健康数据优化医疗人力、供应链及疫情监测
+  * 面向美国、撒哈拉以南非洲以及印度地区的 K-12（基础教育）AI 辅助工具
+  * 旨在弥补纯商业市场在公共利益领域的不足，通过提供公共健康数据集、评估基准以及非营利组织的 Claude 折扣访问权限
+
+--- EVIDENCE summaries the judge saw ---
+  [1] The Zulip Foundation
+      Zulip宣布成立非营利基金会，全资接管原运营公司Kandra Labs。创始人Tim Abbott及3名高管离职加入Anthropic，Kim Vandiver出任临时总裁保障过渡。新架构由4名董事与5名顾问组成，旨在确立项目独立性并开放公益捐赠渠道。12人核心维护团队继续负责开发，云服务与自托管业务保持平稳运行。
+  [2] Anthropic’s Cat Wu says that, in the future, AI will anticipate your needs before you know what they are
+      Anthropic正推进约950亿美元融资，企业级市场份额自2025年5月起已实现四倍增长。产品负责人Cat Wu表示，公司战略聚焦保持技术前沿而非跟随竞品。未来半年产品重心将转向主动式AI，实现从同步交互向自动化例程与智能体管理的演进。Anthropic强调管理者需具备领域专业知识以调试智能体指令，公司旨在通过自动化工具消除重复性任务以提升整体生产力。
+  [3] Anthropic acquires Stainless
+      Anthropic正式宣布收购SDK与MCP服务器工具供应商Stainless。该公司成立于2022年，长期负责为Anthropic API生成涵盖TypeScript、Python、Go等多语言的官方开发工具包与命令行接口。此次并购旨在将Stainless的SDK生成能力与Anthropic的模型连接框架深度整合，以扩展Claude智能体对数据与外部工具的调用能力，进一步强化开发者生态与企业级平台体验。
+  [4] Claude for Small Business
+      Anthropic推出面向小微企业的AI应用方案，深度集成QuickBooks、PayPal、HubSpot等商业软件。该套件内置十五项开箱即用的智能体工作流，覆盖财务对账、营销投放与合同管理等核心业务环节。系统严格采用人工发起加前置审批机制，继承原有平台权限且默认不将企业数据用于模型训练。官方同步联合PayPal上线免费AI素养课程，并启动多城巡回线下工作坊以加速技术落地。
+  [5] Anthropic forms $200M partnership with the Gates Foundation
+      Anthropic宣布与盖茨基金会达成4年期合作，承诺投入2亿美元用于医疗资助、Claude算力支持及技术援助。资金将重点投向三大领域：全球健康与生命科学方面，助力中低收入国家疫苗与疗法研发，并优化疟疾及结核病部署预测；教育领域，联合开发K-12数学辅导与基础读写算AI工具；经济流动方面，改进农业专项模型并构建职业技能认证与就业指导平台。该项目由公益部署团队主导，旨在拓展AI在公共服务领域的应用。
+
+--- ANSWER ---
+Anthropic 与盖茨基金会达成了一项为期 4 年、总额达 2 亿美元的合作协议。该合作由 Anthropic 的公益部署团队（Beneficial Deployments team）主导，旨在通过资金赞助、Claude 算力支持以及技术援助，拓展 AI 在公共服务领域的应用 [1]。
+
+合作的具体内容主要聚焦于以下核心领域：
+
+- **全球健康与生命科学**：重点助力中低收入国家的医疗发展。双方将利用 AI 加速脊髓灰质炎、HPV 以及先兆子痫等疾病的疫苗与疗法研发 [1]。此外，Anthropic 还将与盖茨基金会旗下的疾病建模研究所（IDM）合作，优化疟疾和结核病等疾病的传播预测与治疗部署，并协助相关政府利用健康数据优化医疗人力、供应链及疫情监测 [1]。
+- **教育领域**：联合开发面向美国、撒哈拉以南非洲以及印度地区的 K-12（基础教育）AI 辅助工具，重点涵盖数学辅导与基础读写算能力的提升 [1]。
+- **经济流动性**：致力于改进农业专项 AI 模型，并构建职业技能认证与就业指导平台，以促进经济发展与就业 [1]。
+
+整体而言，此次合作旨在弥补纯商业市场在公共利益领域的不足，通过提供公共健康数据集、评估基准以及非营利组织的 Claude 折扣访问权限，让 AI 技术惠及更多弱势群体与发展中国家 [1]。
+
+## 来源
+- [1] [[商业] Anthropic与盖茨基金会达成2亿美元合作](https://www.anthropic.com/news/gates-foundation-partnership)
+

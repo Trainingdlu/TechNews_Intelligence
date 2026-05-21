@@ -1,0 +1,30 @@
+{"case_id": "gen_01_openai_recent", "question": "OpenAI 最近有什么重要动态"}
+{"case_id": "gen_02_anthropic_enterprise", "question": "Anthropic 最近的企业市场进展"}
+{"case_id": "gen_03_nvidia_chip", "question": "NVIDIA 最近在 AI 芯片上有什么动作"}
+{"case_id": "gen_04_claude_updates", "question": "Claude 最近有哪些更新"}
+{"case_id": "gen_05_google_gemini", "question": "Google Gemini 最近的进展"}
+{"case_id": "gen_06_meta_ai", "question": "Meta AI 最近的动态"}
+{"case_id": "gen_07_deepseek", "question": "DeepSeek 最近发布了什么"}
+{"case_id": "gen_08_xai", "question": "xAI 最近有什么新动作"}
+{"case_id": "gen_09_openai_vs_anthropic", "question": "对比 OpenAI 和 Anthropic 最近的企业策略"}
+{"case_id": "gen_10_nvidia_vs_amd", "question": "对比 NVIDIA 和 AMD 最近的市场表现"}
+{"case_id": "gen_11_chip_landscape", "question": "AI 芯片赛道目前的竞争格局如何"}
+{"case_id": "gen_12_datacenter_energy", "question": "AI 数据中心面临的能源挑战有哪些"}
+{"case_id": "gen_13_inference_optim", "question": "大模型推理优化领域最近有哪些进展"}
+{"case_id": "gen_14_regulation_copyright", "question": "AI 监管与版权诉讼的最新进展"}
+{"case_id": "gen_15_opensource", "question": "开源大模型最近的发布动态"}
+{"case_id": "gen_16_gpt55", "question": "GPT-5.5 的能力和定价怎么样"}
+{"case_id": "gen_17_ai_jobs", "question": "AI 对就业市场的影响"}
+{"case_id": "gen_18_capex_2026", "question": "四大科技巨头 2026 年的资本支出情况"}
+{"case_id": "gen_19_ai_safety", "question": "AI 安全与对齐研究的最新进展"}
+{"case_id": "gen_20_jv", "question": "Anthropic 和 OpenAI 的企业级合资公司是什么情况"}
+{"case_id": "gen_21_cerebras_ipo", "question": "Cerebras IPO 的最新情况"}
+{"case_id": "gen_22_xai_environment", "question": "xAI 数据中心的环保争议是怎么回事"}
+{"case_id": "gen_23_anthropic_stainless", "question": "Anthropic 收购 Stainless 的情况"}
+{"case_id": "gen_24_openai_apple", "question": "OpenAI 与苹果合作的最新进展"}
+{"case_id": "gen_25_anthropic_gates", "question": "Anthropic 与盖茨基金会的合作内容"}
+{"case_id": "gen_26_meta_copyright", "question": "Meta 因 Llama 训练数据面临的版权诉讼"}
+{"case_id": "gen_27_sandboxaq", "question": "SandboxAQ 与 Claude 的药物发现合作"}
+{"case_id": "gen_28_microsoft_ai_revenue", "question": "微软 AI 业务的营收情况"}
+{"case_id": "gen_29_ai_sentiment", "question": "公众对 AI 发展的态度有什么变化"}
+{"case_id": "gen_30_claude_aws", "question": "Claude 在 AWS 上的平台是什么情况"}

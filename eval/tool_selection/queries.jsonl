@@ -1,0 +1,40 @@
+{"case_id": "ts_compare_topics_01", "question": "对比 OpenAI 和 Anthropic 最近的策略", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_02", "question": "比较 Meta 和 Google 在开源大模型上的布局", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_03", "question": "对比 NVIDIA 和 AMD 最近的市场表现", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_04", "question": "compare Claude and GPT", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_05", "question": "Anthropic 和 DeepSeek 在企业市场的差异", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_06", "question": "对比 Llama 和 Mistral 的开源策略", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_sources_01", "question": "HackerNews 和 TechCrunch 对 AI 芯片报道有什么差异", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_compare_sources_02", "question": "比较 Reuters 和 Bloomberg 对 OpenAI 的报道角度", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_compare_sources_03", "question": "Wired 和 The Verge 在 AI 报道上的差异", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_compare_sources_04", "question": "compare HackerNews vs TechCrunch coverage of AI chips", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_compare_sources_05", "question": "不同新闻来源对 GPT-5.5 的报道角度有什么不同", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_compare_sources_06", "question": "对比 HackerNews 和 Reuters 对 Anthropic 的报道", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_trend_01", "question": "过去一个月 NVIDIA 的趋势", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_02", "question": "AI 芯片市场的动向", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_03", "question": "Claude 最近一个月的舆论变化趋势", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_04", "question": "trend of OpenAI news coverage", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_05", "question": "DeepSeek 的发展趋势怎么样", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_timeline_01", "question": "Claude 4 系列发布时间线", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_02", "question": "OpenAI 过去三个月的发展时间线", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_03", "question": "GPT 系列发布脉络", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_04", "question": "timeline of Anthropic launches", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_05", "question": "梳理一下 Meta Llama 的发布历史", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_landscape_01", "question": "AI 芯片赛道竞争格局", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_02", "question": "AI 视频生成赛道竞争格局", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_03", "question": "大模型推理优化领域有哪些主要玩家", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_04", "question": "the AI agents landscape", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_05", "question": "AI 安全工具领域的竞争格局", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_search_news_01", "question": "最近 AI 安全有什么新闻", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_search_news_02", "question": "Anthropic 最近的新闻", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_search_news_03", "question": "what's new with OpenAI", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_search_news_04", "question": "Google AI 有什么新动作", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_search_news_05", "question": "Mistral AI 最近发布了什么", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_roundup_01", "question": "今天有哪些 AI 新闻", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_roundup_02", "question": "本周 AI 圈头条", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_roundup_03", "question": "列出今天的 AI 新闻", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_roundup_04", "question": "today's tech news roundup", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_article_read_01", "question": "帮我读一下 https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}
+{"case_id": "ts_article_read_02", "question": "总结这篇 https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}
+{"case_id": "ts_article_read_03", "question": "read this article: https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}
+{"case_id": "ts_article_read_04", "question": "解读一下这篇 https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}

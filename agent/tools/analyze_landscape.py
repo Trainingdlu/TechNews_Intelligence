@@ -51,27 +51,27 @@ SIGNAL_ANCHOR_TEXTS: dict[str, str] = {
     "compute_cost": (
         "GPU TPU chip semiconductor datacenter data center server compute "
         "training cost inference cost capex power consumption energy "
-        "绠楀姏 鑺墖 鐢靛姏 鑳借€?鏁版嵁涓績 鏈嶅姟鍣?璁＄畻鎴愭湰"
+        "算力 芯片 电力 能耗 数据中心 服务器 计算成本"
     ),
     "algorithm_efficiency": (
         "model benchmark reasoning architecture transformer agent inference "
         "distillation fine-tuning parameter efficiency quantization "
-        "绠楁硶 妯″瀷 鎺ㄧ悊 鏋舵瀯 钂搁 寰皟 閲忓寲 鍙傛暟鏁堢巼"
+        "算法 模型 推理 架构 蒸馏 微调 量化 参数效率"
     ),
     "data_moat": (
         "dataset data corpus licensing proprietary copyright privacy "
         "synthetic data curation annotation training data "
-        "鏁版嵁 璇枡 鎺堟潈 鐗堟潈 闅愮 鍚堟垚鏁版嵁 鏍囨敞"
+        "数据 语料 授权 版权 隐私 合成数据 标注"
     ),
     "go_to_market": (
         "enterprise customer pricing revenue subscription partnership "
         "adoption sales ARR growth market share commercialize "
-        "鍟嗕笟鍖?瀹㈡埛 瀹氫环 鏀跺叆 璁㈤槄 鍚堜綔 钀藉湴 钀ユ敹"
+        "商业化 客户 定价 收入 订阅 合作 落地 营收"
     ),
     "policy_security": (
         "regulation compliance antitrust lawsuit security breach "
         "vulnerability policy military export control sanctions "
-        "鐩戠 鍚堣 璇夎 瀹夊叏 婕忔礊 鍐涙柟 鍑哄彛绠″埗 鍒惰"
+        "监管 合规 诉讼 安全 漏洞 军方 出口管制 制裁"
     ),
 }
 

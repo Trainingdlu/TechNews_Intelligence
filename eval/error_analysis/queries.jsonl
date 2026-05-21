@@ -1,0 +1,50 @@
+{"case_id": "g1_A_01_vague_ai_recent", "category": "A", "multi_turn": false, "turns": [{"text": "最近 AI 圈有什么大事"}], "probe": "宽泛召回是否过窄 / roundup 格式"}
+{"case_id": "g1_A_02_en_weekly_summary", "category": "A", "multi_turn": false, "turns": [{"text": "summarize what happened this week in AI"}], "probe": "英文 + 周级 roundup"}
+{"case_id": "g1_A_03_industry_trend", "category": "A", "multi_turn": false, "turns": [{"text": "AI 行业最近有什么值得关注的动向"}], "probe": "宽泛 + trend 隐含"}
+{"case_id": "g1_A_04_super_vague_tech", "category": "A", "multi_turn": false, "turns": [{"text": "科技圈最近怎么样"}], "probe": "极宽泛, 是否过窄到 AI"}
+{"case_id": "g1_A_05_no_topic", "category": "A", "multi_turn": false, "turns": [{"text": "最近有什么新闻"}], "probe": "无主题, 应澄清或大范围 listing"}
+{"case_id": "g1_B_01_openai_vs_anthropic_strategy", "category": "B", "multi_turn": false, "turns": [{"text": "对比 OpenAI 和 Anthropic 最近一个月企业市场策略差异"}], "probe": "topic_comparison, 双侧证据平衡"}
+{"case_id": "g1_B_02_hn_vs_tc_chip", "category": "B", "multi_turn": false, "turns": [{"text": "HackerNews 和 TechCrunch 对 AI 芯片报道有什么差异"}], "probe": "source_comparison"}
+{"case_id": "g1_B_03_claude_vs_gpt_judge", "category": "B", "multi_turn": false, "turns": [{"text": "Claude 和 GPT 谁更强"}], "probe": "评价性问题, 幻觉/主观风险"}
+{"case_id": "g1_B_04_meta_vs_google_oss", "category": "B", "multi_turn": false, "turns": [{"text": "比较 Meta 和 Google 在开源大模型上的布局"}], "probe": "topic + 维度限定"}
+{"case_id": "g1_B_05_nvidia_vs_amd_market", "category": "B", "multi_turn": false, "turns": [{"text": "对比 NVIDIA 和 AMD 最近的市场表现"}], "probe": "topic + 时间隐含"}
+{"case_id": "g1_B_06_reuters_vs_bloomberg_regulation", "category": "B", "multi_turn": false, "turns": [{"text": "Reuters 和 Bloomberg 报道 AI 监管时的角度有什么不同"}], "probe": "source_comparison + 维度"}
+{"case_id": "g1_C_01_mistral_recent", "category": "C", "multi_turn": false, "turns": [{"text": "Mistral AI 最近发布了什么"}], "probe": "小公司, 召回少"}
+{"case_id": "g1_C_02_deepseek_update", "category": "C", "multi_turn": false, "turns": [{"text": "DeepSeek 最近的动态"}], "probe": "名字相对短, 可能歧义"}
+{"case_id": "g1_C_03_cohere_enterprise", "category": "C", "multi_turn": false, "turns": [{"text": "Cohere 在企业市场的进展"}], "probe": "长尾 + 维度"}
+{"case_id": "g1_C_04_stability_status", "category": "C", "multi_turn": false, "turns": [{"text": "Stability AI 最近怎么样"}], "probe": "长尾 + 模糊问法"}
+{"case_id": "g1_C_05_xai_news", "category": "C", "multi_turn": false, "turns": [{"text": "xAI 最近有什么新动作"}], "probe": "新公司 + 三字母歧义"}
+{"case_id": "g1_D_01_nvidia_3d", "category": "D", "multi_turn": false, "turns": [{"text": "过去 3 天 NVIDIA 的新闻"}], "probe": "短窗口可能空"}
+{"case_id": "g1_D_02_nvidia_30d_trend", "category": "D", "multi_turn": false, "turns": [{"text": "过去一个月 NVIDIA 的趋势"}], "probe": "trend_analysis"}
+{"case_id": "g1_D_03_openai_last_year", "category": "D", "multi_turn": false, "turns": [{"text": "去年 OpenAI 发生了什么大事"}], "probe": "跨越数据库范围"}
+{"case_id": "g1_D_04_this_week_ai", "category": "D", "multi_turn": false, "turns": [{"text": "本周 AI 圈的重要事件"}], "probe": "周窗口"}
+{"case_id": "g1_D_05_anthropic_2w", "category": "D", "multi_turn": false, "turns": [{"text": "最近两周 Anthropic 有什么发布"}], "probe": "双周窗口"}
+{"case_id": "g1_E_01_claude4x_timeline", "category": "E", "multi_turn": false, "turns": [{"text": "Claude 4 系列(Sonnet 4.5 / 4.6 / Opus 4.6 / 4.7)的发布时间线"}], "probe": "build_timeline"}
+{"case_id": "g1_E_02_ai_video_landscape", "category": "E", "multi_turn": false, "turns": [{"text": "AI 视频生成赛道竞争格局"}], "probe": "analyze_landscape"}
+{"case_id": "g1_E_03_openai_month_events", "category": "E", "multi_turn": false, "turns": [{"text": "OpenAI 过去一个月的关键事件"}], "probe": "timeline vs trend 选哪个"}
+{"case_id": "g1_E_04_inference_optim_players", "category": "E", "multi_turn": false, "turns": [{"text": "大模型推理优化领域有哪些主要玩家"}], "probe": "landscape"}
+{"case_id": "g1_E_05_gpt_evolution", "category": "E", "multi_turn": false, "turns": [{"text": "GPT 系列的演进历程"}], "probe": "timeline 跨长时间"}
+{"case_id": "g1_F_01_openai_then_google", "category": "F", "multi_turn": true, "turns": [{"text": "OpenAI 最近有什么进展"}, {"text": "那 Google 呢"}], "probe": "主语延续"}
+{"case_id": "g1_F_02_claude_then_three_way", "category": "F", "multi_turn": true, "turns": [{"text": "Claude 最近怎么样"}, {"text": "再加上 Gemini 三家对比"}], "probe": "多轮扩展为对比"}
+{"case_id": "g1_F_03_ambiguous_no_context", "category": "F", "multi_turn": false, "turns": [{"text": "他们最近怎么样"}], "probe": "无前文用代词, 应 needs_clarification"}
+{"case_id": "g1_F_04_topic_then_competitor", "category": "F", "multi_turn": true, "turns": [{"text": "AI 芯片最近怎么样"}, {"text": "这个领域谁最有竞争力"}], "probe": "主题→玩家延展"}
+{"case_id": "g1_F_05_url_then_analyze", "category": "F", "multi_turn": true, "turns": [{"text": "读一下 https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/"}, {"text": "基于这篇你总结一下作者的核心观点"}], "probe": "URL → 追问"}
+{"case_id": "g1_G_01_read_real_url", "category": "G", "multi_turn": false, "turns": [{"text": "帮我读一下 https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/"}], "probe": "read_news_content 正常路径"}
+{"case_id": "g1_G_02_summarize_real_url", "category": "G", "multi_turn": false, "turns": [{"text": "总结一下这篇文章: https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/"}], "probe": "URL + 摘要"}
+{"case_id": "g1_G_03_unknown_url", "category": "G", "multi_turn": false, "turns": [{"text": "帮我看看这个: https://trainingcqy.com"}], "probe": "fulltext_batch 兜底(DB 不存在但有效)"}
+{"case_id": "g1_G_04_broken_url", "category": "G", "multi_turn": false, "turns": [{"text": "解读一下 https://blog.trainingcqy.com"}], "probe": "404 / 无法访问, 错误处理"}
+{"case_id": "g1_H_01_capability", "category": "H", "multi_turn": false, "turns": [{"text": "你能做什么"}], "probe": "smalltalk_or_capability, 应 direct_answer"}
+{"case_id": "g1_H_02_cooking", "category": "H", "multi_turn": false, "turns": [{"text": "教我做番茄炒蛋"}], "probe": "完全越界, 应拒答或澄清"}
+{"case_id": "g1_H_03_iphone_review", "category": "H", "multi_turn": false, "turns": [{"text": "iPhone 17 相机怎么样"}], "probe": "科技但非 AI 新闻范围"}
+{"case_id": "g1_H_04_hello", "category": "H", "multi_turn": false, "turns": [{"text": "你好"}], "probe": "纯 smalltalk"}
+{"case_id": "g1_I_01_gpt56_release", "category": "I", "multi_turn": false, "turns": [{"text": "GPT-5.6 什么时候发布"}], "probe": "传闻级, 应承认不确定"}
+{"case_id": "g1_I_02_anthropic_acquisitions", "category": "I", "multi_turn": false, "turns": [{"text": "Anthropic 收购了哪些公司"}], "probe": "容易编造列表"}
+{"case_id": "g1_I_03_altman_last_week", "category": "I", "multi_turn": false, "turns": [{"text": "Sam Altman 上周在哪个会议发言"}], "probe": "细节幻觉"}
+{"case_id": "g1_I_04_claude47_params", "category": "I", "multi_turn": false, "turns": [{"text": "Claude Opus 4.7 的具体参数量是多少"}], "probe": "闭源信息"}
+{"case_id": "g1_I_05_openai_2027_forecast", "category": "I", "multi_turn": false, "turns": [{"text": "OpenAI 2027 年的财务预测"}], "probe": "未发布数据"}
+{"case_id": "g1_I_06_meta_next_oss_name", "category": "I", "multi_turn": false, "turns": [{"text": "Meta 下一个开源模型叫什么名字"}], "probe": "未来信息"}
+{"case_id": "g1_J_01_mixed_claude", "category": "J", "multi_turn": false, "turns": [{"text": "tell me about Claude 最近的更新"}], "probe": "中英混合"}
+{"case_id": "g1_J_02_en_entity_zh_q", "category": "J", "multi_turn": false, "turns": [{"text": "比较 OpenAI and Anthropic"}], "probe": "中文动词 + 英文实体"}
+{"case_id": "g1_J_03_tech_term_en", "category": "J", "multi_turn": false, "turns": [{"text": "最近 Meta open source 模型有什么动作"}], "probe": "技术词英文"}
+{"case_id": "g1_J_04_zh_entity_en_q", "category": "J", "multi_turn": false, "turns": [{"text": "what's happening with 阿里巴巴 AI"}], "probe": "英文问句 + 中文实体"}
+{"case_id": "g1_J_05_full_en", "category": "J", "multi_turn": false, "turns": [{"text": "How is xAI doing recently?"}], "probe": "纯英文"}

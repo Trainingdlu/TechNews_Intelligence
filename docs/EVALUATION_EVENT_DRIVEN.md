@@ -32,6 +32,8 @@ docker compose --env-file deployment/.env -f deployment/docker-compose.yml up -d
 
 一张合格事件卡片应该表示一个真实单一事件，而不是一个主题合集。至少要有可靠的 `core_urls`、`related_urls`、`facts`、`entities`、`event_type`。后面的宽泛主题题也是从合格事件卡片聚合出来的，所以这里质量不稳，后面指标没有意义。
 
+事件卡片构建默认会过滤没有实体锚点的卡片。只有做探索性排查时才使用 `--allow-missing-entities`，正式评测不要打开这个选项。
+
 ```bash
 nohup docker compose --env-file deployment/.env -f deployment/docker-compose.yml run --rm --no-deps \
   -w /app \

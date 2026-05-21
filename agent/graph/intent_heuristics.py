@@ -63,12 +63,35 @@ _GENERIC_COMPARE_SIDE_TERMS = {
 }
 
 
+# Canonical intent_type taxonomy. These are the exact strings _select_tools maps
+# on; any LLM-produced intent_type outside this set is rejected so the heuristic
+# classification is kept instead of silently falling through to generic tools.
+VALID_INTENT_TYPES: frozenset[str] = frozenset(
+    {
+        "smalltalk_or_capability",
+        "topic_comparison",
+        "source_comparison",
+        "trend",
+        "timeline",
+        "landscape",
+        "article_read",
+        "roundup_listing",
+        "news_analysis",
+    }
+)
+
+
 def _merge_intent(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     out = dict(base)
     route = str(override.get("route") or "").strip()
     if route in {"direct_answer", "needs_clarification", "needs_tools"}:
         out["route"] = route
-    for key in ("intent_type", "reason", "analysis_depth", "entities", "time_window", "risk_flags"):
+    # Only accept the LLM's intent_type when it matches the canonical taxonomy;
+    # otherwise keep the heuristic's classification (which uses the same vocabulary).
+    override_intent_type = str(override.get("intent_type") or "").strip()
+    if override_intent_type in VALID_INTENT_TYPES:
+        out["intent_type"] = override_intent_type
+    for key in ("reason", "analysis_depth", "entities", "time_window", "risk_flags"):
         if key in override and override.get(key) not in (None, "", []):
             out[key] = override.get(key)
     try:

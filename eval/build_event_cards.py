@@ -20,22 +20,30 @@ except ImportError:  # pragma: no cover
 
 
 KNOWN_ENTITIES = (
-    "OpenAI",
-    "Anthropic",
-    "Claude",
-    "ChatGPT",
-    "Google",
-    "Gemini",
-    "Microsoft",
-    "Meta",
-    "Apple",
-    "Amazon",
-    "AWS",
-    "Nvidia",
-    "DeepSeek",
-    "Mistral",
-    "xAI",
-    "Perplexity",
+    ("OpenAI", "OpenAI"),
+    ("Anthropic", "Anthropic"),
+    ("Claude", "Claude"),
+    ("ChatGPT", "ChatGPT"),
+    ("Google", "Google"),
+    ("谷歌", "Google"),
+    ("Gemini", "Gemini"),
+    ("Microsoft", "Microsoft"),
+    ("微软", "Microsoft"),
+    ("Meta", "Meta"),
+    ("Apple", "Apple"),
+    ("苹果", "Apple"),
+    ("Amazon", "Amazon"),
+    ("亚马逊", "Amazon"),
+    ("AWS", "AWS"),
+    ("Nvidia", "Nvidia"),
+    ("英伟达", "Nvidia"),
+    ("DeepSeek", "DeepSeek"),
+    ("Mistral", "Mistral"),
+    ("xAI", "xAI"),
+    ("Perplexity", "Perplexity"),
+    ("GitHub", "GitHub"),
+    ("Android", "Android"),
+    ("安卓", "Android"),
 )
 
 EVENT_TYPE_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -120,12 +128,12 @@ def _extract_entities(title: str, summary: str) -> list[str]:
     haystack = f"{title}\n{summary}"
     out: list[str] = []
     seen: set[str] = set()
-    for entity in KNOWN_ENTITIES:
-        if re.search(re.escape(entity), haystack, flags=re.IGNORECASE):
-            key = entity.lower()
+    for alias, canonical in KNOWN_ENTITIES:
+        if re.search(re.escape(alias), haystack, flags=re.IGNORECASE):
+            key = canonical.lower()
             if key not in seen:
                 seen.add(key)
-                out.append(entity)
+                out.append(canonical)
     for match in re.findall(r"\b[A-Z][A-Za-z0-9]+(?:[- ][A-Z][A-Za-z0-9]+){0,2}\b", haystack):
         if len(match) < 3 or match.lower() in seen:
             continue
@@ -242,7 +250,14 @@ def _build_card(group_rows: list[dict[str, Any]], *, max_facts: int) -> dict[str
     }
 
 
-def build_event_cards(*, days: int, limit: int, max_events: int, max_facts: int) -> list[dict[str, Any]]:
+def build_event_cards(
+    *,
+    days: int,
+    limit: int,
+    max_events: int,
+    max_facts: int,
+    require_entities: bool = True,
+) -> list[dict[str, Any]]:
     rows = _fetch_news_rows(days=days, limit=limit)
     groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -253,7 +268,10 @@ def build_event_cards(*, days: int, limit: int, max_events: int, max_facts: int)
         card = _build_card(group_rows, max_facts=max_facts)
         if not card:
             continue
-        cards.append(validate_event_card(card))
+        validated = validate_event_card(card)
+        if require_entities and not validated.get("entities"):
+            continue
+        cards.append(validated)
         if len(cards) >= max_events:
             break
     return cards
@@ -267,6 +285,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-limit", type=int, default=500)
     parser.add_argument("--max-events", type=int, default=100)
     parser.add_argument("--max-facts-per-event", type=int, default=4)
+    parser.add_argument("--allow-missing-entities", action="store_true")
     parser.add_argument("--env-file", type=Path, default=None)
     return parser.parse_args()
 
@@ -279,6 +298,7 @@ def main() -> None:
         limit=max(1, int(args.candidate_limit)),
         max_events=max(1, int(args.max_events)),
         max_facts=max(1, int(args.max_facts_per_event)),
+        require_entities=not bool(args.allow_missing_entities),
     )
     write_jsonl(args.output, cards)
     manifest = {
@@ -289,6 +309,7 @@ def main() -> None:
         "candidate_limit": int(args.candidate_limit),
         "max_events": int(args.max_events),
         "max_facts_per_event": int(args.max_facts_per_event),
+        "require_entities": not bool(args.allow_missing_entities),
         "build_method": "deterministic_title_event_card_v1",
     }
     args.manifest_output.parent.mkdir(parents=True, exist_ok=True)

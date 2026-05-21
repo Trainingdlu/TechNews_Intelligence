@@ -1,0 +1,50 @@
+{"case_id": "ret_01_openai_recent", "query": "OpenAI 最近的动态", "days": 30}
+{"case_id": "ret_02_anthropic_enterprise", "query": "Anthropic 企业市场进展", "days": 30}
+{"case_id": "ret_03_claude_updates", "query": "Claude 新功能更新", "days": 30}
+{"case_id": "ret_04_nvidia_chip_datacenter", "query": "NVIDIA AI 芯片与数据中心", "days": 30}
+{"case_id": "ret_05_google_gemini", "query": "Google Gemini 更新", "days": 30}
+{"case_id": "ret_06_meta_llama", "query": "Meta AI 与 Llama 模型", "days": 30}
+{"case_id": "ret_07_amazon_ai", "query": "Amazon AI 购物与 Alexa", "days": 30}
+{"case_id": "ret_08_apple_ai", "query": "Apple 最近的 AI 动态", "days": 30}
+{"case_id": "ret_09_deepseek", "query": "DeepSeek 模型与融资", "days": 60}
+{"case_id": "ret_10_gpt55_release", "query": "GPT-5.5 发布与定价", "days": 30}
+{"case_id": "ret_11_opensource_llm", "query": "开源大模型最新发布", "days": 30}
+{"case_id": "ret_12_inference_optim", "query": "大模型推理优化", "days": 30}
+{"case_id": "ret_13_ai_chip_supply", "query": "AI 芯片市场与供应链", "days": 30}
+{"case_id": "ret_14_datacenter_energy", "query": "AI 数据中心与能源消耗", "days": 30}
+{"case_id": "ret_15_ai_safety", "query": "AI 安全与对齐研究", "days": 30}
+{"case_id": "ret_16_copyright_lawsuit", "query": "AI 训练数据版权诉讼", "days": 60}
+{"case_id": "ret_17_ai_funding", "query": "AI 创业公司融资", "days": 30}
+{"case_id": "ret_18_enterprise_adoption", "query": "AI 在企业市场的落地", "days": 30}
+{"case_id": "ret_19_ai_agents_coding", "query": "AI agent 与编程助手", "days": 30}
+{"case_id": "ret_20_multimodal", "query": "多模态模型进展", "days": 30}
+{"case_id": "ret_21_openai_apple", "query": "OpenAI Apple partnership", "days": 30}
+{"case_id": "ret_22_anthropic_customers", "query": "Anthropic enterprise customers", "days": 30}
+{"case_id": "ret_23_nvidia_investments", "query": "NVIDIA equity investments AI", "days": 30}
+{"case_id": "ret_24_opensource_releases", "query": "open source LLM releases", "days": 30}
+{"case_id": "ret_25_chip_shortage", "query": "AI chip shortage supply chain", "days": 30}
+{"case_id": "ret_26_datacenter_power", "query": "AI data center power energy", "days": 30}
+{"case_id": "ret_27_claude_code", "query": "Claude Code developer tools", "days": 30}
+{"case_id": "ret_28_ai_safety_en", "query": "AI safety alignment research", "days": 30}
+{"case_id": "ret_29_meta_copyright", "query": "Meta Llama copyright lawsuit", "days": 60}
+{"case_id": "ret_30_whats_new_openai", "query": "what's new with OpenAI this month", "days": 30}
+{"case_id": "ret_31_cerebras_ipo", "query": "Cerebras AI 芯片 IPO", "days": 60}
+{"case_id": "ret_32_xai_datacenter", "query": "xAI 数据中心 燃气轮机 诉讼", "days": 30}
+{"case_id": "ret_33_anthropic_stainless", "query": "Anthropic 收购 Stainless", "days": 30}
+{"case_id": "ret_34_chatgpt_finance", "query": "OpenAI ChatGPT 个人理财功能", "days": 30}
+{"case_id": "ret_35_anthropic_gates", "query": "Anthropic 盖茨基金会合作", "days": 30}
+{"case_id": "ret_36_deepmind_climate", "query": "Google DeepMind 气候 加速器计划", "days": 30}
+{"case_id": "ret_37_sandboxaq_drug", "query": "SandboxAQ 药物发现 Claude", "days": 30}
+{"case_id": "ret_38_mistral_medium", "query": "Mistral Medium 3.5 模型", "days": 60}
+{"case_id": "ret_39_deepseek_v4", "query": "DeepSeek V4 模型发布", "days": 60}
+{"case_id": "ret_40_claude_aws", "query": "Claude AWS 平台", "days": 30}
+{"case_id": "ret_41_capex_2026", "query": "四大科技巨头 2026 资本支出", "days": 30}
+{"case_id": "ret_42_ai_wealth", "query": "AI 行业财富分化与从业者", "days": 30}
+{"case_id": "ret_43_ai_jobs", "query": "AI 对就业市场的影响", "days": 30}
+{"case_id": "ret_44_ai_education", "query": "AI 在教育领域的应用", "days": 30}
+{"case_id": "ret_45_ai_video", "query": "AI 视频生成技术", "days": 30}
+{"case_id": "ret_46_anthropic_openai_jv", "query": "Anthropic OpenAI 企业级合资公司", "days": 30}
+{"case_id": "ret_47_gpt55_benchmark", "query": "GPT-5.5 benchmark performance", "days": 30}
+{"case_id": "ret_48_google_io", "query": "Google I/O Android Gemini 发布", "days": 30}
+{"case_id": "ret_49_nvidia_software", "query": "NVIDIA 推理软件栈优化", "days": 30}
+{"case_id": "ret_50_ai_public_sentiment", "query": "公众对 AI 发展的态度与反弹", "days": 30}
