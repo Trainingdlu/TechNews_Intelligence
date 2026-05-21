@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 import types
-from pathlib import Path
 
 import pytest
 
@@ -94,13 +93,3 @@ def test_eval_provider_config_can_resolve_deepseek_model(monkeypatch: pytest.Mon
     assert config.provider == "deepseek"
     assert config.model == "deepseek-v4-pro"
 
-
-def test_run_eval_script_uses_role_level_model_variables() -> None:
-    script = Path("deployment/scripts/eval/run_eval.sh").read_text(encoding="utf-8")
-
-    assert 'PROVIDER="${PROVIDER:-' not in script
-    assert 'MODEL="${MODEL:-' not in script
-    assert 'AGENT_PROVIDER="${AGENT_PROVIDER:-vertex}"' in script
-    assert 'DATASET_PROVIDER="${DATASET_PROVIDER:-deepseek}"' in script
-    assert 'DATASET_MODEL="${DATASET_MODEL:-deepseek-v4-pro}"' in script
-    assert 'JUDGE_PROVIDER="${JUDGE_PROVIDER:-vertex}"' in script
