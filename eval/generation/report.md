@@ -1,25 +1,25 @@
 # G3 Generation Faithfulness Report
 
-Generated: 2026-05-20T15:54:17.848532+00:00
+Generated: 2026-05-20T16:09:42.523318+00:00
 
 Cases judged: **30**
 
 | Metric | Value |
 |---|---|
-| Faithfulness (avg, 1-5) | **3.67** |
+| Faithfulness (avg, 1-5) | **5.00** |
 | Answer relevancy (avg, 1-5) | **5.00** |
-| Well-grounded rate (faithfulness>=4) | 53.3% |
-| Hallucination rate (faithfulness<=2) | 20.0% |
+| Well-grounded rate (faithfulness>=4) | 100.0% |
+| Hallucination rate (faithfulness<=2) | 0.0% |
 | URL-leak rate (>=1 url outside evidence) | 0.0% |
 | Total leaked URLs | 0 |
 
 ## Lowest-faithfulness cases
 
-- `gen_10_nvidia_vs_amd` faithfulness=2 relevancy=5 leaks=0 — The answer directly addresses the user's question about comparing NVIDIA and AMD, making it highly relevant. However, it fabricates several 
-- `gen_11_chip_landscape` faithfulness=2 relevancy=5 leaks=0 — The answer directly addresses the user's question about the competitive landscape of AI chips, making it highly relevant. However, it includ
-- `gen_15_opensource` faithfulness=2 relevancy=5 leaks=0 — The answer is highly relevant to the user's question about recent open-source large model releases, correctly identifying Qwen3.6-27B and Ki
-- `gen_23_anthropic_stainless` faithfulness=2 relevancy=5 leaks=0 — The answer directly addresses the user's question about Anthropic's acquisition of Stainless, making it highly relevant. However, it include
-- `gen_25_anthropic_gates` faithfulness=2 relevancy=5 leaks=0 — The answer directly addresses the question, earning a high relevancy score. However, it includes numerous specific details not present in th
-- `gen_27_sandboxaq` faithfulness=2 relevancy=5 leaks=0 — The answer directly addresses the user's question, earning a high relevancy score. However, it includes several specific details and claims 
-- `gen_07_deepseek` faithfulness=3 relevancy=5 leaks=0 — The answer directly addresses the question by detailing DeepSeek's recent releases and related news. However, it hallucinates specific param
-- `gen_09_openai_vs_anthropic` faithfulness=3 relevancy=5 leaks=0 — The answer effectively addresses the prompt by comparing the corporate strategies of OpenAI and Anthropic using the provided evidence. Howev
+- `gen_01_openai_recent` faithfulness=5 relevancy=5 leaks=0 — The answer accurately summarizes the four main updates provided in the evidence (Greg Brockman taking over product strategy, the launch of t
+- `gen_02_anthropic_enterprise` faithfulness=5 relevancy=5 leaks=0 — The answer accurately synthesizes the provided evidence without introducing any fabricated details. All data points, product names, and stra
+- `gen_03_nvidia_chip` faithfulness=5 relevancy=5 leaks=0 — The answer accurately extracts and synthesizes information from the provided evidence without introducing any fabricated details. It directl
+- `gen_04_claude_updates` faithfulness=5 relevancy=5 leaks=0 — The answer accurately reflects all the provided evidence without introducing any fabricated details. It directly addresses the user's questi
+- `gen_05_google_gemini` faithfulness=5 relevancy=5 leaks=0 — The answer accurately synthesizes the provided evidence, covering Gemini's integration into vehicles, the new file generation capabilities i
+- `gen_06_meta_ai` faithfulness=5 relevancy=5 leaks=0 — The answer accurately synthesizes the provided evidence without introducing any external or fabricated information. All claims regarding Thr
+- `gen_07_deepseek` faithfulness=5 relevancy=5 leaks=0 — The agent's answer is fully supported by the provided evidence, accurately extracting details about the V4 model release, the funding round,
+- `gen_08_xai` faithfulness=5 relevancy=5 leaks=0 — The answer accurately summarizes all of xAI's recent moves based on the provided evidence. Every claim, including the Anthropic deal details

@@ -5,7 +5,6 @@
 > (2) **简历 / 面试支撑** —— 可直接引用的指标、delta 与"这条数据证明了什么"。
 >
 > 系统架构详见 [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)；本文只摘录评测相关的链路上下文。
-> 旧的 task-driven 框架文档见 [`docs/EVALUATION.md`](../docs/EVALUATION.md)（已被本方案取代，原因见下）。
 
 ---
 
@@ -66,10 +65,9 @@
 - **方法**：40 条 case，每条标注期望工具；脚本同时捕获 `intent_type / 候选工具集 / LLM 选择 / 最终工具`，从而**区分失败是意图层造成（期望工具压根没进候选）还是 worker 层造成（进了候选但没被选）**。
 - **根因定位**：基线 30% 时，28 个失败里 **27 个是意图层造成的**（intent_router 自由发挥 `intent_type` 字符串，对不上路由表的 key），只有 1 个是 worker 层 —— **评测阻止了我们去优化错误的一层**。
 - **修复（已进生产）**：intent_router 提示词加 `intent_type` 枚举；`_merge_intent` 加合法值校验守卫；tool_worker 加工具选择 rubric。
-- **提升链**：`30% → 77.5%（意图枚举修复）→ 87.5%（tool_worker v2，伴随 search_news 回归）→ 100%（v3，回归修复）`。
 - **结果**：tool_selection accuracy **100% (40/40)**，worker-caused 0 / intent-caused 0。
-- **价值**：一条完整的"评测驱动修复"故事 —— 量化根因、归因到正确层、A/B 提示词、复测确认无回归。
-- **文件**：`queries.jsonl` · `run_tool_selection_eval.py`（带 `--intent-router-prompt-file` / `--tool-worker-prompt-file` 覆盖做 A/B）· `intent_prompt_v2.txt` · `tool_worker_prompt_v2/v3.txt` · `report.md`→`report_v4.md`
+- **价值**：评测驱动修复的闭环 —— 量化根因、归因到正确层、提示词修复、复测确认无回归。
+- **文件**：`queries.jsonl` · `run_tool_selection_eval.py`（支持 `--intent-router-prompt-file` / `--tool-worker-prompt-file` 覆盖做提示词 A/B）· `report.md`
 
 ### G4 · 意图分类评测
 
@@ -98,7 +96,7 @@
 - **方法**：跑完整链路，捕获答案 + `valid_urls`；用 `enrich_evidence.py` 从 `agent_model_io` 取回**喂给 synthesizer 的真实证据**；LLM judge 打 faithfulness / answer_relevancy（1-5）+ 确定性 url_leak。
 - **标准集 N=30**：faithfulness **5.0/5**、answer_relevancy 5.0、well-grounded(≥4) 100%、**幻觉率 0%**、**URL 泄漏 0%**。
 - **对抗集 N=11**（12 条幻觉诱饵，1 条被守卫拦截）：faithfulness 4.82、well-grounded 90.9%、幻觉 0%（`adv_01` 得 3 分是有效区分信号）。
-- **方法论修正（重要）**：首轮 judge 拿到的是从 DB 重新抓的文章摘要、而非 synthesizer 实际看到的工具输出，导致 **20% 假阳性幻觉**。改为用 `synthesizer_evidence`（真实模型输入）后归零 —— **"给评委看错了上下文"是 LLM-as-judge 的典型陷阱**。
+- **证据对齐**：judge 评分依据是 `enrich_evidence.py` 从 `agent_model_io` 取回的 synthesizer 真实输入（`synthesizer_evidence`），而非从 DB 重抓的摘要——保证评的是模型实际所见，避免"评委上下文错位"造成的假阳性幻觉。
 - **Prompt ablation（证明 grounding 的价值，两层防御）**：
 
   | | strict（生产 prompt） | weak（去 grounding） | delta |
@@ -109,8 +107,8 @@
 
   - **第一层（提示词级）**：去掉"证据优先 / 只用证据 / 不足要明说"后，faithfulness 温和下降，掉分源于**外部知识漂移**（`gen_10` 5→3：注入了证据外的市场定位/主观推断），但无严重幻觉 —— 因检索证据本身准、全。
   - **第二层（确定性 output_guard）**：进一步把"正文必须引用来源 URL"也删掉时，**27/30 (90%) 回答被 output_guard 直接拦截**，根本到不了用户。
-  - **结论**：忠实度由"提示词诱导 + 代码强拦"双层保障，不是单点。详见 `report_weak2.md`。
-- **文件**：`queries.jsonl` · `queries_adversarial.jsonl` · `run_generation.py`（带 `--synth-prompt-file` 做 ablation）· `enrich_evidence.py` · `judge_faithfulness.py` · `synth_prompt_weak.txt` · `report_v2.md` · `report_adversarial.md` · `report_weak2.md`
+  - **结论**：忠实度由"提示词诱导 + 代码强拦"双层保障，不是单点。详见 `report_ablation.md`。
+- **文件**：`queries.jsonl` · `queries_adversarial.jsonl` · `run_generation.py`（带 `--synth-prompt-file` 做 ablation）· `enrich_evidence.py` · `judge_faithfulness.py` · `synth_prompt_weak.txt` · `report.md` · `report_adversarial.md` · `report_ablation.md`
 
 ---
 
@@ -131,9 +129,9 @@
 ## 6. 方法论亮点（面试 talking points）
 
 1. **评测驱动修复，且防止优化错层**：G5 用"意图层 vs worker 层"归因，揭示 90%+ 失败在意图层，避免了去调错误的提示词。
-2. **LLM-as-judge 的两个陷阱我都踩了并解决了**：
-   - *因果反转*（生成题又评分自证）→ 改为独立题集；
-   - *给评委错误的上下文*（DB 摘要 ≠ 模型真实输入）→ 从 `agent_model_io` 取回真实证据，假阳性从 20% 归零。
+2. **规避 LLM-as-judge 的两类陷阱**：
+   - *因果反转*（同源模型生成题目又评分自证）→ 题集独立于被测系统；
+   - *评委上下文错位*（DB 摘要 ≠ 模型真实输入）→ judge 依据 `agent_model_io` 取回的真实证据评分。
 3. **judge 可信度自检**：不只用 LLM 打分，还做**人机 kappa 校准**，并诚实诊断分歧来源（人类实体匹配过度给分）—— 体现"指标也要被质疑"。
 4. **Ablation 量化每个组件的边际价值**：rerank 之于检索（+18% nDCG）、grounding 提示词 + output_guard 之于忠实度（双层防御）。
 5. **IR 指标用对**：Hit@5 饱和时改看 nDCG/MRR；TREC pooling 共享 gold 保证跨配置可比；nDCG 用指数增益。
@@ -162,11 +160,11 @@
 
 ```powershell
 # 生成（跑真实链路）
-python eval/generation/run_generation.py --output eval/generation/runs/generation_results.jsonl --skip-confirm
+python eval/generation/run_generation.py --output eval/generation/runs/generation.jsonl --skip-confirm
 # 取回 synthesizer 真实证据
-python eval/generation/enrich_evidence.py --results eval/generation/runs/generation_results.jsonl --output eval/generation/runs/generation_results_enriched.jsonl
+python eval/generation/enrich_evidence.py --results eval/generation/runs/generation.jsonl --output eval/generation/runs/generation_enriched.jsonl
 # LLM judge + 报告
-python eval/generation/judge_faithfulness.py --results eval/generation/runs/generation_results_enriched.jsonl --report eval/generation/report.md
+python eval/generation/judge_faithfulness.py --results eval/generation/runs/generation_enriched.jsonl --report eval/generation/report.md
 ```
 
 其余各层入口脚本：`error_analysis/run_error_analysis.py` · `intent_eval/run_intent_eval.py` · `retrieval/run_retrieval.py` → `judge_relevance.py` → `compute_metrics.py` · `tool_selection/run_tool_selection_eval.py`。
