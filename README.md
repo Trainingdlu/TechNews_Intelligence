@@ -119,7 +119,6 @@ python eval/trace_query.py --request-id <request_id>
 - [部署与运维](docs/OPERATIONS.md)
 - [开发说明](docs/DEVELOPMENT.md)
 - [评测体系](docs/EVALUATION.md)
-- [G1-G5 分层评测方案](eval/EVAL_SYSTEM.md)
 
 ## License
 

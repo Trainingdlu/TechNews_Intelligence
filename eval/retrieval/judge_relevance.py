@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv  # noqa: E402
+
+from eval.eval_retry import call_with_retry  # noqa: E402
 
 _JUDGE_SYSTEM_PROMPT = (
     "You are a strict relevance judge for a tech-news retrieval system. "
@@ -144,6 +147,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--results", type=Path, default=here / "runs" / "retrieval_results.jsonl")
     parser.add_argument("--output", type=Path, default=here / "runs" / "relevance_judgments.jsonl")
     parser.add_argument("--only-case-id", type=str, default=None)
+    parser.add_argument(
+        "--sleep-seconds",
+        type=float,
+        default=1.0,
+        help="Fixed delay between judged queries to stay under the model RPM quota.",
+    )
     return parser.parse_args()
 
 
@@ -196,12 +205,15 @@ def main() -> int:
         pool = list(case.get("pool") or [])
         print(f"[{idx}/{len(pending)}] {case_id}: judging {len(pool)} docs ...", flush=True)
         try:
-            judgments = _judge_query(
-                query,
-                pool,
-                client=client,
-                coerce_text_fn=_coerce_to_text,
-                extract_json_fn=_extract_json_object,
+            judgments = call_with_retry(
+                lambda: _judge_query(
+                    query,
+                    pool,
+                    client=client,
+                    coerce_text_fn=_coerce_to_text,
+                    extract_json_fn=_extract_json_object,
+                ),
+                label=f"{case_id} judge",
             )
             dist = {0: 0, 1: 0, 2: 0}
             for j in judgments:
@@ -226,6 +238,8 @@ def main() -> int:
             print(f"  -> ERROR: {record['error_message']}")
             error += 1
         _append_jsonl(output_path, record)
+        if args.sleep_seconds > 0 and idx < len(pending):
+            time.sleep(args.sleep_seconds)
 
     print("=" * 60)
     print(f"Done. success={success}, error={error}, output={output_path}")

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
 
 import pytest
 
-from agent.tools import entity_automation as mod
-from eval import build_entity_alias_candidates as build_cli
-from eval import promote_entity_alias_candidates as promote_cli
+from services import entity_resolution as mod
+from services import script_env
 
 
 class _FakeResponse:
@@ -116,15 +116,15 @@ def test_apply_db_env_defaults_maps_deployment_db_vars(monkeypatch) -> None:
     monkeypatch.setenv("POSTGRES_USER", "myuser")
     monkeypatch.setenv("POSTGRES_PASSWORD", "secret")
 
-    build_cli._apply_db_env_defaults()
+    script_env._apply_db_env_defaults()
 
-    assert build_cli.os.environ["DB_HOST"] == "127.0.0.1"
-    assert build_cli.os.environ["DB_PORT"] == "15432"
-    assert build_cli.os.environ["DB_NAME"] == "warehouse"
-    assert build_cli.os.environ["DB_USER"] == "myuser"
-    assert build_cli.os.environ["DB_PASS"] == "secret"
+    assert os.environ["DB_HOST"] == "127.0.0.1"
+    assert os.environ["DB_PORT"] == "15432"
+    assert os.environ["DB_NAME"] == "warehouse"
+    assert os.environ["DB_USER"] == "myuser"
+    assert os.environ["DB_PASS"] == "secret"
 
 
 def test_normalize_aliases_preserves_chinese_and_dedupes_case_insensitive_aliases() -> None:
-    aliases = promote_cli.normalize_aliases("英伟达", ["NVIDIA", " nvidia ", "英伟达"])
+    aliases = mod.normalize_aliases("英伟达", ["NVIDIA", " nvidia ", "英伟达"])
     assert aliases == ["英伟达", "NVIDIA"]

@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv  # noqa: E402
+
+from eval.eval_retry import call_with_retry  # noqa: E402
 
 
 def _load_env() -> None:
@@ -270,6 +273,12 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip running; only rebuild the report from existing predictions.",
     )
+    parser.add_argument(
+        "--sleep-seconds",
+        type=float,
+        default=1.0,
+        help="Fixed delay between cases to stay under the model RPM quota.",
+    )
     return parser.parse_args()
 
 
@@ -354,26 +363,32 @@ def main() -> int:
             acceptable = list(case.get("acceptable_tools") or [expected])
             print(f"[{idx}/{len(pending)}] {case_id} ...", flush=True)
             try:
-                intent = _classify_intent(
-                    question,
-                    handle=intent_handle,
-                    heuristic_fn=_heuristic_intent,
-                    merge_fn=_merge_intent,
-                    extract_json_fn=_extract_json_object,
-                    coerce_text_fn=_coerce_to_text,
-                    system_prompt=intent_router_prompt,
+                intent = call_with_retry(
+                    lambda: _classify_intent(
+                        question,
+                        handle=intent_handle,
+                        heuristic_fn=_heuristic_intent,
+                        merge_fn=_merge_intent,
+                        extract_json_fn=_extract_json_object,
+                        coerce_text_fn=_coerce_to_text,
+                        system_prompt=intent_router_prompt,
+                    ),
+                    label=f"{case_id} intent",
                 )
-                plan = _plan_tools(
-                    question,
-                    intent,
-                    handle=worker_handle,
-                    select_tools_fn=_select_tools,
-                    schema_brief_fn=_tool_schema_brief,
-                    normalize_calls_fn=_normalize_tool_calls,
-                    heuristic_calls_fn=_heuristic_tool_calls,
-                    extract_json_fn=_extract_json_object,
-                    coerce_text_fn=_coerce_to_text,
-                    tool_worker_prompt=tool_worker_prompt,
+                plan = call_with_retry(
+                    lambda: _plan_tools(
+                        question,
+                        intent,
+                        handle=worker_handle,
+                        select_tools_fn=_select_tools,
+                        schema_brief_fn=_tool_schema_brief,
+                        normalize_calls_fn=_normalize_tool_calls,
+                        heuristic_calls_fn=_heuristic_tool_calls,
+                        extract_json_fn=_extract_json_object,
+                        coerce_text_fn=_coerce_to_text,
+                        tool_worker_prompt=tool_worker_prompt,
+                    ),
+                    label=f"{case_id} plan",
                 )
                 final_tools = plan["final_tools"]
                 predicted_primary = final_tools[0] if final_tools else ""
@@ -415,6 +430,8 @@ def main() -> int:
                 print(f"  -> ERROR: {record['error_message']}")
             _append_jsonl(output_path, record)
             predictions[case_id] = record
+            if args.sleep_seconds > 0 and idx < len(pending):
+                time.sleep(args.sleep_seconds)
 
     report = _build_report(cases, predictions)
     report_path = args.report.resolve()

@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +25,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv  # noqa: E402
+
+from eval.eval_retry import call_with_retry  # noqa: E402
 
 
 def _load_env() -> None:
@@ -90,7 +93,7 @@ def _parse_args() -> argparse.Namespace:
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="G3 generation runner.")
     parser.add_argument("--queries", type=Path, default=here / "queries.jsonl")
-    parser.add_argument("--output", type=Path, default=here / "runs" / "generation_results.jsonl")
+    parser.add_argument("--output", type=Path, default=here / "runs" / "generation.jsonl")
     parser.add_argument("--only-case-id", type=str, default=None)
     parser.add_argument("--skip-confirm", action="store_true")
     parser.add_argument(
@@ -99,6 +102,12 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Override the final_synthesizer system prompt (ablation). Reads the file "
         "and monkeypatches agent.graph.nodes._FINAL_SYSTEM_PROMPT before running.",
+    )
+    parser.add_argument(
+        "--sleep-seconds",
+        type=float,
+        default=2.0,
+        help="Fixed delay between cases to stay under the model RPM quota.",
     )
     return parser.parse_args()
 
@@ -158,14 +167,17 @@ def main() -> int:
         thread_id = f"eval_g3_{case_id}_{run_token}"
         print(f"[{idx}/{len(pending)}] {case_id}: {question} ...", flush=True)
         try:
-            payload = generate_response_eval_payload(
-                [],
-                question,
-                request_id=request_id,
-                thread_id=thread_id,
-                case_id=case_id,
-                experiment_group="g3_generation",
-                include_trace_summary=False,
+            payload = call_with_retry(
+                lambda: generate_response_eval_payload(
+                    [],
+                    question,
+                    request_id=request_id,
+                    thread_id=thread_id,
+                    case_id=case_id,
+                    experiment_group="g3_generation",
+                    include_trace_summary=False,
+                ),
+                label=f"{case_id} gen",
             )
             answer = str(payload.get("text") or "")
             valid_urls = [str(u).strip() for u in (payload.get("valid_urls") or []) if str(u).strip()]
@@ -203,6 +215,8 @@ def main() -> int:
             print(f"  -> ERROR: {record['error_message']}")
             error += 1
         _append_jsonl(output_path, record)
+        if args.sleep_seconds > 0 and idx < len(pending):
+            time.sleep(args.sleep_seconds)
 
     print("=" * 60)
     print(f"Done. success={success}, clarification={skipped}, error={error}, output={output_path}")

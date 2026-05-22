@@ -51,5 +51,9 @@ def _fallback_final_text(user_message: str, state: dict[str, Any]) -> str:
         return "我可以帮助你基于新闻证据做科技情报分析。你可以直接提出公司、产品、主题、时间范围或要比较的对象。"
     urls = list(state.get("evidence_urls") or [])
     if urls:
-        return f"已找到相关证据，但当前模型暂时无法完成完整综合。建议先查看核心来源：{urls[0]}"
+        return (
+            "抱歉，我暂时没能就这个问题生成可靠的结论，"
+            "数据库中可能没有与之直接相关的信息。"
+            f"可参考检索到的来源：{urls[0]}"
+        )
     return "目前没有足够可靠的证据生成结论。请补充更具体的时间范围、实体或来源。"

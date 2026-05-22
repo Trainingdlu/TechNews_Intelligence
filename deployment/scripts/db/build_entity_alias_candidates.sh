@@ -109,7 +109,7 @@ db_init_runtime "${REPO_ROOT}"
 db_ensure_postgres_running
 
 ARGS=(
-  "${REPO_ROOT}/eval/build_entity_alias_candidates.py"
+  "${REPO_ROOT}/deployment/scripts/build_entity_alias_candidates.py"
   --days "${DAYS}"
   --limit "${LIMIT}"
   --env-file "${REPO_ROOT}/deployment/.env"
@@ -126,7 +126,7 @@ python "${ARGS[@]}"
 
 if [[ "${DRY_RUN}" == false && "${PROMOTE_APPROVED}" == true ]]; then
   PROMOTE_ARGS=(
-    "${REPO_ROOT}/eval/promote_entity_alias_candidates.py"
+    "${REPO_ROOT}/deployment/scripts/promote_entity_alias_candidates.py"
     --limit "${LIMIT}"
     --env-file "${REPO_ROOT}/deployment/.env"
   )

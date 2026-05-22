@@ -77,8 +77,15 @@ VALID_INTENT_TYPES: frozenset[str] = frozenset(
         "article_read",
         "roundup_listing",
         "news_analysis",
+        "db_status",
+        "topic_overview",
     }
 )
+
+# Meta-intents detected by high-precision keywords (questions about the database
+# itself, or the set of topics in the corpus). The heuristic is authoritative for
+# these: the LLM is not allowed to override them down to a generic intent_type.
+_LOCKED_META_INTENTS: frozenset[str] = frozenset({"db_status", "topic_overview"})
 
 
 def _merge_intent(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -89,7 +96,11 @@ def _merge_intent(base: dict[str, Any], override: dict[str, Any]) -> dict[str, A
     # Only accept the LLM's intent_type when it matches the canonical taxonomy;
     # otherwise keep the heuristic's classification (which uses the same vocabulary).
     override_intent_type = str(override.get("intent_type") or "").strip()
-    if override_intent_type in VALID_INTENT_TYPES:
+    if base.get("intent_type") in _LOCKED_META_INTENTS:
+        # High-precision keyword match: keep it and force the tool route.
+        out["intent_type"] = base["intent_type"]
+        out["route"] = "needs_tools"
+    elif override_intent_type in VALID_INTENT_TYPES:
         out["intent_type"] = override_intent_type
     for key in ("reason", "analysis_depth", "entities", "time_window", "risk_flags"):
         if key in override and override.get(key) not in (None, "", []):
@@ -132,6 +143,24 @@ def _heuristic_intent(user_message: str) -> dict[str, Any]:
         intent_type = "trend"
     elif rule_intent == "roundup_listing":
         intent_type = "roundup_listing"
+
+    # High-precision meta-intents override everything above, including a smalltalk
+    # route, because they map to dedicated tools (get_db_stats / list_topics).
+    if not urls and re.search(
+        r"数据库.{0,8}(多少|数量|有多少|规模|新鲜|更新)|多少篇(新闻|文章|数据)|"
+        r"数据(新鲜度|更新到|多新|最新到)|how (many|fresh).{0,24}(article|news|data|database)|"
+        r"database (stats|status|freshness|size)|db stats|how up to date",
+        lowered,
+    ):
+        route = "needs_tools"
+        intent_type = "db_status"
+    elif not urls and re.search(
+        r"哪些(主题|话题|分类)|主题分布|话题分类|有哪些话题|主题有哪些|讨论哪些|"
+        r"what topics|topic (distribution|breakdown|overview)|trending topics|list .*topics",
+        lowered,
+    ):
+        route = "needs_tools"
+        intent_type = "topic_overview"
 
     return {
         "route": route,

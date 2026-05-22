@@ -48,3 +48,83 @@
 {"case_id": "ret_48_google_io", "query": "Google I/O Android Gemini 发布", "days": 30}
 {"case_id": "ret_49_nvidia_software", "query": "NVIDIA 推理软件栈优化", "days": 30}
 {"case_id": "ret_50_ai_public_sentiment", "query": "公众对 AI 发展的态度与反弹", "days": 30}
+{"case_id": "ret_51_google_products", "query": "Google AI 最近的产品发布", "days": 30}
+{"case_id": "ret_52_claude_coding", "query": "Claude 在编程与开发中的应用", "days": 30}
+{"case_id": "ret_53_ai_agent_progress", "query": "AI agent 智能体最新进展", "days": 60}
+{"case_id": "ret_54_aws_ai_services", "query": "AWS 的 AI 服务与平台更新", "days": 30}
+{"case_id": "ret_55_amazon_ai", "query": "Amazon 的 AI 购物与物流应用", "days": 30}
+{"case_id": "ret_56_gemini_multimodal", "query": "Gemini 多模态能力", "days": 30}
+{"case_id": "ret_57_meta_ai_strategy", "query": "Meta 的 AI 战略与产品", "days": 30}
+{"case_id": "ret_58_gpu_compute", "query": "AI GPU 与算力供给", "days": 60}
+{"case_id": "ret_59_apple_on_device_ai", "query": "Apple 设备端 AI", "days": 30}
+{"case_id": "ret_60_nvidia_datacenter", "query": "NVIDIA 数据中心业务", "days": 30}
+{"case_id": "ret_61_startup_funding", "query": "AI 初创公司融资", "days": 60}
+{"case_id": "ret_62_intel_ai_chip", "query": "Intel 的 AI 芯片进展", "days": 60}
+{"case_id": "ret_63_sora_like_video", "query": "AI 视频生成模型与产品", "days": 60}
+{"case_id": "ret_64_ai_coding_tools", "query": "AI 编程助手与 coding 工具", "days": 60}
+{"case_id": "ret_65_robotics_embodied", "query": "机器人与具身智能", "days": 60}
+{"case_id": "ret_66_ai_ipo", "query": "AI 公司 IPO 上市动态", "days": 60}
+{"case_id": "ret_67_chatgpt_features", "query": "ChatGPT 的新功能", "days": 30}
+{"case_id": "ret_68_ai_security", "query": "AI 安全漏洞与攻击", "days": 60}
+{"case_id": "ret_69_microsoft_copilot", "query": "微软 Copilot 进展", "days": 30}
+{"case_id": "ret_70_ai_valuation", "query": "AI 公司估值变化", "days": 60}
+{"case_id": "ret_71_datacenter_energy", "query": "AI 数据中心能源消耗问题", "days": 60}
+{"case_id": "ret_72_qwen_opensource", "query": "Qwen 开源模型", "days": 60}
+{"case_id": "ret_73_llama_updates", "query": "Meta Llama 模型更新", "days": 60}
+{"case_id": "ret_74_ai_chip_competition", "query": "AI 芯片市场竞争", "days": 60}
+{"case_id": "ret_75_gpt5_series", "query": "GPT-5 系列模型", "days": 60}
+{"case_id": "ret_76_tesla_autonomy", "query": "特斯拉的 AI 与自动驾驶", "days": 60}
+{"case_id": "ret_77_amd_accelerator", "query": "AMD 的 AI 加速器", "days": 90}
+{"case_id": "ret_78_opensource_ecosystem", "query": "开源大模型生态", "days": 60}
+{"case_id": "ret_79_inference_speedup", "query": "大模型推理加速", "days": 60}
+{"case_id": "ret_80_xai_grok", "query": "xAI 与 Grok 模型", "days": 60}
+{"case_id": "ret_81_ai_voice", "query": "AI 语音合成与克隆", "days": 60}
+{"case_id": "ret_82_deepseek_model", "query": "DeepSeek 最新模型", "days": 60}
+{"case_id": "ret_83_ai_alignment", "query": "AI 对齐与安全研究", "days": 90}
+{"case_id": "ret_84_model_training", "query": "大模型训练方法", "days": 60}
+{"case_id": "ret_85_deepmind_research", "query": "DeepMind 的研究进展", "days": 90}
+{"case_id": "ret_86_quantum", "query": "量子计算进展", "days": 90}
+{"case_id": "ret_87_model_benchmark", "query": "大模型 benchmark 与评测", "days": 90}
+{"case_id": "ret_88_ibm_enterprise_ai", "query": "IBM 的企业 AI 与 Granite", "days": 90}
+{"case_id": "ret_89_datacenter_nuclear", "query": "AI 数据中心核电供能", "days": 90}
+{"case_id": "ret_90_mistral_models", "query": "Mistral 的开源模型", "days": 90}
+{"case_id": "ret_91_self_driving", "query": "自动驾驶技术进展", "days": 90}
+{"case_id": "ret_92_cohere_enterprise", "query": "Cohere 企业 AI 与融资", "days": 90}
+{"case_id": "ret_93_cerebras", "query": "Cerebras 芯片与 IPO", "days": 90}
+{"case_id": "ret_94_capex", "query": "大科技公司 AI 资本支出", "days": 60}
+{"case_id": "ret_95_ai_jobs", "query": "AI 对就业与裁员的影响", "days": 60}
+{"case_id": "ret_96_enterprise_agent_platform", "query": "企业级 AI agent 平台", "days": 60}
+{"case_id": "ret_97_api_pricing", "query": "大模型 API 定价变化", "days": 60}
+{"case_id": "ret_98_earnings_ai", "query": "科技公司财报中的 AI 业务", "days": 60}
+{"case_id": "ret_99_ai_chip_market_en", "query": "AI chip market competition", "days": 60}
+{"case_id": "ret_100_opensource_llm_en", "query": "open source LLM releases", "days": 60}
+{"case_id": "ret_101_agent_frameworks_en", "query": "AI agent frameworks and tools", "days": 60}
+{"case_id": "ret_102_datacenter_energy_en", "query": "data center energy demand for AI", "days": 60}
+{"case_id": "ret_103_enterprise_adoption_en", "query": "enterprise AI adoption", "days": 60}
+{"case_id": "ret_104_gemini_search", "query": "Google Gemini 在搜索中的应用", "days": 30}
+{"case_id": "ret_105_anthropic_safety", "query": "Anthropic 的 AI 安全研究", "days": 60}
+{"case_id": "ret_106_openai_enterprise", "query": "OpenAI 的企业级产品", "days": 30}
+{"case_id": "ret_107_nvidia_gpu_arch", "query": "NVIDIA 新一代 GPU 架构", "days": 60}
+{"case_id": "ret_108_aws_model_hosting", "query": "AWS 的大模型托管服务", "days": 60}
+{"case_id": "ret_109_meta_opensource_tools", "query": "Meta 的开源 AI 工具", "days": 60}
+{"case_id": "ret_110_apple_partnership", "query": "Apple 与 OpenAI 或谷歌的 AI 合作", "days": 60}
+{"case_id": "ret_111_ai_infra_investment", "query": "AI 基础设施投资", "days": 60}
+{"case_id": "ret_112_ai_healthcare", "query": "AI 在医疗领域的应用", "days": 60}
+{"case_id": "ret_113_ai_finance", "query": "AI 在金融领域的应用", "days": 60}
+{"case_id": "ret_114_ai_talent", "query": "AI 人才争夺与挖角", "days": 60}
+{"case_id": "ret_115_context_length", "query": "大模型上下文长度进展", "days": 90}
+{"case_id": "ret_116_inference_chip_startup", "query": "AI 推理芯片创业公司", "days": 90}
+{"case_id": "ret_117_ai_copyright", "query": "AI 内容生成与版权争议", "days": 90}
+{"case_id": "ret_118_google_tpu", "query": "谷歌 TPU 与自研芯片", "days": 60}
+{"case_id": "ret_119_openai_compute", "query": "OpenAI 的算力与数据中心", "days": 60}
+{"case_id": "ret_120_hallucination", "query": "大模型幻觉与可靠性", "days": 90}
+{"case_id": "ret_121_coding_assistant_compare", "query": "AI 编程助手对比", "days": 60}
+{"case_id": "ret_122_tool_use", "query": "智能体工具调用能力", "days": 90}
+{"case_id": "ret_123_voice_cloning", "query": "语音克隆与合成技术", "days": 90}
+{"case_id": "ret_124_red_teaming", "query": "AI 红队测试与安全评估", "days": 90}
+{"case_id": "ret_125_small_models", "query": "小模型与模型蒸馏", "days": 90}
+{"case_id": "ret_126_datacenter_buildout", "query": "AI 数据中心选址与基建", "days": 60}
+{"case_id": "ret_127_microsoft_ai_infra", "query": "微软在 AI 基础设施的投入", "days": 60}
+{"case_id": "ret_128_intel_foundry", "query": "Intel 代工与芯片制造", "days": 90}
+{"case_id": "ret_129_ai_regulation", "query": "AI 监管政策动向", "days": 90}
+{"case_id": "ret_130_multimodal_models", "query": "多模态大模型进展", "days": 60}

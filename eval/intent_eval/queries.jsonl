@@ -78,3 +78,73 @@
 {"case_id": "g4_needs_clarification_06", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "tell me more"}
 {"case_id": "g4_needs_clarification_07", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "这件事的影响是什么"}
 {"case_id": "g4_needs_clarification_08", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "评价一下他"}
+{"case_id": "g4_smalltalk_09", "expected_intent_type": "smalltalk_or_capability", "expected_route": "direct_answer", "question": "谢谢"}
+{"case_id": "g4_smalltalk_10", "expected_intent_type": "smalltalk_or_capability", "expected_route": "direct_answer", "question": "thanks"}
+{"case_id": "g4_smalltalk_11", "expected_intent_type": "smalltalk_or_capability", "expected_route": "direct_answer", "question": "你是谁开发的"}
+{"case_id": "g4_smalltalk_12", "expected_intent_type": "smalltalk_or_capability", "expected_route": "direct_answer", "question": "你支持哪些功能"}
+{"case_id": "g4_smalltalk_13", "expected_intent_type": "smalltalk_or_capability", "expected_route": "direct_answer", "question": "早上好"}
+{"case_id": "g4_smalltalk_14", "expected_intent_type": "smalltalk_or_capability", "expected_route": "direct_answer", "question": "can you help me"}
+{"case_id": "g4_smalltalk_15", "expected_intent_type": "smalltalk_or_capability", "expected_route": "direct_answer", "question": "你好呀"}
+{"case_id": "g4_topic_comparison_09", "expected_intent_type": "topic_comparison", "expected_route": "needs_tools", "question": "对比 xAI 和 Anthropic"}
+{"case_id": "g4_topic_comparison_10", "expected_intent_type": "topic_comparison", "expected_route": "needs_tools", "question": "NVIDIA vs AMD"}
+{"case_id": "g4_topic_comparison_11", "expected_intent_type": "topic_comparison", "expected_route": "needs_tools", "question": "比较 Gemini 和 GPT-5.5"}
+{"case_id": "g4_topic_comparison_12", "expected_intent_type": "topic_comparison", "expected_route": "needs_tools", "question": "DeepSeek 和 Qwen 哪个更强"}
+{"case_id": "g4_topic_comparison_13", "expected_intent_type": "topic_comparison", "expected_route": "needs_tools", "question": "compare Mistral and Cohere"}
+{"case_id": "g4_topic_comparison_14", "expected_intent_type": "topic_comparison", "expected_route": "needs_tools", "question": "对比谷歌和微软的 AI 战略"}
+{"case_id": "g4_topic_comparison_15", "expected_intent_type": "topic_comparison", "expected_route": "needs_tools", "question": "Llama 和 Mistral 的开源策略对比"}
+{"case_id": "g4_source_comparison_09", "expected_intent_type": "source_comparison", "expected_route": "needs_tools", "question": "HackerNews 和 TechCrunch 的报道有什么差异"}
+{"case_id": "g4_source_comparison_10", "expected_intent_type": "source_comparison", "expected_route": "needs_tools", "question": "compare Reuters and Bloomberg on OpenAI"}
+{"case_id": "g4_source_comparison_11", "expected_intent_type": "source_comparison", "expected_route": "needs_tools", "question": "不同媒体对 NVIDIA 的报道角度"}
+{"case_id": "g4_source_comparison_12", "expected_intent_type": "source_comparison", "expected_route": "needs_tools", "question": "The Verge 和 Wired 谁的 AI 报道更深入"}
+{"case_id": "g4_source_comparison_13", "expected_intent_type": "source_comparison", "expected_route": "needs_tools", "question": "各来源对 AI 监管的态度差异"}
+{"case_id": "g4_source_comparison_14", "expected_intent_type": "source_comparison", "expected_route": "needs_tools", "question": "比较彭博和路透对 AI 融资的报道"}
+{"case_id": "g4_source_comparison_15", "expected_intent_type": "source_comparison", "expected_route": "needs_tools", "question": "媒体对开源模型的报道倾向对比"}
+{"case_id": "g4_trend_09", "expected_intent_type": "trend", "expected_route": "needs_tools", "question": "OpenAI 最近的热度变化"}
+{"case_id": "g4_trend_10", "expected_intent_type": "trend", "expected_route": "needs_tools", "question": "trend of AI chip coverage"}
+{"case_id": "g4_trend_11", "expected_intent_type": "trend", "expected_route": "needs_tools", "question": "DeepSeek 这个月的声量走势"}
+{"case_id": "g4_trend_12", "expected_intent_type": "trend", "expected_route": "needs_tools", "question": "AI 安全话题最近热不热"}
+{"case_id": "g4_trend_13", "expected_intent_type": "trend", "expected_route": "needs_tools", "question": "Gemini 的关注度趋势如何"}
+{"case_id": "g4_trend_14", "expected_intent_type": "trend", "expected_route": "needs_tools", "question": "过去一个月 NVIDIA 的舆论走向"}
+{"case_id": "g4_trend_15", "expected_intent_type": "trend", "expected_route": "needs_tools", "question": "AI 监管报道的增减趋势"}
+{"case_id": "g4_timeline_09", "expected_intent_type": "timeline", "expected_route": "needs_tools", "question": "GPT 系列的发布时间线"}
+{"case_id": "g4_timeline_10", "expected_intent_type": "timeline", "expected_route": "needs_tools", "question": "timeline of Anthropic funding"}
+{"case_id": "g4_timeline_11", "expected_intent_type": "timeline", "expected_route": "needs_tools", "question": "梳理 NVIDIA 今年的发布节点"}
+{"case_id": "g4_timeline_12", "expected_intent_type": "timeline", "expected_route": "needs_tools", "question": "DeepSeek 的发展脉络"}
+{"case_id": "g4_timeline_13", "expected_intent_type": "timeline", "expected_route": "needs_tools", "question": "OpenAI 苹果合作的事件经过"}
+{"case_id": "g4_timeline_14", "expected_intent_type": "timeline", "expected_route": "needs_tools", "question": "Meta Llama 的发布历史"}
+{"case_id": "g4_timeline_15", "expected_intent_type": "timeline", "expected_route": "needs_tools", "question": "xAI 数据中心争议的时间线"}
+{"case_id": "g4_landscape_09", "expected_intent_type": "landscape", "expected_route": "needs_tools", "question": "AI 芯片的竞争格局"}
+{"case_id": "g4_landscape_10", "expected_intent_type": "landscape", "expected_route": "needs_tools", "question": "the AI agents landscape"}
+{"case_id": "g4_landscape_11", "expected_intent_type": "landscape", "expected_route": "needs_tools", "question": "开源大模型生态的格局"}
+{"case_id": "g4_landscape_12", "expected_intent_type": "landscape", "expected_route": "needs_tools", "question": "AI coding 工具的竞争格局"}
+{"case_id": "g4_landscape_13", "expected_intent_type": "landscape", "expected_route": "needs_tools", "question": "推理芯片市场的玩家分布"}
+{"case_id": "g4_landscape_14", "expected_intent_type": "landscape", "expected_route": "needs_tools", "question": "AI 语音赛道的格局"}
+{"case_id": "g4_landscape_15", "expected_intent_type": "landscape", "expected_route": "needs_tools", "question": "企业 AI 平台的竞争格局"}
+{"case_id": "g4_article_read_09", "expected_intent_type": "article_read", "expected_route": "needs_tools", "question": "帮我读 https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/"}
+{"case_id": "g4_article_read_10", "expected_intent_type": "article_read", "expected_route": "needs_tools", "question": "summarize https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/"}
+{"case_id": "g4_article_read_11", "expected_intent_type": "article_read", "expected_route": "needs_tools", "question": "解读这篇 https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/"}
+{"case_id": "g4_article_read_12", "expected_intent_type": "article_read", "expected_route": "needs_tools", "question": "read this https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/"}
+{"case_id": "g4_article_read_13", "expected_intent_type": "article_read", "expected_route": "needs_tools", "question": "这篇讲什么 https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/"}
+{"case_id": "g4_article_read_14", "expected_intent_type": "article_read", "expected_route": "needs_tools", "question": "总结一下 https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/"}
+{"case_id": "g4_article_read_15", "expected_intent_type": "article_read", "expected_route": "needs_tools", "question": "帮我看下这篇报道 https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/"}
+{"case_id": "g4_roundup_listing_09", "expected_intent_type": "roundup_listing", "expected_route": "needs_tools", "question": "今天有哪些 AI 新闻"}
+{"case_id": "g4_roundup_listing_10", "expected_intent_type": "roundup_listing", "expected_route": "needs_tools", "question": "list this week's AI launches"}
+{"case_id": "g4_roundup_listing_11", "expected_intent_type": "roundup_listing", "expected_route": "needs_tools", "question": "本周科技头条"}
+{"case_id": "g4_roundup_listing_12", "expected_intent_type": "roundup_listing", "expected_route": "needs_tools", "question": "最近的 AI 新闻列表"}
+{"case_id": "g4_roundup_listing_13", "expected_intent_type": "roundup_listing", "expected_route": "needs_tools", "question": "give me today's tech news"}
+{"case_id": "g4_roundup_listing_14", "expected_intent_type": "roundup_listing", "expected_route": "needs_tools", "question": "列出本月重要发布"}
+{"case_id": "g4_roundup_listing_15", "expected_intent_type": "roundup_listing", "expected_route": "needs_tools", "question": "AI 圈最近有什么大事"}
+{"case_id": "g4_news_analysis_09", "expected_intent_type": "news_analysis", "expected_route": "needs_tools", "question": "NVIDIA 最近在芯片上的动作"}
+{"case_id": "g4_news_analysis_10", "expected_intent_type": "news_analysis", "expected_route": "needs_tools", "question": "Anthropic 最近的企业市场进展"}
+{"case_id": "g4_news_analysis_11", "expected_intent_type": "news_analysis", "expected_route": "needs_tools", "question": "OpenAI 最近有什么重要动态"}
+{"case_id": "g4_news_analysis_12", "expected_intent_type": "news_analysis", "expected_route": "needs_tools", "question": "DeepSeek 最近发布了什么"}
+{"case_id": "g4_news_analysis_13", "expected_intent_type": "news_analysis", "expected_route": "needs_tools", "question": "AI 监管的最新进展"}
+{"case_id": "g4_news_analysis_14", "expected_intent_type": "news_analysis", "expected_route": "needs_tools", "question": "微软 AI 业务的营收情况"}
+{"case_id": "g4_news_analysis_15", "expected_intent_type": "news_analysis", "expected_route": "needs_tools", "question": "Cerebras IPO 的最新情况"}
+{"case_id": "g4_needs_clarification_09", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "这个怎么样"}
+{"case_id": "g4_needs_clarification_10", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "他呢"}
+{"case_id": "g4_needs_clarification_11", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "详细说说那个"}
+{"case_id": "g4_needs_clarification_12", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "这家公司靠谱吗"}
+{"case_id": "g4_needs_clarification_13", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "what about that one"}
+{"case_id": "g4_needs_clarification_14", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "再多讲点"}
+{"case_id": "g4_needs_clarification_15", "expected_intent_type": "needs_clarification", "expected_route": "needs_clarification", "question": "你觉得呢"}

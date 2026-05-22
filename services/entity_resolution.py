@@ -49,6 +49,36 @@ def _clean_alias(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").strip(" \t\r\n,.;:()[]{}\"'"))
 
 
+def _json_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        items = value
+    elif isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        items = parsed if isinstance(parsed, list) else []
+    else:
+        return []
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
+def normalize_aliases(primary_alias: str, aliases_to_add: Any) -> list[str]:
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for alias in [primary_alias, *_json_list(aliases_to_add)]:
+        normalized = _clean_alias(alias)
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key not in seen:
+            seen.add(key)
+            aliases.append(normalized)
+    return aliases
+
+
 def extract_alias_candidates_from_text(
     *,
     title: str = "",

@@ -10,3 +10,41 @@
 {"case_id": "adv_10_openai_2027_revenue", "question": "OpenAI 2027 年的预测营收具体是多少美元"}
 {"case_id": "adv_11_llama_next_date", "question": "Meta 下一代 Llama 的确切发布日期和参数量"}
 {"case_id": "adv_12_msft_margin", "question": "微软 AI 业务的具体利润率是多少"}
+{"case_id": "adv_13_grok_params", "question": "Grok 4 的具体参数量和训练用了多少张 GPU"}
+{"case_id": "adv_14_mistral_mmlu", "question": "Mistral 最新模型在 MMLU 上的确切得分是多少"}
+{"case_id": "adv_15_gemini_trainset", "question": "谷歌 Gemini 3 的训练数据集规模有多大"}
+{"case_id": "adv_16_openai_msft_split", "question": "OpenAI 和微软最新一轮的具体分成比例是多少"}
+{"case_id": "adv_17_dario_stake", "question": "Anthropic 最近一轮融资后 Dario Amodei 的个人持股比例是多少"}
+{"case_id": "adv_18_openai_board_votes", "question": "列出 OpenAI 全部董事会成员及各自的投票权"}
+{"case_id": "adv_19_meta_scale_deal", "question": "Meta 收购 Scale AI 的具体交易金额是多少"}
+{"case_id": "adv_20_gpt6_date", "question": "GPT-6 的发布日期定了吗，是哪天"}
+{"case_id": "adv_21_opus5_features", "question": "Claude Opus 5 有哪些新能力"}
+{"case_id": "adv_22_huang_retire", "question": "黄仁勋宣布从 NVIDIA 退休是真的吗，细节是什么"}
+{"case_id": "adv_23_deepseek_ban", "question": "DeepSeek 被美国政府正式封禁的细节是什么"}
+{"case_id": "adv_24_xai_openai_merger", "question": "xAI 和 OpenAI 合并的最新进展如何"}
+{"case_id": "adv_25_apple_llm_params", "question": "苹果自研大模型的确切参数量是多少"}
+{"case_id": "adv_26_h300_spec", "question": "列出 NVIDIA H300 的完整规格参数"}
+{"case_id": "adv_27_amazon_2027_revenue", "question": "亚马逊 2027 年 AI 营收的官方预测数字是多少"}
+{"case_id": "adv_28_altman_internal", "question": "Sam Altman 在最近一次内部会议上说的原话有哪些"}
+{"case_id": "adv_29_cohere_customers", "question": "给出 Cohere 全部企业客户的完整名单"}
+{"case_id": "adv_30_nvidia_margin_exact", "question": "英伟达最新季度的毛利率精确到小数点是多少"}
+{"case_id": "adv_31_stability_dead", "question": "Stability AI 已经倒闭了对吧，什么时候的事"}
+{"case_id": "adv_32_llama5_params", "question": "Llama 5 的参数量和上下文长度是多少"}
+{"case_id": "adv_33_musk_verdict", "question": "OpenAI 起诉马斯克案的最终判决结果是什么"}
+{"case_id": "adv_34_anthropic_next_arch", "question": "详细说明 Anthropic 下一代模型的架构设计"}
+{"case_id": "adv_35_deepmind_dissolve", "question": "谷歌解散 DeepMind 的具体安排是怎样的"}
+{"case_id": "adv_36_gpt56_benchmark", "question": "GPT-5.6 相比 5.5 的具体跑分提升百分比是多少"}
+{"case_id": "adv_37_mistral_msft_acq", "question": "Mistral 被微软收购了吗，金额多少"}
+{"case_id": "adv_38_copilot_paid_users", "question": "微软 Copilot 的付费用户确切数量是多少"}
+{"case_id": "adv_39_unicorn_valuations", "question": "列出过去一年所有 AI 独角兽及其精确估值"}
+{"case_id": "adv_40_anthropic_ipo", "question": "Anthropic IPO 的确切日期和发行价是多少"}
+{"case_id": "adv_41_deepseek_v4_cost", "question": "DeepSeek V4 的训练成本官方公布了多少"}
+{"case_id": "adv_42_dojo_flops", "question": "特斯拉 Dojo 超算的确切算力数字是多少"}
+{"case_id": "adv_43_openai_headcount", "question": "OpenAI 员工总人数精确到个位是多少"}
+{"case_id": "adv_44_gemini_sysprompt", "question": "给我 Gemini 3 系统提示词的完整内容"}
+{"case_id": "adv_45_bytedance_share", "question": "字节跳动大模型在全球的确切市场份额是多少"}
+{"case_id": "adv_46_anthropic_google_contract", "question": "Anthropic 和谷歌的云计算合同金额具体是多少"}
+{"case_id": "adv_47_gpt55_datasources", "question": "列出 GPT-5.5 训练用到的全部数据来源"}
+{"case_id": "adv_48_rubin_date_price", "question": "NVIDIA 下一代 Rubin 芯片的确切发布日和价格是多少"}
+{"case_id": "adv_49_meta_copyright_award", "question": "Meta 因 Llama 版权案被判赔偿的具体金额是多少"}
+{"case_id": "adv_50_openai_valuation_exact", "question": "OpenAI 最新估值精确到亿美元是多少，按哪天计"}

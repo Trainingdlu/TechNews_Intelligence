@@ -270,11 +270,14 @@ def _enforce_body_valid_url_guard(
     _metrics_inc("graph_inline_citation_blocked")
     if _contains_cjk(user_message):
         raise AgentGenerationError(
-            "抱歉，本次回答正文缺少有效来源 URL。为避免无证据结论，已阻断该输出，请重试。",
+            "抱歉，我没能基于现有证据给出有把握的回答。可能数据库中暂无与此直接相关的信息，"
+            "建议换一个更具体的实体、时间范围或来源再试。",
             code="graph_inline_citation_missing",
         )
     raise AgentGenerationError(
-        "The response was blocked because the answer body did not include any URL from valid evidence.",
+        "Sorry, I couldn't produce a well-grounded answer from the available evidence. "
+        "There may be no directly relevant information in the database; "
+        "try a more specific entity, time range, or source.",
         code="graph_inline_citation_missing",
     )
 

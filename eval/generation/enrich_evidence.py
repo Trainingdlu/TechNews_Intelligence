@@ -69,8 +69,8 @@ def _extract_evidence_block(content: str) -> str:
 def main() -> int:
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="Enrich G3 results with real synthesizer evidence.")
-    parser.add_argument("--results", type=Path, default=here / "runs" / "generation_results.jsonl")
-    parser.add_argument("--output", type=Path, default=here / "runs" / "generation_results_enriched.jsonl")
+    parser.add_argument("--results", type=Path, default=here / "runs" / "generation.jsonl")
+    parser.add_argument("--output", type=Path, default=here / "runs" / "generation_enriched.jsonl")
     args = parser.parse_args()
     _load_env()
 

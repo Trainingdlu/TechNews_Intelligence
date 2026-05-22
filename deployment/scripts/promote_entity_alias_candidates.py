@@ -8,28 +8,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from services.db import db_cursor, db_transaction  # noqa: E402
-from eval.build_entity_alias_candidates import _load_env_file  # noqa: E402
-
-
-def _json_list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        items = value
-    elif isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            return []
-        items = parsed if isinstance(parsed, list) else []
-    else:
-        return []
-    return [str(item).strip() for item in items if str(item).strip()]
+from services.entity_resolution import normalize_aliases  # noqa: E402
+from services.script_env import _load_env_file  # noqa: E402
 
 
 def _detect_language(alias: str) -> str:
@@ -38,17 +23,6 @@ def _detect_language(alias: str) -> str:
     if alias.isascii():
         return "en"
     return "unknown"
-
-
-def normalize_aliases(primary_alias: str, aliases_to_add: Any) -> list[str]:
-    aliases: list[str] = []
-    for alias in [primary_alias, *_json_list(aliases_to_add)]:
-        normalized = " ".join(str(alias).strip().split())
-        if not normalized:
-            continue
-        if normalized.lower() not in {existing.lower() for existing in aliases}:
-            aliases.append(normalized)
-    return aliases
 
 
 def _load_promotable_candidates(*, include_auto_approved: bool, limit: int) -> list[dict[str, Any]]:

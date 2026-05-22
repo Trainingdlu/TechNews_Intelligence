@@ -18,9 +18,11 @@ _INTENT_ROUTER_SYSTEM_PROMPT = (
     "- landscape: competitive landscape, market players, or ecosystem of a field (格局/竞争/全景/玩家/赛道)\n"
     "- article_read: read, summarize, or analyze a specific article URL provided by the user\n"
     "- roundup_listing: list recent headlines (today's / this week's news, 列出/速览)\n"
+    "- db_status: questions about the news database itself — article count, data freshness, last update (数据库有多少篇/数据新鲜度/更新到什么时候)\n"
+    "- topic_overview: asking what topics/categories exist in the corpus or their distribution (有哪些主题/主题分布/话题分类)\n"
     "- news_analysis: general news search or analysis about a topic — this is the DEFAULT when nothing more specific fits\n\n"
     "When a request fits a specialized type (topic_comparison, source_comparison, trend, timeline, "
-    "landscape, article_read, roundup_listing), you MUST choose it instead of the generic news_analysis."
+    "landscape, article_read, roundup_listing, db_status, topic_overview), you MUST choose it instead of the generic news_analysis."
 )
 
 _TOOL_WORKER_SYSTEM_PROMPT = (

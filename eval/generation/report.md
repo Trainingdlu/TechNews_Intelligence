@@ -1,8 +1,8 @@
 # G3 Generation Faithfulness Report
 
-Generated: 2026-05-20T16:09:42.523318+00:00
+Generated: 2026-05-22T14:44:31.020484+00:00
 
-Cases judged: **30**
+Cases judged: **47**
 
 | Metric | Value |
 |---|---|

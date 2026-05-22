@@ -28,3 +28,23 @@
 {"case_id": "gen_28_microsoft_ai_revenue", "question": "微软 AI 业务的营收情况"}
 {"case_id": "gen_29_ai_sentiment", "question": "公众对 AI 发展的态度有什么变化"}
 {"case_id": "gen_30_claude_aws", "question": "Claude 在 AWS 上的平台是什么情况"}
+{"case_id": "gen_31_nvidia_earnings", "question": "NVIDIA 最新财报有哪些关键数据"}
+{"case_id": "gen_32_openai_apple_fallout", "question": "OpenAI 与苹果合作破裂的来龙去脉是怎样的"}
+{"case_id": "gen_33_stainless_rationale", "question": "Anthropic 收购 Stainless 的战略意图是什么"}
+{"case_id": "gen_34_elevenlabs_funding", "question": "ElevenLabs 最新一轮融资的情况如何"}
+{"case_id": "gen_35_ai_defense", "question": "AI 在国防领域最近有哪些应用进展"}
+{"case_id": "gen_36_musk_openai_case", "question": "马斯克诉 OpenAI 案的核心争议是什么"}
+{"case_id": "gen_37_cohere_round", "question": "Cohere 最近一轮融资的具体情况"}
+{"case_id": "gen_38_gemini_auto", "question": "谷歌 Gemini 进入汽车领域有哪些进展"}
+{"case_id": "gen_39_airbnb_ai_code", "question": "Airbnb 使用 AI 编写代码的情况如何"}
+{"case_id": "gen_40_resume_bias", "question": "大模型在简历筛选中的自我偏好问题是怎么回事"}
+{"case_id": "gen_41_pentagon_ai", "question": "五角大楼与各大 AI 公司的合作情况"}
+{"case_id": "gen_42_anthropic_legal", "question": "Anthropic 在法律行业的布局有哪些"}
+{"case_id": "gen_43_x_ad_platform", "question": "X 平台新的 AI 广告系统进展如何"}
+{"case_id": "gen_44_datacenter_power", "question": "AI 数据中心与电力供应之间的矛盾体现在哪"}
+{"case_id": "gen_45_qwen_latest", "question": "开源模型 Qwen 最新版本的表现怎么样"}
+{"case_id": "gen_46_granite_update", "question": "IBM Granite 模型最近有哪些更新"}
+{"case_id": "gen_47_regulation_2026", "question": "2026 年 AI 监管有哪些新动向"}
+{"case_id": "gen_48_btc_recovery", "question": "用 AI 找回比特币钱包密码的案例是怎么回事"}
+{"case_id": "gen_49_local_models", "question": "本地大模型在消费级硬件上的可行性如何"}
+{"case_id": "gen_50_agent_enterprise", "question": "AI agent 在企业落地最近有哪些案例"}

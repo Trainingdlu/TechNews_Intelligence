@@ -1,6 +1,6 @@
 """G3 Phase B — judge generation faithfulness + relevancy, compute url-leak.
 
-Reads runs/generation_results.jsonl and for each (question, evidence, answer):
+Reads runs/generation_enriched.jsonl and for each (question, evidence, answer):
   - LLM judge: faithfulness (1-5) and answer_relevancy (1-5)
   - deterministic: url_leak = URLs appearing in the answer that are NOT in the
     evidence set the answer was supposed to be grounded in
@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv  # noqa: E402
+
+from eval.eval_retry import call_with_retry  # noqa: E402
 
 _JUDGE_SYSTEM_PROMPT = (
     "You are a strict faithfulness judge for a tech-news analysis agent. "
@@ -66,6 +69,13 @@ def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
         fh.flush()
 
 
+def _write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        for record in records:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def _read_done(path: Path) -> set[str]:
     done: set[str] = set()
     if not path.exists():
@@ -74,6 +84,44 @@ def _read_done(path: Path) -> set[str]:
         if rec.get("status") == "success":
             done.add(str(rec.get("case_id") or ""))
     return done
+
+
+def _answer_url_leaks(answer: str, evidence_urls: list[str]) -> list[str]:
+    from agent.core.evidence import extract_urls, normalize_url_for_match  # noqa: E402
+
+    normalized_evidence = {
+        normalized
+        for url in evidence_urls
+        if (normalized := normalize_url_for_match(str(url).strip()))
+    }
+    leaks: list[str] = []
+    for url in sorted(set(extract_urls(answer))):
+        normalized = normalize_url_for_match(url)
+        if normalized and normalized not in normalized_evidence:
+            leaks.append(url)
+    return leaks
+
+
+def _refresh_url_leaks(
+    judgments: dict[str, dict[str, Any]],
+    cases_by_id: dict[str, dict[str, Any]],
+) -> bool:
+    changed = False
+    for case_id, judgment in judgments.items():
+        if judgment.get("status") != "success":
+            continue
+        case = cases_by_id.get(case_id)
+        if not case:
+            continue
+        leaks = _answer_url_leaks(
+            str(case.get("answer") or ""),
+            [str(u) for u in (case.get("evidence_urls") or [])],
+        )
+        if judgment.get("url_leak_count") != len(leaks) or judgment.get("leaked_urls") != leaks:
+            judgment["url_leak_count"] = len(leaks)
+            judgment["leaked_urls"] = leaks
+            changed = True
+    return changed
 
 
 def _evidence_block(evidence: list[dict[str, Any]]) -> str:
@@ -133,11 +181,17 @@ def _judge_one(
 def _parse_args() -> argparse.Namespace:
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="G3 faithfulness judge.")
-    parser.add_argument("--results", type=Path, default=here / "runs" / "generation_results.jsonl")
+    parser.add_argument("--results", type=Path, default=here / "runs" / "generation_enriched.jsonl")
     parser.add_argument("--output", type=Path, default=here / "runs" / "faithfulness_judgments.jsonl")
     parser.add_argument("--report", type=Path, default=here / "report.md")
     parser.add_argument("--only-case-id", type=str, default=None)
     parser.add_argument("--report-only", action="store_true")
+    parser.add_argument(
+        "--sleep-seconds",
+        type=float,
+        default=1.0,
+        help="Fixed delay between judged cases to stay under the model RPM quota.",
+    )
     return parser.parse_args()
 
 
@@ -200,7 +254,6 @@ def main() -> int:
     existing = {str(r.get("case_id") or ""): r for r in _read_jsonl(output_path)} if output_path.exists() else {}
 
     if not args.report_only:
-        from agent.core.evidence import extract_urls  # noqa: E402
         from agent.graph.model_io import _coerce_to_text, _extract_json_object  # noqa: E402
         from services.llm_provider import build_chat_model, resolve_agent_model_config  # noqa: E402
 
@@ -229,14 +282,16 @@ def main() -> int:
                 evidence_text = _evidence_block(list(case.get("evidence") or []))
             print(f"[{idx}/{len(pending)}] {case_id} ...", flush=True)
             try:
-                verdict = _judge_one(
-                    question, evidence_text, answer,
-                    client=client,
-                    coerce_text_fn=_coerce_to_text,
-                    extract_json_fn=_extract_json_object,
+                verdict = call_with_retry(
+                    lambda: _judge_one(
+                        question, evidence_text, answer,
+                        client=client,
+                        coerce_text_fn=_coerce_to_text,
+                        extract_json_fn=_extract_json_object,
+                    ),
+                    label=f"{case_id} judge",
                 )
-                answer_urls = set(extract_urls(answer))
-                leaks = sorted(u for u in answer_urls if u not in evidence_urls)
+                leaks = _answer_url_leaks(answer, list(evidence_urls))
                 record = {
                     "case_id": case_id,
                     "question": question,
@@ -263,6 +318,12 @@ def main() -> int:
                 print(f"  -> ERROR: {record['error_message']}")
             _append_jsonl(output_path, record)
             existing[case_id] = record
+            if args.sleep_seconds > 0 and idx < len(pending):
+                time.sleep(args.sleep_seconds)
+
+    if _refresh_url_leaks(existing, by_id):
+        _write_jsonl(output_path, list(existing.values()))
+        print(f"Refreshed deterministic URL-leak fields in {output_path}")
 
     report = _build_report(list(existing.values()))
     report_path = args.report.resolve()

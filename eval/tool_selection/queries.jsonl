@@ -38,3 +38,60 @@
 {"case_id": "ts_article_read_02", "question": "总结这篇 https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}
 {"case_id": "ts_article_read_03", "question": "read this article: https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}
 {"case_id": "ts_article_read_04", "question": "解读一下这篇 https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}
+{"case_id": "ts_compare_topics_07", "question": "对比 xAI 和 OpenAI 的算力布局", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_08", "question": "比较 Cohere 和 Mistral 在企业市场的定位", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_09", "question": "NVIDIA 和 Google TPU 谁更有竞争力", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_10", "question": "对比 Gemini 和 Claude 的多模态能力", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_11", "question": "compare DeepSeek and Qwen open-source strategy", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_12", "question": "Anthropic 和 OpenAI 在安全研究上的差异", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_topics_13", "question": "对比 Grok 和 Gemini 的能力表现", "expected_primary_tool": "compare_topics", "acceptable_tools": ["compare_topics"]}
+{"case_id": "ts_compare_sources_07", "question": "比较 The Verge 和 Reuters 对 GPT-5.5 的报道", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_compare_sources_08", "question": "不同媒体对 NVIDIA 财报的解读有何不同", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_compare_sources_09", "question": "compare Bloomberg vs TechCrunch coverage of AI funding", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_compare_sources_10", "question": "HackerNews 社区和主流媒体对开源模型的态度差异", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_compare_sources_11", "question": "各来源对 AI 监管的报道倾向有什么不同", "expected_primary_tool": "compare_sources", "acceptable_tools": ["compare_sources"]}
+{"case_id": "ts_trend_06", "question": "最近两周 AI 芯片话题的热度变化", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_07", "question": "OpenAI 的舆论热度最近是涨还是跌", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_08", "question": "trend of AI safety discussion over the past month", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_09", "question": "DeepSeek 这个月的关注度走势如何", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_10", "question": "AI 监管相关报道最近是增多还是减少", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_11", "question": "Gemini 最近一个月的声量变化", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_trend_12", "question": "AI 数据中心话题最近热不热", "expected_primary_tool": "trend_analysis", "acceptable_tools": ["trend_analysis"]}
+{"case_id": "ts_timeline_06", "question": "GPT-5 到 GPT-5.6 的发布时间线", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_07", "question": "整理 NVIDIA 今年的重大发布节点", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_08", "question": "DeepSeek 从 V3 到 V4 的发展脉络", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_09", "question": "timeline of the OpenAI-Apple partnership saga", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_10", "question": "Anthropic 历次融资的时间线", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_11", "question": "梳理 xAI 数据中心争议的事件经过", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_timeline_12", "question": "Meta 开源模型的发布时间脉络", "expected_primary_tool": "build_timeline", "acceptable_tools": ["build_timeline"]}
+{"case_id": "ts_landscape_06", "question": "AI coding 工具的竞争格局", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_07", "question": "大模型推理芯片市场有哪些主要玩家和生态位", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_08", "question": "企业级 AI agent 平台的竞争格局", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_09", "question": "the AI search engine landscape", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_10", "question": "开源大模型生态目前的格局如何", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_11", "question": "AI 语音合成赛道的玩家分布", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_landscape_12", "question": "AI 医疗影像赛道的竞争格局", "expected_primary_tool": "analyze_landscape", "acceptable_tools": ["analyze_landscape"]}
+{"case_id": "ts_search_news_06", "question": "有没有关于 Cerebras IPO 的消息", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_search_news_07", "question": "Stability AI 最近怎么样了", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_search_news_08", "question": "any news about Llama 5", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_search_news_09", "question": "关于 AI 版权诉讼的最新报道", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_search_news_10", "question": "微软 AI 业务有什么新进展", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_search_news_11", "question": "谷歌 Gemini 出什么新功能了", "expected_primary_tool": "search_news", "acceptable_tools": ["search_news"]}
+{"case_id": "ts_roundup_05", "question": "这周有哪些值得关注的融资新闻", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_roundup_06", "question": "列出最近的 AI 芯片相关新闻", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_roundup_07", "question": "今天科技圈发生了什么", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_roundup_08", "question": "show me the latest AI news", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_roundup_09", "question": "最近一周 Anthropic 相关的新闻列表", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_roundup_10", "question": "本月重要的 AI 产品发布有哪些", "expected_primary_tool": "query_news", "acceptable_tools": ["query_news", "search_news"]}
+{"case_id": "ts_article_read_05", "question": "帮我读这两篇并对比 https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/ 和 https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch"]}
+{"case_id": "ts_article_read_06", "question": "总结这几篇文章的要点 https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}
+{"case_id": "ts_article_read_07", "question": "read and summarize https://techcrunch.com/2026/05/18/theo-baker-spent-four-years-investigating-stanford-before-he-leaves-heres-what-he-found/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}
+{"case_id": "ts_article_read_08", "question": "详细解读这篇报道 https://techcrunch.com/2026/05/18/sandboxaq-brings-its-drug-discovery-models-to-claude-no-phd-in-computing-required/", "expected_primary_tool": "fulltext_batch", "acceptable_tools": ["fulltext_batch", "read_news_content"]}
+{"case_id": "ts_db_stats_01", "question": "数据库里现在有多少篇新闻", "expected_primary_tool": "get_db_stats", "acceptable_tools": ["get_db_stats"]}
+{"case_id": "ts_db_stats_02", "question": "数据更新到什么时候了", "expected_primary_tool": "get_db_stats", "acceptable_tools": ["get_db_stats"]}
+{"case_id": "ts_db_stats_03", "question": "how fresh is the news database", "expected_primary_tool": "get_db_stats", "acceptable_tools": ["get_db_stats"]}
+{"case_id": "ts_db_stats_04", "question": "新闻库的数据新鲜度怎么样", "expected_primary_tool": "get_db_stats", "acceptable_tools": ["get_db_stats"]}
+{"case_id": "ts_list_topics_01", "question": "最近都在讨论哪些主题", "expected_primary_tool": "list_topics", "acceptable_tools": ["list_topics"]}
+{"case_id": "ts_list_topics_02", "question": "近三周的主题分布是怎样的", "expected_primary_tool": "list_topics", "acceptable_tools": ["list_topics"]}
+{"case_id": "ts_list_topics_03", "question": "what topics are trending lately", "expected_primary_tool": "list_topics", "acceptable_tools": ["list_topics"]}
+{"case_id": "ts_list_topics_04", "question": "新闻库里有哪些话题分类", "expected_primary_tool": "list_topics", "acceptable_tools": ["list_topics"]}

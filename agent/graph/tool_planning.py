@@ -31,6 +31,8 @@ def _select_tools(intent: dict[str, Any]) -> list[str]:
         "landscape": ["analyze_landscape", "search_news", "fulltext_batch"],
         "article_read": ["read_news_content", "fulltext_batch", "search_news"],
         "roundup_listing": ["query_news", "search_news", "fulltext_batch"],
+        "db_status": ["get_db_stats"],
+        "topic_overview": ["list_topics", "query_news", "search_news"],
     }
     selected = mapping.get(intent_type, ["search_news", "query_news", "fulltext_batch"])
     known = {definition.name for definition in iter_tool_definitions()}

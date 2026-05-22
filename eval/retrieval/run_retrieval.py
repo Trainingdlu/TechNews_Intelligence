@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv  # noqa: E402
+
+from eval.eval_retry import call_with_retry  # noqa: E402
 
 TOP_K = 10
 
@@ -125,6 +128,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=here / "runs" / "retrieval_results.jsonl")
     parser.add_argument("--only-case-id", type=str, default=None)
     parser.add_argument("--skip-confirm", action="store_true")
+    parser.add_argument(
+        "--sleep-seconds",
+        type=float,
+        default=1.0,
+        help="Fixed delay between queries to stay under retrieval/rerank rate limits.",
+    )
     return parser.parse_args()
 
 
@@ -165,7 +174,10 @@ def main() -> int:
         days = int(case.get("days") or 30)
         print(f"[{idx}/{len(pending)}] {case_id}: {query} ...", flush=True)
         try:
-            result = _run_one_query(query, days, lookup_fn=lookup_candidates_by_query)
+            result = call_with_retry(
+                lambda: _run_one_query(query, days, lookup_fn=lookup_candidates_by_query),
+                label=f"{case_id} retrieval",
+            )
             record = {
                 "case_id": case_id,
                 "query": query,
@@ -191,6 +203,8 @@ def main() -> int:
             print(f"  -> ERROR: {record['error_message']}")
             error += 1
         _append_jsonl(output_path, record)
+        if args.sleep_seconds > 0 and idx < len(pending):
+            time.sleep(args.sleep_seconds)
 
     print("=" * 60)
     print(f"Done. success={success}, error={error}, output={output_path}")
