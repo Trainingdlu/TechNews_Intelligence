@@ -23,9 +23,9 @@ from typing import Any
 
 CONFIGS = ["G0", "G1", "G2"]
 CONFIG_LABELS = {
-    "G0": "base + no rerank",
-    "G1": "wide + no rerank",
-    "G2": "wide + Jina rerank",
+    "G0": "基础召回 + 不重排",
+    "G1": "宽召回 + 不重排",
+    "G2": "宽召回 + Jina 重排",
 }
 
 
@@ -146,15 +146,15 @@ def main() -> int:
             per_config[cfg][key] = per_config[cfg][key] / n if n else 0.0
 
     lines: list[str] = []
-    lines.append("# G2 Retrieval Eval Report")
+    lines.append("# G2 检索质量评测报告")
     lines.append("")
-    lines.append(f"Queries scored: **{n}**" + (f" (missing judgments: {len(missing)})" if missing else ""))
+    lines.append(f"已评分查询数：**{n}**" + (f"（缺少判分：{len(missing)}）" if missing else ""))
     lines.append("")
-    lines.append("Relevance gold: LLM-judged 0/1/2 over the pooled top-10 of all 3 configs (shared labels).")
+    lines.append("相关性标注：对 3 组配置 pooled top-10 结果进行 LLM 0/1/2 判分，并在各配置间共享标签。")
     lines.append("")
-    lines.append("## Ablation table")
+    lines.append("## 消融对比表")
     lines.append("")
-    lines.append("| Config | Profile | Hit@5 | Precision@5 | MRR@10 | nDCG@10 |")
+    lines.append("| 配置 | 检索策略 | Hit@5 | Precision@5 | MRR@10 | nDCG@10 |")
     lines.append("|---|---|---|---|---|---|")
     for cfg in CONFIGS:
         m = per_config[cfg]
@@ -165,9 +165,9 @@ def main() -> int:
     lines.append("")
 
     base = per_config["G0"]
-    lines.append("## Delta vs G0 (baseline)")
+    lines.append("## 相对 G0（基线）的变化")
     lines.append("")
-    lines.append("| Config | Hit@5 | Precision@5 | MRR@10 | nDCG@10 |")
+    lines.append("| 配置 | Hit@5 | Precision@5 | MRR@10 | nDCG@10 |")
     lines.append("|---|---|---|---|---|")
     for cfg in ("G1", "G2"):
         m = per_config[cfg]

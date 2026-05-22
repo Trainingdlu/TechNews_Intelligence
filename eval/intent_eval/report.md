@@ -1,14 +1,14 @@
-# G4 Intent Classification Eval Report
+# G4 意图分类评测报告
 
-Generated: 2026-05-21T12:42:33.620612+00:00
+生成时间：2026-05-21T12:42:33.620612+00:00
 
-## Headline: intent_type_accuracy = **98.7%**  (148/150)
+## 核心结果：intent_type_accuracy = **98.7%**  (148/150)
 
-**Status: stable** (>=90%). Per the agreed thresholds, no deeper investigation needed.
+**状态：稳定**（>=90%）。按约定阈值，无需继续深挖。
 
-## Per-bucket accuracy
+## 分桶准确率
 
-| Bucket (expected_intent_type) | Accuracy | Correct | Total |
+| 分桶（expected_intent_type） | 准确率 | 正确数 | 总数 |
 |---|---|---|---|
 | `article_read` | 100.0% | 15 | 15 |
 | `landscape` | 100.0% | 15 | 15 |
@@ -21,11 +21,11 @@ Generated: 2026-05-21T12:42:33.620612+00:00
 | `topic_comparison` | 100.0% | 15 | 15 |
 | `trend` | 100.0% | 15 | 15 |
 
-## Confusion matrix
+## 混淆矩阵
 
-Rows = expected; columns = predicted (predicted intent_type, except for `needs_clarification` row where the column is predicted route).
+行表示期望值，列表示预测值；`needs_clarification` 行的列使用 predicted route，其余行使用 predicted intent_type。
 
-| Expected \ Predicted | `article_read` | `direct_answer` | `landscape` | `needs_clarification` | `news_analysis` | `roundup_listing` | `smalltalk_or_capability` | `source_comparison` | `timeline` | `topic_comparison` | `trend` |
+| 期望 \ 预测 | `article_read` | `direct_answer` | `landscape` | `needs_clarification` | `news_analysis` | `roundup_listing` | `smalltalk_or_capability` | `source_comparison` | `timeline` | `topic_comparison` | `trend` |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | `article_read` | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `landscape` | 0 | 0 | 15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |

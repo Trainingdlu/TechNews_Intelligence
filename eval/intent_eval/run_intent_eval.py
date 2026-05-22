@@ -145,27 +145,27 @@ def _build_report(
     accuracy = (correct / total * 100.0) if total else 0.0
 
     lines: list[str] = []
-    lines.append("# G4 Intent Classification Eval Report")
+    lines.append("# G4 意图分类评测报告")
     lines.append("")
-    lines.append(f"Generated: {datetime.now(timezone.utc).isoformat()}")
+    lines.append(f"生成时间：{datetime.now(timezone.utc).isoformat()}")
     lines.append("")
-    lines.append(f"## Headline: intent_type_accuracy = **{accuracy:.1f}%**  ({correct}/{total})")
+    lines.append(f"## 核心结果：intent_type_accuracy = **{accuracy:.1f}%**  ({correct}/{total})")
     lines.append("")
     if accuracy >= 90.0:
-        lines.append("**Status: stable** (>=90%). Per the agreed thresholds, no deeper investigation needed.")
+        lines.append("**状态：稳定**（>=90%）。按约定阈值，无需继续深挖。")
     elif accuracy < 85.0:
-        lines.append("**Status: investigate** (<85%). Review confusion matrix below to identify failing buckets.")
+        lines.append("**状态：需要排查**（<85%）。请查看下方混淆矩阵定位失败类别。")
     else:
-        lines.append("**Status: marginal** (85-90%).")
+        lines.append("**状态：边界稳定**（85%-90%）。")
     lines.append("")
 
     if missing_cases:
-        lines.append(f"> Warning: {len(missing_cases)} case(s) missing prediction (status != success).")
+        lines.append(f"> 警告：{len(missing_cases)} 个样本缺少预测结果（status != success）。")
         lines.append("")
 
-    lines.append("## Per-bucket accuracy")
+    lines.append("## 分桶准确率")
     lines.append("")
-    lines.append("| Bucket (expected_intent_type) | Accuracy | Correct | Total |")
+    lines.append("| 分桶（expected_intent_type） | 准确率 | 正确数 | 总数 |")
     lines.append("|---|---|---|---|")
     for bucket in sorted(per_bucket_total.keys()):
         bt = per_bucket_total[bucket]
@@ -174,16 +174,15 @@ def _build_report(
         lines.append(f"| `{bucket}` | {acc:.1f}% | {bc} | {bt} |")
     lines.append("")
 
-    lines.append("## Confusion matrix")
+    lines.append("## 混淆矩阵")
     lines.append("")
     lines.append(
-        "Rows = expected; columns = predicted "
-        "(predicted intent_type, except for `needs_clarification` row where the column is predicted route)."
+        "行表示期望值，列表示预测值；`needs_clarification` 行的列使用 predicted route，其余行使用 predicted intent_type。"
     )
     lines.append("")
     all_predicted = sorted({p for row in confusion.values() for p in row.keys()})
     if all_predicted:
-        header = "| Expected \\ Predicted | " + " | ".join(f"`{p}`" for p in all_predicted) + " |"
+        header = "| 期望 \\ 预测 | " + " | ".join(f"`{p}`" for p in all_predicted) + " |"
         sep = "|---|" + "|".join(["---"] * len(all_predicted)) + "|"
         lines.append(header)
         lines.append(sep)

@@ -1,25 +1,25 @@
-# G5 Tool-Selection Eval Report
+# G5 工具选择评测报告
 
-Generated: 2026-05-21T10:05:01.642667+00:00
+生成时间：2026-05-21T10:05:01.642667+00:00
 
-## Headline: tool_selection_accuracy = **100.0%**  (97/97)
+## 核心结果：tool_selection_accuracy = **100.0%**  (97/97)
 
-## Failure attribution
+## 失败归因
 
-| Cause | Count | Meaning |
+| 原因 | 数量 | 含义 |
 |---|---|---|
-| worker-caused | 0 | expected tool WAS a candidate but tool_worker did not pick it (prompt-fixable) |
-| intent-caused | 0 | expected tool was NOT even a candidate (intent_router misclassified) |
+| worker-caused | 0 | 期望工具已经进入候选集，但 tool_worker 未选中，通常可通过 worker 提示词修复 |
+| intent-caused | 0 | 期望工具没有进入候选集，通常说明 intent_router 分类错误 |
 
-## Selection source
+## 选择来源
 
-| Source | Count |
+| 来源 | 数量 |
 |---|---|
 | `llm` | 97 |
 
-## Per-tool accuracy
+## 分工具准确率
 
-| Expected tool | Accuracy | Correct | Total |
+| 期望工具 | 准确率 | 正确数 | 总数 |
 |---|---|---|---|
 | `analyze_landscape` | 100.0% | 12 | 12 |
 | `build_timeline` | 100.0% | 12 | 12 |
@@ -32,9 +32,9 @@ Generated: 2026-05-21T10:05:01.642667+00:00
 | `search_news` | 100.0% | 11 | 11 |
 | `trend_analysis` | 100.0% | 12 | 12 |
 
-## Confusion matrix (expected -> predicted primary)
+## 混淆矩阵（期望工具 -> 预测主工具）
 
-| Expected \ Predicted | `analyze_landscape` | `build_timeline` | `compare_sources` | `compare_topics` | `fulltext_batch` | `get_db_stats` | `list_topics` | `query_news` | `read_news_content` | `search_news` | `trend_analysis` |
+| 期望 \ 预测 | `analyze_landscape` | `build_timeline` | `compare_sources` | `compare_topics` | `fulltext_batch` | `get_db_stats` | `list_topics` | `query_news` | `read_news_content` | `search_news` | `trend_analysis` |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | `analyze_landscape` | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `build_timeline` | 0 | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |

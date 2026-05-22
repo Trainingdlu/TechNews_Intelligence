@@ -40,6 +40,7 @@ _JUDGE_SYSTEM_PROMPT = (
     "answer_relevancy (1-5): does the ANSWER actually address the QUESTION? "
     "(5 = fully on point, 1 = off topic)\n"
     "Judge ONLY against the provided evidence; do not use outside knowledge. "
+    "Write unsupported_claims and reason in Chinese. "
     'Return JSON only: {"faithfulness":N,"answer_relevancy":N,'
     '"unsupported_claims":["..."],"reason":"..."}'
 )
@@ -199,7 +200,7 @@ def _build_report(judgments: list[dict[str, Any]]) -> str:
     ok = [j for j in judgments if j.get("status") == "success"]
     n = len(ok)
     if n == 0:
-        return "# G3 Faithfulness Report\n\nNo judged cases.\n"
+        return "# G3 生成忠实度评测报告\n\n暂无已判分样本。\n"
 
     avg_faith = sum(j["faithfulness"] for j in ok) / n
     avg_rel = sum(j["answer_relevancy"] for j in ok) / n
@@ -209,28 +210,28 @@ def _build_report(judgments: list[dict[str, Any]]) -> str:
     total_leaks = sum(int(j.get("url_leak_count", 0)) for j in ok)
 
     lines: list[str] = []
-    lines.append("# G3 Generation Faithfulness Report")
+    lines.append("# G3 生成忠实度评测报告")
     lines.append("")
-    lines.append(f"Generated: {datetime.now(timezone.utc).isoformat()}")
+    lines.append(f"生成时间：{datetime.now(timezone.utc).isoformat()}")
     lines.append("")
-    lines.append(f"Cases judged: **{n}**")
+    lines.append(f"已判分样本数：**{n}**")
     lines.append("")
-    lines.append("| Metric | Value |")
+    lines.append("| 指标 | 数值 |")
     lines.append("|---|---|")
-    lines.append(f"| Faithfulness (avg, 1-5) | **{avg_faith:.2f}** |")
-    lines.append(f"| Answer relevancy (avg, 1-5) | **{avg_rel:.2f}** |")
-    lines.append(f"| Well-grounded rate (faithfulness>=4) | {grounded*100:.1f}% |")
-    lines.append(f"| Hallucination rate (faithfulness<=2) | {halluc*100:.1f}% |")
-    lines.append(f"| URL-leak rate (>=1 url outside evidence) | {leak_any*100:.1f}% |")
-    lines.append(f"| Total leaked URLs | {total_leaks} |")
+    lines.append(f"| 忠实度均分（1-5） | **{avg_faith:.2f}** |")
+    lines.append(f"| 回答相关性均分（1-5） | **{avg_rel:.2f}** |")
+    lines.append(f"| 证据充分支撑率（忠实度>=4） | {grounded*100:.1f}% |")
+    lines.append(f"| 幻觉率（忠实度<=2） | {halluc*100:.1f}% |")
+    lines.append(f"| URL 泄漏率（回答中出现证据外 URL） | {leak_any*100:.1f}% |")
+    lines.append(f"| 泄漏 URL 总数 | {total_leaks} |")
     lines.append("")
-    lines.append("## Lowest-faithfulness cases")
+    lines.append("## 忠实度最低样本")
     lines.append("")
     worst = sorted(ok, key=lambda j: j["faithfulness"])[:8]
     for j in worst:
         lines.append(
-            f"- `{j['case_id']}` faithfulness={j['faithfulness']} relevancy={j['answer_relevancy']} "
-            f"leaks={j.get('url_leak_count',0)} — {str(j.get('reason') or '')[:140]}"
+            f"- `{j['case_id']}` 忠实度={j['faithfulness']} 相关性={j['answer_relevancy']} "
+            f"泄漏={j.get('url_leak_count',0)} — {str(j.get('reason') or '')[:140]}"
         )
     lines.append("")
     return "\n".join(lines)

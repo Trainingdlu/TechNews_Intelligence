@@ -194,35 +194,35 @@ def _build_report(cases: list[dict[str, Any]], predictions: dict[str, dict[str, 
     wrong = total - correct - missing
 
     lines: list[str] = []
-    lines.append("# G5 Tool-Selection Eval Report")
+    lines.append("# G5 工具选择评测报告")
     lines.append("")
-    lines.append(f"Generated: {datetime.now(timezone.utc).isoformat()}")
+    lines.append(f"生成时间：{datetime.now(timezone.utc).isoformat()}")
     lines.append("")
-    lines.append(f"## Headline: tool_selection_accuracy = **{acc:.1f}%**  ({correct}/{total})")
+    lines.append(f"## 核心结果：tool_selection_accuracy = **{acc:.1f}%**  ({correct}/{total})")
     lines.append("")
     if missing:
-        lines.append(f"> Warning: {missing} case(s) missing prediction (status != success).")
+        lines.append(f"> 警告：{missing} 个样本缺少预测结果（status != success）。")
         lines.append("")
 
-    lines.append("## Failure attribution")
+    lines.append("## 失败归因")
     lines.append("")
-    lines.append("| Cause | Count | Meaning |")
+    lines.append("| 原因 | 数量 | 含义 |")
     lines.append("|---|---|---|")
-    lines.append(f"| worker-caused | {worker_caused} | expected tool WAS a candidate but tool_worker did not pick it (prompt-fixable) |")
-    lines.append(f"| intent-caused | {intent_caused} | expected tool was NOT even a candidate (intent_router misclassified) |")
+    lines.append(f"| worker-caused | {worker_caused} | 期望工具已经进入候选集，但 tool_worker 未选中，通常可通过 worker 提示词修复 |")
+    lines.append(f"| intent-caused | {intent_caused} | 期望工具没有进入候选集，通常说明 intent_router 分类错误 |")
     lines.append("")
 
-    lines.append("## Selection source")
+    lines.append("## 选择来源")
     lines.append("")
-    lines.append("| Source | Count |")
+    lines.append("| 来源 | 数量 |")
     lines.append("|---|---|")
     for src, n in source_counter.most_common():
         lines.append(f"| `{src}` | {n} |")
     lines.append("")
 
-    lines.append("## Per-tool accuracy")
+    lines.append("## 分工具准确率")
     lines.append("")
-    lines.append("| Expected tool | Accuracy | Correct | Total |")
+    lines.append("| 期望工具 | 准确率 | 正确数 | 总数 |")
     lines.append("|---|---|---|---|")
     for tool in sorted(per_tool_total.keys()):
         tt = per_tool_total[tool]
@@ -231,11 +231,11 @@ def _build_report(cases: list[dict[str, Any]], predictions: dict[str, dict[str, 
         lines.append(f"| `{tool}` | {a:.1f}% | {tc} | {tt} |")
     lines.append("")
 
-    lines.append("## Confusion matrix (expected -> predicted primary)")
+    lines.append("## 混淆矩阵（期望工具 -> 预测主工具）")
     lines.append("")
     all_pred = sorted({p for row in confusion.values() for p in row.keys()})
     if all_pred:
-        header = "| Expected \\ Predicted | " + " | ".join(f"`{p}`" for p in all_pred) + " |"
+        header = "| 期望 \\ 预测 | " + " | ".join(f"`{p}`" for p in all_pred) + " |"
         sep = "|---|" + "|".join(["---"] * len(all_pred)) + "|"
         lines.append(header)
         lines.append(sep)

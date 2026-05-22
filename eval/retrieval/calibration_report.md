@@ -1,20 +1,20 @@
-# G2 Relevance Calibration — LLM vs Human
+# G2 相关性判分校准：LLM vs 人工
 
-Labeled pairs: **100**
+已标注样本对：**100**
 
-| Metric | Value |
+| 指标 | 数值 |
 |---|---|
-| Raw agreement (3-class) | 57.0% |
-| Cohen's kappa (nominal) | 0.356 |
-| Quadratic-weighted kappa (ordinal) | 0.514 |
-| Binary-relevance agreement (rel>=1) | 77.0% |
-| Binary-relevance Cohen's kappa | 0.515 |
+| 原始一致率（3 类） | 57.0% |
+| Cohen's kappa（名义 3 类） | 0.356 |
+| 二次加权 kappa（有序 0/1/2） | 0.514 |
+| 二元相关一致率（rel>=1） | 77.0% |
+| 二元相关 Cohen's kappa | 0.515 |
 
-Interpretation (Landis & Koch): <0 poor, 0-0.2 slight, 0.2-0.4 fair, 0.4-0.6 moderate, 0.6-0.8 substantial, 0.8-1.0 almost perfect.
+解释口径（Landis & Koch）：<0 差；0-0.2 轻微；0.2-0.4 一般；0.4-0.6 中等；0.6-0.8 较强；0.8-1.0 几乎完全一致。
 
-## Confusion matrix (rows = human, cols = LLM)
+## 混淆矩阵（行=人工，列=LLM）
 
-| Human \ LLM | 0 | 1 | 2 |
+| 人工 \ LLM | 0 | 1 | 2 |
 |---|---|---|---|
 | **0** | 27 | 7 | 3 |
 | **1** | 4 | 5 | 1 |

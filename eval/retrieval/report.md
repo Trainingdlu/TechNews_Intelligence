@@ -1,20 +1,20 @@
-# G2 Retrieval Eval Report
+# G2 检索质量评测报告
 
-Queries scored: **130**
+已评分查询数：**130**
 
-Relevance gold: LLM-judged 0/1/2 over the pooled top-10 of all 3 configs (shared labels).
+相关性标注：对 3 组配置 pooled top-10 结果进行 LLM 0/1/2 判分，并在各配置间共享标签。
 
-## Ablation table
+## 消融对比表
 
-| Config | Profile | Hit@5 | Precision@5 | MRR@10 | nDCG@10 |
+| 配置 | 检索策略 | Hit@5 | Precision@5 | MRR@10 | nDCG@10 |
 |---|---|---|---|---|---|
-| G0 | base + no rerank | 97.7% | 72.5% | 0.900 | 0.680 |
-| G1 | wide + no rerank | 97.7% | 72.3% | 0.899 | 0.677 |
-| G2 | wide + Jina rerank | 100.0% | 85.5% | 0.979 | 0.856 |
+| G0 | 基础召回 + 不重排 | 97.7% | 72.5% | 0.900 | 0.680 |
+| G1 | 宽召回 + 不重排 | 97.7% | 72.3% | 0.899 | 0.677 |
+| G2 | 宽召回 + Jina 重排 | 100.0% | 85.5% | 0.979 | 0.856 |
 
-## Delta vs G0 (baseline)
+## 相对 G0（基线）的变化
 
-| Config | Hit@5 | Precision@5 | MRR@10 | nDCG@10 |
+| 配置 | Hit@5 | Precision@5 | MRR@10 | nDCG@10 |
 |---|---|---|---|---|
 | G1 | +0.0pt | -0.2pt | -0.001 | -0.004 |
 | G2 | +2.3pt | +13.1pt | +0.080 | +0.175 |
