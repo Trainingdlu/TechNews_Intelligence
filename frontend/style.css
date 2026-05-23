@@ -20,9 +20,9 @@
     --border-color: #e0e0e0;
     --chip-border: #c4c7c5;
     --primary-blue: #0b57d0;
-    --user-bubble: #e1e8f0;
+    --user-bubble: #f1f5f9;
     --user-bubble-text: #111827;
-    --user-bubble-border: rgba(92, 112, 132, 0.16);
+    --user-bubble-border: rgba(92, 112, 132, 0.10);
     --agent-bubble: var(--surface-color);
     --input-bg: #f0f4f8;
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -223,9 +223,9 @@
 
 :root[data-theme="light"] {
     color-scheme: light;
-    --user-bubble: #e1e8f0;
+    --user-bubble: #f1f5f9;
     --user-bubble-text: #111827;
-    --user-bubble-border: rgba(92, 112, 132, 0.16);
+    --user-bubble-border: rgba(92, 112, 132, 0.10);
     --swiss-ink: #101514;
     --swiss-muted: #4f565b;
     --title-ink: #101514;
