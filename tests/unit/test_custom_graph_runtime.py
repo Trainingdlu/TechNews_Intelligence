@@ -86,6 +86,33 @@ def test_intent_router_progress_copy_matches_route(route: str, title: str, detai
     assert progress[-1]["detail"] == detail
 
 
+@pytest.mark.parametrize(
+    ("route", "title", "detail"),
+    [
+        ("direct_answer", "正在生成回答", "输出回答"),
+        ("needs_tools", "正在生成分析", "输出结论、依据"),
+    ],
+)
+def test_final_synthesizer_progress_copy_matches_route(route: str, title: str, detail: str) -> None:
+    events: list[dict] = []
+    with patch("agent.graph.nodes._invoke_text_model", return_value="最终回答"):
+        with agent_run_context(progress_callback=events.append):
+            update = _runner().final_synthesizer(
+                {
+                    "user_message": "hello",
+                    "intent": {"route": route},
+                    "tool_results": [],
+                    "context_pack": {},
+                    "evidence_brief": "",
+                }
+            )
+
+    assert update["final_text"] == "最终回答"
+    progress = [event for event in events if event.get("event") == "progress"]
+    assert progress[-1]["title"] == title
+    assert progress[-1]["detail"] == detail
+
+
 def test_tool_policy_blocks_unselected_tool_name() -> None:
     update = _runner().tool_policy(
         {

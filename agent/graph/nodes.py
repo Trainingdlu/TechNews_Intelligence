@@ -135,6 +135,15 @@ def _route_progress_copy(route: str) -> tuple[str, str]:
     return "正在理解问题", ""
 
 
+def _synthesis_progress_copy(route: str) -> tuple[str, str]:
+    """Return final-generation progress copy for the resolved intent route."""
+    if route == "needs_tools":
+        return "正在生成分析", "输出结论、依据"
+    if route == "needs_clarification":
+        return "正在确认分析范围", "需要补充信息"
+    return "正在生成回答", "输出回答"
+
+
 class GraphNodeRunner:
     def __init__(self, deps: GraphDependencies) -> None:
         self.deps = deps
@@ -429,7 +438,9 @@ class GraphNodeRunner:
 
     @_graph_node_span("final_synthesizer")
     def final_synthesizer(self, state: AgentGraphState) -> dict[str, Any]:
-        emit_graph_progress("synthesizing", "正在生成分析", detail="输出结论、依据")
+        intent = state.get("intent") or {}
+        title, detail = _synthesis_progress_copy(str(intent.get("route") or ""))
+        emit_graph_progress("synthesizing", title, detail=detail)
         results = list(state.get("tool_results") or [])
         user_message = active_question(state.get("context_pack"), str(state.get("user_message") or ""))
         context_pack_text = render_context_for_prompt(state.get("context_pack"))

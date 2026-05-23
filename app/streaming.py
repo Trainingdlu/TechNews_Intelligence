@@ -25,9 +25,9 @@ def status_text_from_progress(payload: dict) -> str | None:
     if stage == "analyzing":
         return "正在整理信息"
     if stage == "synthesizing":
-        return "正在生成分析"
+        return "正在生成回答"
     if stage == "finalizing":
-        return "正在生成分析"
+        return "正在生成回答"
     if stage == "clarification_required":
         return "需要补充信息"
     return None
