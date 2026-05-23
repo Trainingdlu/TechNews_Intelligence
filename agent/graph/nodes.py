@@ -124,6 +124,17 @@ def _graph_update_summary(update: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _route_progress_copy(route: str) -> tuple[str, str]:
+    """Return user-facing progress copy for the resolved intent route."""
+    if route == "direct_answer":
+        return "正在组织回答", "无需检索直接回答"
+    if route == "needs_clarification":
+        return "正在确认分析范围", "需要补充信息"
+    if route == "needs_tools":
+        return "正在规划检索", "需要调用工具获取证据"
+    return "正在理解问题", ""
+
+
 class GraphNodeRunner:
     def __init__(self, deps: GraphDependencies) -> None:
         self.deps = deps
@@ -236,12 +247,8 @@ class GraphNodeRunner:
         )
         if isinstance(model_intent, dict):
             intent = _merge_intent(intent, model_intent)
-        detail = "需要进一步分析" if intent.get("route") == "needs_tools" else ""
-        if intent.get("route") == "needs_clarification":
-            detail = "需要补充信息"
-        elif intent.get("route") == "direct_answer":
-            detail = "可以直接回答"
-        emit_graph_progress("understanding", "正在理解问题", detail=detail)
+        title, detail = _route_progress_copy(str(intent.get("route") or ""))
+        emit_graph_progress("understanding", title, detail=detail)
         return {
             "intent": intent,
         }

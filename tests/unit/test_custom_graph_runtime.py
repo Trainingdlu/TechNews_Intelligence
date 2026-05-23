@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import patch
 
+from agent.core.run_context import agent_run_context
 from agent.core.runtime_factories import build_default_tool_runtime
 from agent.core.tool_contracts import ToolEnvelope, ToolEvidence
 from agent.graph.builder import invoke_custom_graph
@@ -54,6 +55,35 @@ def test_tool_selection_trend_exposes_only_relevant_tools() -> None:
     )
 
     assert update["selected_tools"] == ["trend_analysis", "search_news", "fulltext_batch"]
+
+
+@pytest.mark.parametrize(
+    ("route", "title", "detail"),
+    [
+        ("direct_answer", "正在组织回答", "无需检索直接回答"),
+        ("needs_clarification", "正在确认分析范围", "需要补充信息"),
+        ("needs_tools", "正在规划检索", "需要调用工具获取证据"),
+    ],
+)
+def test_intent_router_progress_copy_matches_route(route: str, title: str, detail: str) -> None:
+    events: list[dict] = []
+    with patch(
+        "agent.graph.nodes._invoke_json_model",
+        return_value={
+            "route": route,
+            "intent_type": "news_analysis",
+            "reason": "test",
+            "confidence": 1.0,
+            "requires_tools": route == "needs_tools",
+        },
+    ):
+        with agent_run_context(progress_callback=events.append):
+            update = _runner().intent_router({"user_message": "测试路由文案"})
+
+    assert update["intent"]["route"] == route
+    progress = [event for event in events if event.get("event") == "progress"]
+    assert progress[-1]["title"] == title
+    assert progress[-1]["detail"] == detail
 
 
 def test_tool_policy_blocks_unselected_tool_name() -> None:
