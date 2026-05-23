@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="thread-memory")
 
+MAX_ROLLING_SUMMARY_TURNS = 4
+
 
 def load_thread_memory_summary(thread_id: str | None) -> dict[str, Any]:
     key = str(thread_id or "").strip()
@@ -225,6 +227,7 @@ def _build_summary_payload(
     evidence: list[Any],
 ) -> dict[str, Any]:
     fallback = _deterministic_summary_payload(
+        previous_summary=previous_summary,
         user_message=user_message,
         answer_text=answer_text,
         evidence=evidence,
@@ -253,21 +256,69 @@ def _build_summary_payload(
 
 def _deterministic_summary_payload(
     *,
+    previous_summary: dict[str, Any],
     user_message: str,
     answer_text: str,
     evidence: list[Any],
 ) -> dict[str, Any]:
+    recent_turns = _prior_recent_turns(previous_summary)
+    recent_turns.append(
+        {
+            "question": user_message[:500],
+            "answer_excerpt": answer_text[:700],
+            "evidence_urls": [item.url for item in evidence[:6]],
+        }
+    )
+    recent_turns = recent_turns[-MAX_ROLLING_SUMMARY_TURNS:]
     return {
         "summary_source": "deterministic",
-        "summary_text": _build_summary_text(
-            {
-                "recent_user_message": user_message[:1000],
-                "recent_answer_excerpt": answer_text[:1400],
-                "recent_evidence_urls": [item.url for item in evidence[:12]],
-            }
-        ),
+        "summary_text": _render_rolling_summary(recent_turns),
+        "recent_turns": recent_turns,
         "evidence_urls": [item.url for item in evidence[:12]],
     }
+
+
+def _prior_recent_turns(previous_summary: dict[str, Any]) -> list[dict[str, Any]]:
+    payload = previous_summary.get("summary_payload") if isinstance(previous_summary, dict) else None
+    if not isinstance(payload, dict):
+        return []
+    raw = payload.get("recent_turns")
+    if not isinstance(raw, list):
+        return []
+    turns: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        turns.append(
+            {
+                "question": str(item.get("question") or "")[:500],
+                "answer_excerpt": str(item.get("answer_excerpt") or "")[:700],
+                "evidence_urls": [
+                    str(url).strip()
+                    for url in (item.get("evidence_urls") or [])
+                    if str(url).strip()
+                ][:6],
+            }
+        )
+    return turns
+
+
+def _render_rolling_summary(recent_turns: list[dict[str, Any]]) -> str:
+    blocks: list[str] = []
+    for turn in recent_turns:
+        question = str(turn.get("question") or "").strip()
+        answer = str(turn.get("answer_excerpt") or "").strip()
+        urls = [str(url).strip() for url in turn.get("evidence_urls", []) if str(url).strip()]
+        lines: list[str] = []
+        if question:
+            lines.append(f"User: {question}")
+        if answer:
+            lines.append(f"Assistant: {answer}")
+        if urls:
+            lines.append("Evidence: " + " ".join(urls[:6]))
+        if lines:
+            blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)[:3600]
 
 
 def _generate_llm_summary_payload(

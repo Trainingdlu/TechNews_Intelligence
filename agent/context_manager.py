@@ -12,6 +12,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -268,13 +269,27 @@ def build_context_pack(
     reason = _curator_text(curator_result, "reason")
     confidence = _curator_confidence(curator_result)
 
+    low_confidence = (
+        curator_used
+        and confidence is not None
+        and confidence < context_curator_min_confidence()
+    )
+    if low_confidence:
+        selected_turn_ids = []
+        selected_evidence_urls = []
+        depends_on_history = False
+        standalone_question = str(user_message or "").strip()
+        context_summary = ""
+        strategy = "recent_context_low_confidence"
+
     if not selected_turn_ids and not selected_evidence_urls:
         selected_turn_ids = [turn.turn_id for turn in turns[-MAX_RECENT_TURNS_WITHOUT_CURATOR:]]
         for turn in turns[-MAX_RECENT_TURNS_WITHOUT_CURATOR:]:
             for evidence in turn.evidence:
                 if evidence.url not in selected_evidence_urls:
                     selected_evidence_urls.append(evidence.url)
-        strategy = "recent_context_fallback" if curator_used else strategy
+        if not low_confidence:
+            strategy = "recent_context_fallback" if curator_used else strategy
 
     selected_turns = [
         _selected_turn_payload(turn, evidence_urls=selected_evidence_urls)
@@ -308,6 +323,7 @@ def build_context_pack(
             "curator_error": curator_error or "",
             "curator_reason": reason,
             "curator_confidence": confidence,
+            "curator_low_confidence": low_confidence,
         },
     }
 
@@ -334,10 +350,12 @@ def render_context_for_prompt(context_pack: dict[str, Any] | None) -> str:
                 title = str(item.get("title") or "").strip() or "previous evidence"
                 url = str(item.get("url") or "").strip()
                 excerpt = str(item.get("excerpt") or "").strip()
+                age = _evidence_age_label(item.get("created_at"))
+                header = f"- {title} | {url}" + (f" ({age})" if age else "")
                 if excerpt:
-                    lines.append(f"- {title} | {url}\n  {excerpt}")
+                    lines.append(f"{header}\n  {excerpt}")
                 else:
-                    lines.append(f"- {title} | {url}")
+                    lines.append(header)
             parts.append("Thread evidence index:\n" + "\n".join(lines))
     turns = context_pack.get("selected_turns")
     if isinstance(turns, list) and turns:
@@ -375,8 +393,10 @@ def render_context_for_prompt(context_pack: dict[str, Any] | None) -> str:
             title = str(item.get("title") or "").strip() or "previous evidence"
             url = str(item.get("url") or "").strip()
             excerpt = str(item.get("excerpt") or "").strip()
+            age = _evidence_age_label(item.get("created_at"))
             if url:
-                lines.append(f"- {title} | {url}" + (f"\n  {excerpt}" if excerpt else ""))
+                header = f"- {title} | {url}" + (f" ({age})" if age else "")
+                lines.append(header + (f"\n  {excerpt}" if excerpt else ""))
         if lines:
             parts.append("Selected memory evidence:\n" + "\n".join(lines))
     evidence_urls = [
@@ -528,6 +548,7 @@ def _selected_memory_evidence(
                 "url": url,
                 "title": _clip(str(item.get("title") or ""), 220),
                 "excerpt": _clip(str(item.get("excerpt") or ""), 700),
+                "created_at": str(item.get("created_at") or ""),
             }
         )
     return items[:8]
@@ -607,6 +628,7 @@ def _compact_memory_summary(memory_summary: dict[str, Any] | None) -> dict[str, 
                 "url": str(item.get("url") or "").strip(),
                 "title": _clip(str(item.get("title") or ""), 220),
                 "excerpt": _clip(str(item.get("excerpt") or ""), 500),
+                "created_at": str(item.get("created_at") or ""),
             }
             for item in evidence_index[:12]
         ]
@@ -619,6 +641,7 @@ def _memory_evidence_items(memory_summary: dict[str, Any] | None) -> list[dict[s
     raw = memory_summary.get("evidence_index")
     if not isinstance(raw, list):
         return []
+    max_age = _memory_evidence_max_age_days()
     items: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in raw:
@@ -628,6 +651,10 @@ def _memory_evidence_items(memory_summary: dict[str, Any] | None) -> list[dict[s
         normalized = normalize_url_for_match(url)
         if not normalized or normalized in seen:
             continue
+        if max_age > 0:
+            age = _evidence_age_days(item.get("created_at"))
+            if age is not None and age > max_age:
+                continue
         seen.add(normalized)
         items.append(item)
     return items
@@ -651,6 +678,50 @@ def _env_flag(name: str, *, default: bool) -> bool:
     if raw is None:
         return default
     return str(raw).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def context_curator_min_confidence() -> float:
+    raw = os.getenv("AGENT_CONTEXT_CURATOR_MIN_CONFIDENCE")
+    if raw is None:
+        return 0.4
+    try:
+        return max(0.0, min(float(str(raw).strip()), 1.0))
+    except Exception:
+        return 0.4
+
+
+def _memory_evidence_max_age_days() -> float:
+    raw = os.getenv("AGENT_MEMORY_EVIDENCE_MAX_AGE_DAYS")
+    if raw is None:
+        return 0.0
+    try:
+        return max(0.0, float(str(raw).strip()))
+    except Exception:
+        return 0.0
+
+
+def _evidence_age_days(created_at: Any) -> float | None:
+    raw = str(created_at or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    delta = datetime.now(timezone.utc) - parsed
+    return max(0.0, delta.total_seconds() / 86400.0)
+
+
+def _evidence_age_label(created_at: Any) -> str:
+    days = _evidence_age_days(created_at)
+    if days is None:
+        return ""
+    whole = int(days)
+    if whole <= 0:
+        return "今天检索"
+    return f"{whole}天前检索"
 
 
 def _is_int_like(value: Any) -> bool:
