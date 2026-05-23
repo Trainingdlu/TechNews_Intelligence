@@ -39,6 +39,9 @@ Scheduling:
   This wrapper is the preferred target for n8n/cron/Task Scheduler. For a
   conservative daily run, use:
     bash deployment/scripts/db/build_entity_alias_candidates.sh --days 14 --limit 1000 --use-deepseek
+
+Environment:
+  PYTHON_BIN              Optional Python executable override.
 EOF
 }
 
@@ -107,6 +110,7 @@ fi
 
 db_init_runtime "${REPO_ROOT}"
 db_ensure_postgres_running
+db_detect_python_cmd
 
 ARGS=(
   "${REPO_ROOT}/deployment/scripts/build_entity_alias_candidates.py"
@@ -122,7 +126,7 @@ if [[ "${DRY_RUN}" == true ]]; then
   ARGS+=(--dry-run)
 fi
 
-python "${ARGS[@]}"
+"${PYTHON_CMD[@]}" "${ARGS[@]}"
 
 if [[ "${DRY_RUN}" == false && "${PROMOTE_APPROVED}" == true ]]; then
   PROMOTE_ARGS=(
@@ -133,5 +137,5 @@ if [[ "${DRY_RUN}" == false && "${PROMOTE_APPROVED}" == true ]]; then
   if [[ "${INCLUDE_AUTO_APPROVED_PROMOTION}" == true ]]; then
     PROMOTE_ARGS+=(--include-auto-approved)
   fi
-  python "${PROMOTE_ARGS[@]}"
+  "${PYTHON_CMD[@]}" "${PROMOTE_ARGS[@]}"
 fi

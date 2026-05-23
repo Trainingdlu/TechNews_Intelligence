@@ -9,6 +9,7 @@ POSTGRES_DB="${POSTGRES_DB:-}"
 DEPLOY_DIR="${DEPLOY_DIR:-}"
 REPO_ROOT="${REPO_ROOT:-}"
 COMPOSE_CMD=()
+PYTHON_CMD=()
 
 db_die() {
   echo "$*" >&2
@@ -53,6 +54,38 @@ db_detect_compose_cmd() {
   else
     db_die "Neither 'docker compose' nor 'docker-compose' is available."
   fi
+}
+
+db_detect_python_cmd() {
+  if [[ -n "${PYTHON_BIN:-}" ]]; then
+    if command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
+      PYTHON_CMD=("${PYTHON_BIN}")
+      return
+    fi
+    db_die "PYTHON_BIN is set but not executable or not found: ${PYTHON_BIN}"
+  fi
+
+  if [[ -n "${REPO_ROOT:-}" && -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+    PYTHON_CMD=("${REPO_ROOT}/.venv/bin/python")
+    return
+  fi
+
+  if [[ -n "${REPO_ROOT:-}" && -x "${REPO_ROOT}/.venv/Scripts/python.exe" ]]; then
+    PYTHON_CMD=("${REPO_ROOT}/.venv/Scripts/python.exe")
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD=(python3)
+    return
+  fi
+
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_CMD=(python)
+    return
+  fi
+
+  db_die "Python runtime not found. Install python3 or set PYTHON_BIN=/path/to/python."
 }
 
 db_require_file() {
