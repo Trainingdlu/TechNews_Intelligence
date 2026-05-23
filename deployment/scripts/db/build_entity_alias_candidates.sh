@@ -41,7 +41,9 @@ Scheduling:
     bash deployment/scripts/db/build_entity_alias_candidates.sh --days 14 --limit 1000 --use-deepseek
 
 Environment:
-  PYTHON_BIN              Optional Python executable override.
+  PYTHON_RUNTIME_MODE     container (default) or host.
+  PYTHON_SERVICE          Docker Compose service for container mode. Default: bot.
+  PYTHON_BIN              Optional Python executable override for host mode.
 EOF
 }
 
@@ -110,13 +112,12 @@ fi
 
 db_init_runtime "${REPO_ROOT}"
 db_ensure_postgres_running
-db_detect_python_cmd
 
 ARGS=(
-  "${REPO_ROOT}/deployment/scripts/build_entity_alias_candidates.py"
+  "deployment/scripts/build_entity_alias_candidates.py"
   --days "${DAYS}"
   --limit "${LIMIT}"
-  --env-file "${REPO_ROOT}/deployment/.env"
+  --env-file "deployment/.env"
 )
 
 if [[ "${USE_DEEPSEEK}" == true ]]; then
@@ -126,16 +127,16 @@ if [[ "${DRY_RUN}" == true ]]; then
   ARGS+=(--dry-run)
 fi
 
-"${PYTHON_CMD[@]}" "${ARGS[@]}"
+db_python_run "${ARGS[@]}"
 
 if [[ "${DRY_RUN}" == false && "${PROMOTE_APPROVED}" == true ]]; then
   PROMOTE_ARGS=(
-    "${REPO_ROOT}/deployment/scripts/promote_entity_alias_candidates.py"
+    "deployment/scripts/promote_entity_alias_candidates.py"
     --limit "${LIMIT}"
-    --env-file "${REPO_ROOT}/deployment/.env"
+    --env-file "deployment/.env"
   )
   if [[ "${INCLUDE_AUTO_APPROVED_PROMOTION}" == true ]]; then
     PROMOTE_ARGS+=(--include-auto-approved)
   fi
-  "${PYTHON_CMD[@]}" "${PROMOTE_ARGS[@]}"
+  db_python_run "${PROMOTE_ARGS[@]}"
 fi

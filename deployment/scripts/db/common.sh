@@ -10,6 +10,8 @@ DEPLOY_DIR="${DEPLOY_DIR:-}"
 REPO_ROOT="${REPO_ROOT:-}"
 COMPOSE_CMD=()
 PYTHON_CMD=()
+PYTHON_RUNTIME_MODE="${PYTHON_RUNTIME_MODE:-container}"
+PYTHON_SERVICE="${PYTHON_SERVICE:-bot}"
 
 db_die() {
   echo "$*" >&2
@@ -86,6 +88,36 @@ db_detect_python_cmd() {
   fi
 
   db_die "Python runtime not found. Install python3 or set PYTHON_BIN=/path/to/python."
+}
+
+db_assert_python_modules() {
+  db_detect_python_cmd
+  local modules=("$@")
+  local module
+  for module in "${modules[@]}"; do
+    if ! "${PYTHON_CMD[@]}" -c "import ${module}" >/dev/null 2>&1; then
+      db_die "Missing Python module '${module}' for ${PYTHON_CMD[*]}. Run: ${PYTHON_CMD[*]} -m pip install -r requirements.txt"
+    fi
+  done
+}
+
+db_python_run() {
+  db_assert_runtime
+
+  if [[ "${PYTHON_RUNTIME_MODE}" == "host" ]]; then
+    db_assert_python_modules psycopg2 requests
+    "${PYTHON_CMD[@]}" "$@"
+    return
+  fi
+
+  (
+    cd "${DEPLOY_DIR}"
+    "${COMPOSE_CMD[@]}" run --rm -T --no-deps \
+      -v "${REPO_ROOT}:/app" \
+      -w /app \
+      "${PYTHON_SERVICE}" \
+      python "$@"
+  )
 }
 
 db_require_file() {
