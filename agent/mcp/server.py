@@ -3,22 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
 from ..core.runtime_factories import build_default_tool_runtime
 from ..core.tool_catalog import ToolDefinition, iter_tool_definitions
-from ..core.tool_contracts import ToolEnvelope, build_tool_error_envelope
-
-MCPToolHandler = Callable[[BaseModel], ToolEnvelope]
+from ..core.tool_contracts import ToolEnvelope, ToolHandler, build_tool_error_envelope
 
 
 @dataclass(frozen=True)
 class MCPToolSpec:
     name: str
     input_model: type[BaseModel]
-    handler: MCPToolHandler
+    handler: ToolHandler
     description: str = ""
 
 
@@ -35,7 +33,7 @@ class InProcessMCPServer:
         self,
         name: str,
         input_model: type[BaseModel],
-        handler: MCPToolHandler,
+        handler: ToolHandler,
         description: str = "",
     ) -> None:
         tool_name = str(name).strip()
@@ -112,7 +110,7 @@ class InProcessMCPServer:
         return envelope
 
 
-def _build_delegated_handler(definition: ToolDefinition) -> MCPToolHandler:
+def _build_delegated_handler(definition: ToolDefinition) -> ToolHandler:
     def _handler(payload: BaseModel) -> ToolEnvelope:
         envelope = build_default_tool_runtime().execute(
             definition.name,

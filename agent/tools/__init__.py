@@ -1,7 +1,7 @@
 """tool-layer package."""
 
-from .semantic_pool import fetch_semantic_url_pool
+from .hybrid_pool import fetch_hybrid_url_pool
 
 __all__ = [
-    "fetch_semantic_url_pool",
+    "fetch_hybrid_url_pool",
 ]

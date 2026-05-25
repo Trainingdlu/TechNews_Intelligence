@@ -1,4 +1,4 @@
-﻿"""Trend-analysis tool implementation and structured adapter."""
+"""Trend-analysis tool implementation and structured adapter."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .helpers import _clamp_int, _evidence_from_records, _json_text
 from .query_news import query_news
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .schemas import TrendAnalysisToolInput
-from .semantic_pool import fetch_semantic_url_pool
+from .hybrid_pool import fetch_hybrid_url_pool
 
 
 def trend_analysis(topic: str, window: int = 7, response_format: str = "text") -> str:
@@ -37,7 +37,7 @@ def trend_analysis(topic: str, window: int = 7, response_format: str = "text") -
     window = _clamp_int(window, 3, 60)
 
     # Semantic vector pool replaces the old ILIKE + hardcoded dictionary approach
-    url_pool = fetch_semantic_url_pool(topic, days=window * 2, limit=300)
+    url_pool = fetch_hybrid_url_pool(topic, days=window * 2, limit=300)
     if not url_pool:
         empty_msg = f"No semantically matched articles for '{topic}' in the last {window * 2} days."
         if as_json:

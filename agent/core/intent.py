@@ -5,47 +5,214 @@ from __future__ import annotations
 import re
 from typing import Iterable
 
+_SMALLTALK_INTENT_TERMS = (
+    "hi",
+    "hello",
+    "hey",
+    "yo",
+    r"thanks?",
+    "thank you",
+    "你好",
+    "您好",
+    "嗨",
+    "哈喽",
+    "在吗",
+    "早上好",
+    "下午好",
+    "晚上好",
+    "谢谢",
+    "辛苦了",
+)
 _SMALLTALK_INTENT_RE = re.compile(
-    r"(?:^|\s)(?:hi|hello|hey|yo|thanks?|thank you|你好|您好|嗨|哈喽|在吗|早上好|下午好|晚上好|谢谢|辛苦了)(?:\s|$|[，。！？?!,])",
+    r"(?:^|\s)(?:" + "|".join(_SMALLTALK_INTENT_TERMS) + r")(?:\s|$|[，。！？?!,])",
     re.IGNORECASE,
 )
 _CAPABILITY_INTENT_RE = re.compile(
     r"(?:你|您|机器人|助手|bot|assistant).*(?:能|可以|会|支持|can|able to).*(?:做什么|干什么|哪些功能|支持什么|怎么用|能做啥|what can you|how to use|capabilities|对比什么|分析什么)",
     re.IGNORECASE,
 )
+_CAPABILITY_HINT_TERMS = (
+    "what can you",
+    "how can you help",
+    "your capabilities",
+    "你能做什么",
+    "你可以做什么",
+    "支持什么",
+    "怎么用",
+    "对比什么",
+    "分析什么",
+)
 _CAPABILITY_HINT_RE = re.compile(
-    r"(?:what can you|how can you help|your capabilities|你能做什么|你可以做什么|支持什么|怎么用|对比什么|分析什么)",
+    r"(?:" + "|".join(_CAPABILITY_HINT_TERMS) + r")",
     re.IGNORECASE,
+)
+_ANALYSIS_INTENT_TERMS = (
+    "最近",
+    "过去",
+    r"近\d+天",
+    "近一周",
+    "近一个月",
+    "今天",
+    "今日",
+    r"last\s*\d+\s*days?",
+    "recent",
+    "past",
+    "today",
+    r"analy[sz]e",
+    "analysis",
+    "compare",
+    "vs",
+    "timeline",
+    "trend",
+    "outlook",
+    "landscape",
+    "strategy",
+    "pricing",
+    "enterprise",
+    "commercial",
+    "分析",
+    "对比",
+    "比较",
+    "趋势",
+    "时间线",
+    "动态",
+    "格局",
+    "局势",
+    "复盘",
+    "汇总",
+    "梳理",
+    "盘点",
+    "战略",
+    "策略",
+    "商业化",
+    "企业市场",
+    "定价",
+    "生态",
+    "布局",
+    "差异",
+    "区别",
 )
 _ANALYSIS_INTENT_RE = re.compile(
-    r"(?:最近|过去|近\d+天|近一周|近一个月|今天|今日|last\s*\d+\s*days?|recent|past|today|"
-    r"analy[sz]e|analysis|compare|vs|timeline|trend|outlook|landscape|strategy|pricing|enterprise|commercial|"
-    r"分析|对比|比较|趋势|时间线|动态|格局|局势|复盘|汇总|梳理|盘点|战略|策略|商业化|企业市场|定价|生态|布局|差异|区别)",
+    r"(?:" + "|".join(_ANALYSIS_INTENT_TERMS) + r")",
     re.IGNORECASE,
+)
+_ROUNDUP_SUBJECT_TERMS = (
+    "新闻",
+    "快讯",
+    "要闻",
+    "动态",
+    "news",
+    r"updates?",
+    "brief",
+    "roundup",
 )
 _ROUNDUP_SUBJECT_RE = re.compile(
-    r"新闻|快讯|要闻|动态|news|updates?|brief|roundup",
+    "|".join(_ROUNDUP_SUBJECT_TERMS),
     re.IGNORECASE,
+)
+_ROUNDUP_ACTION_TERMS = (
+    "发生了什么",
+    "有什么",
+    "列出来",
+    "列出",
+    "列一下",
+    "盘点",
+    "汇总",
+    "梳理",
+    "直接给我",
+    r"what\s+happened",
+    r"just\s+list",
+    r"list\s+(?:them|it|out)?",
+    r"show\s+me",
 )
 _ROUNDUP_ACTION_RE = re.compile(
-    r"发生了什么|有什么|列出来|列出|列一下|盘点|汇总|梳理|直接给我|"
-    r"what\s+happened|just\s+list|list\s+(?:them|it|out)?|show\s+me",
+    "|".join(_ROUNDUP_ACTION_TERMS),
     re.IGNORECASE,
+)
+_ANALYSIS_HEAVY_TERMS = (
+    "深度",
+    "解读",
+    "洞察",
+    "研判",
+    "前景",
+    "判断",
+    "结论",
+    "预测",
+    "推演",
+    "影响",
+    "格局",
+    "复盘",
+    "归因",
+    "战略",
+    "策略",
+    "商业化",
+    "企业市场",
+    "定价",
+    "布局",
+    "差异",
+    "analysis",
+    r"deep\s+dive",
+    "insight",
+    "assessment",
+    "outlook",
+    "implication",
+    "forecast",
+    "strategy",
+    "pricing",
+    "enterprise",
+    "commercial",
 )
 _ANALYSIS_HEAVY_RE = re.compile(
-    r"深度|解读|洞察|研判|前景|判断|结论|预测|推演|影响|格局|复盘|归因|战略|策略|商业化|企业市场|定价|布局|差异|"
-    r"analysis|deep\s+dive|insight|assessment|outlook|implication|forecast|strategy|pricing|enterprise|commercial",
+    "|".join(_ANALYSIS_HEAVY_TERMS),
     re.IGNORECASE,
+)
+_CONFLICT_RESOLUTION_TERMS = (
+    "前景",
+    "怎么看",
+    "如何看",
+    "判断",
+    "结论",
+    "更好",
+    "更差",
+    "优劣",
+    "孰优",
+    "对比",
+    "比较",
+    "差异",
+    "区别",
+    "不同",
+    "是否冲突",
+    "是否分歧",
+    "冲突点",
+    "分歧点",
+    "outlook",
+    "assessment",
+    "better",
+    "worse",
+    "compare",
+    "comparison",
+    "vs",
+    "versus",
+    "conflict",
+    "disagree",
+    "difference",
 )
 _CONFLICT_RESOLUTION_RE = re.compile(
-    r"前景|怎么看|如何看|判断|结论|更好|更差|优劣|孰优|对比|比较|差异|区别|不同|"
-    r"是否冲突|是否分歧|冲突点|分歧点|"
-    r"outlook|assessment|better|worse|compare|comparison|vs|versus|conflict|disagree|difference",
+    "|".join(_CONFLICT_RESOLUTION_TERMS),
     re.IGNORECASE,
 )
+_EXPLICIT_CONFLICT_REQUEST_TERMS = (
+    "分歧",
+    "冲突",
+    "矛盾",
+    "不一致",
+    "conflict",
+    "contradict",
+    "disagree",
+    "diverg",
+)
 _EXPLICIT_CONFLICT_REQUEST_RE = re.compile(
-    r"分歧|冲突|矛盾|不一致|"
-    r"conflict|contradict|disagree|diverg",
+    "|".join(_EXPLICIT_CONFLICT_REQUEST_TERMS),
     re.IGNORECASE,
 )
 _FOLLOWUP_EVIDENCE_LINE_RE = re.compile(r"^\s*-\s*\[\d{1,3}\]\s+.+https?://", re.IGNORECASE)

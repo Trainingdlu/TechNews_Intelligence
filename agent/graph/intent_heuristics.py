@@ -30,22 +30,118 @@ _KNOWN_ENTITY_ALIASES: tuple[tuple[str, str], ...] = (
     (r"(?<![a-z0-9])grok(?![a-z0-9])", "Grok"),
     (r"(?<![a-z0-9])deepseek(?![a-z0-9])", "DeepSeek"),
 )
+_COMPARE_DIMENSION_TERMS = (
+    "差异",
+    "区别",
+    "不同",
+    "战略",
+    "策略",
+    "商业化",
+    "企业市场",
+    "定价",
+    "开源",
+    "生态",
+    "布局",
+    "路线",
+    "侧重点",
+    "strategy",
+    "pricing",
+    "enterprise",
+    r"commerciali[sz]ation",
+    "ecosystem",
+    "difference",
+    "different",
+)
 _COMPARE_DIMENSION_RE = re.compile(
-    r"差异|区别|不同|战略|策略|商业化|企业市场|定价|开源|生态|布局|路线|侧重点|"
-    r"strategy|pricing|enterprise|commerciali[sz]ation|ecosystem|difference|different",
+    "|".join(_COMPARE_DIMENSION_TERMS),
     re.IGNORECASE,
+)
+_COMPARE_SIDE_TRAILING_TERMS = (
+    "最近",
+    "近期",
+    "当前",
+    "目前",
+    "过去",
+    "近来",
+    "在",
+    "上",
+    "方面",
+    "的",
+    "战略",
+    "策略",
+    "商业化",
+    "企业市场",
+    "定价",
+    "开源",
+    "生态",
+    "布局",
+    "差异",
+    "区别",
+    "不同",
+    "表现",
+    "动态",
+    "事件",
+    "新闻",
+    "产品",
+    "路线",
+    "方向",
+    "侧重点",
+    "recent",
+    "latest",
+    "current",
+    "strategy",
+    "pricing",
+    "enterprise",
+    r"commerciali[sz]ation",
+    "ecosystem",
+    "difference",
+    "different",
 )
 _COMPARE_SIDE_TRAILING_RE = re.compile(
-    r"(?:最近|近期|当前|目前|过去|近来|在|上|方面|的|战略|策略|商业化|企业市场|定价|开源|生态|布局|"
-    r"差异|区别|不同|表现|动态|事件|新闻|产品|路线|方向|侧重点|"
-    r"recent|latest|current|strategy|pricing|enterprise|commerciali[sz]ation|ecosystem|difference|different)",
+    r"(?:" + "|".join(_COMPARE_SIDE_TRAILING_TERMS) + r")",
     re.IGNORECASE,
+)
+_COMPARE_SIDE_PREFIX_TERMS = (
+    "帮我",
+    "请",
+    "看看",
+    "看一下",
+    "对比一下",
+    "比较一下",
+    "对比",
+    "比较",
+    "分析一下",
+    "分析",
+    "一下",
+    "please",
+    "compare",
+    "analyze",
 )
 _COMPARE_SIDE_PREFIX_RE = re.compile(
-    r"^(?:帮我|请|看看|看一下|对比一下|比较一下|对比|比较|分析一下|分析|一下|"
-    r"please|compare|analyze)\s*",
+    r"^(?:" + "|".join(_COMPARE_SIDE_PREFIX_TERMS) + r")\s*",
     re.IGNORECASE,
 )
+_SOURCE_COMPARE_TERMS = ("compare", "comparison", "vs", "versus")
+_SOURCE_COMPARE_RE = re.compile("|".join(_SOURCE_COMPARE_TERMS))
+_TIMELINE_TERMS = ("timeline", "时间线", "脉络", "发生了什么")
+_TIMELINE_RE = re.compile("|".join(_TIMELINE_TERMS))
+_LANDSCAPE_TERMS = ("landscape", "格局", "全景", "竞争", "生态", "排行")
+_LANDSCAPE_RE = re.compile("|".join(_LANDSCAPE_TERMS))
+_TREND_TERMS = ("trend", "趋势", "动向", "变化", "增长", "下降")
+_TREND_RE = re.compile("|".join(_TREND_TERMS))
+_DB_STATUS_RE = re.compile(
+    r"数据库.{0,8}(多少|数量|有多少|规模|新鲜|更新)|多少篇(新闻|文章|数据)|"
+    r"数据(新鲜度|更新到|多新|最新到)|how (many|fresh).{0,24}(article|news|data|database)|"
+    r"database (stats|status|freshness|size)|db stats|how up to date"
+)
+_TOPIC_OVERVIEW_RE = re.compile(
+    r"哪些(主题|话题|分类)|主题分布|话题分类|有哪些话题|主题有哪些|讨论哪些|"
+    r"what topics|topic (distribution|breakdown|overview)|trending topics|list .*topics"
+)
+_ANALYSIS_DEPTH_TERMS = ("深度", "深入", "研判", "判断", "前景", "risk", "outlook")
+_ANALYSIS_DEPTH_RE = re.compile("|".join(_ANALYSIS_DEPTH_TERMS))
+_COMPARE_TRIGGER_TERMS = (r"\bvs\b", "versus", "compare", "comparison")
+_COMPARE_TRIGGER_RE = re.compile("|".join(_COMPARE_TRIGGER_TERMS))
 _GENERIC_COMPARE_SIDE_TERMS = {
     "ai",
     "人工智能",
@@ -133,32 +229,23 @@ def _heuristic_intent(user_message: str) -> dict[str, Any]:
     if _compare_topics_hit(text):
         intent_type = "topic_comparison"
     elif "hackernews" in lowered or "techcrunch" in lowered or "source" in lowered or "来源" in text:
-        if re.search(r"compare|comparison|vs|versus", lowered) or "对比" in text or "比较" in text:
+        if _SOURCE_COMPARE_RE.search(lowered) or "对比" in text or "比较" in text:
             intent_type = "source_comparison"
-    elif re.search(r"timeline|时间线|脉络|发生了什么", lowered):
+    elif _TIMELINE_RE.search(lowered):
         intent_type = "timeline"
-    elif re.search(r"landscape|格局|全景|竞争|生态|排行", lowered):
+    elif _LANDSCAPE_RE.search(lowered):
         intent_type = "landscape"
-    elif re.search(r"trend|趋势|动向|变化|增长|下降", lowered):
+    elif _TREND_RE.search(lowered):
         intent_type = "trend"
     elif rule_intent == "roundup_listing":
         intent_type = "roundup_listing"
 
     # High-precision meta-intents override everything above, including a smalltalk
     # route, because they map to dedicated tools (get_db_stats / list_topics).
-    if not urls and re.search(
-        r"数据库.{0,8}(多少|数量|有多少|规模|新鲜|更新)|多少篇(新闻|文章|数据)|"
-        r"数据(新鲜度|更新到|多新|最新到)|how (many|fresh).{0,24}(article|news|data|database)|"
-        r"database (stats|status|freshness|size)|db stats|how up to date",
-        lowered,
-    ):
+    if not urls and _DB_STATUS_RE.search(lowered):
         route = "needs_tools"
         intent_type = "db_status"
-    elif not urls and re.search(
-        r"哪些(主题|话题|分类)|主题分布|话题分类|有哪些话题|主题有哪些|讨论哪些|"
-        r"what topics|topic (distribution|breakdown|overview)|trending topics|list .*topics",
-        lowered,
-    ):
+    elif not urls and _TOPIC_OVERVIEW_RE.search(lowered):
         route = "needs_tools"
         intent_type = "topic_overview"
 
@@ -168,7 +255,7 @@ def _heuristic_intent(user_message: str) -> dict[str, Any]:
         "reason": "heuristic_fallback",
         "confidence": 0.55,
         "requires_tools": route == "needs_tools",
-        "analysis_depth": "deep" if re.search(r"深度|深入|研判|判断|前景|risk|outlook", lowered) else "standard",
+        "analysis_depth": "deep" if _ANALYSIS_DEPTH_RE.search(lowered) else "standard",
         "entities": _extract_entity_hints(text),
         "time_window": {"days": _extract_days(text)},
         "risk_flags": [],
@@ -188,7 +275,7 @@ def _looks_like_article_reference_without_url(text: str) -> bool:
 def _compare_topics_hit(text: str) -> bool:
     raw = str(text or "")
     lowered = raw.lower()
-    if re.search(r"\bvs\b|versus|compare|comparison", lowered) or "对比" in raw or "比较" in raw:
+    if _COMPARE_TRIGGER_RE.search(lowered) or "对比" in raw or "比较" in raw:
         return True
     if _COMPARE_DIMENSION_RE.search(raw) and len(_extract_entity_hints(raw)) >= 2:
         return True

@@ -1,7 +1,7 @@
-"""Unified semantic-recall → time-decay → rerank pipeline for macro-analysis tools.
+"""Unified hybrid-recall → rerank pipeline for macro-analysis tools.
 
 Provides a single entry-point ``retrieve_and_rerank()`` that combines:
-1. ``fetch_semantic_candidates()`` — vector recall with dynamic time-decay.
+1. ``fetch_hybrid_candidates()`` — hybrid RRF recall (FTS + vector + exact).
 2. Pre-rerank truncation (by ``final_score``).
 3. ``rerank_candidates()`` — Jina reranker for precision Top-K.
 
@@ -16,7 +16,7 @@ from typing import Any
 
 from .recall_profile import resolve_recall_profile
 from .rerank import RERANK_MODE_LLM, rerank_candidates
-from .semantic_pool import fetch_semantic_candidates
+from .hybrid_pool import fetch_hybrid_candidates
 
 
 def retrieve_and_rerank(
@@ -70,8 +70,8 @@ def retrieve_and_rerank(
     )
     effective_pre_rerank_limit = max(1, min(effective_pre_rerank_limit, effective_pool_limit))
 
-    # Stage 1: Semantic recall with time-decay scoring
-    candidates = fetch_semantic_candidates(
+    # Stage 1: Hybrid RRF recall
+    candidates = fetch_hybrid_candidates(
         query, days=days, limit=effective_pool_limit, sim_floor=sim_floor,
     )
     all_urls = [c["url"] for c in candidates]

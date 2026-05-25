@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
@@ -42,6 +42,9 @@ class ToolEnvelope(BaseModel):
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), ensure_ascii=False)
+
+
+ToolHandler = Callable[[BaseModel], ToolEnvelope | dict[str, Any]]
 
 
 def build_tool_error_envelope(

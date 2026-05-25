@@ -18,7 +18,7 @@ def test_compare_topics_intersection_arbitration_uses_higher_match_score(monkeyp
             ]
         return []
 
-    monkeypatch.setattr(compare_mod, "fetch_semantic_url_pool", _fake_fetch)
+    monkeypatch.setattr(compare_mod, "fetch_hybrid_url_pool", _fake_fetch)
     urls_a, urls_b = compare_mod._resolve_topic_pools("topic-a", "topic-b", days=14)
 
     assert "https://example.com/shared" not in urls_a
@@ -41,7 +41,7 @@ def test_analyze_landscape_entity_arbitration_uses_higher_match_score(monkeypatc
             ]
         return []
 
-    monkeypatch.setattr(landscape_mod, "fetch_semantic_url_pool", _fake_fetch)
+    monkeypatch.setattr(landscape_mod, "fetch_hybrid_url_pool", _fake_fetch)
     entity_url_map, url_to_entity = landscape_mod._fetch_entity_url_pools(
         ["EntityA", "EntityB"],
         topic="AI",

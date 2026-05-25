@@ -1,4 +1,4 @@
-﻿"""Compare-topics tool implementation and structured adapter."""
+"""Compare-topics tool implementation and structured adapter."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build
 from .helpers import _clamp_int, _evidence_from_records
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .schemas import CompareTopicsToolInput
-from .semantic_pool import fetch_semantic_url_pool
+from .hybrid_pool import fetch_hybrid_url_pool
 
 
 def _resolve_topic_pool_scores(
@@ -19,8 +19,8 @@ def _resolve_topic_pool_scores(
     When a URL appears in both pools, it is assigned to the topic
     with the higher match_score (intersection arbitration).
     """
-    pool_a = fetch_semantic_url_pool(topic_a, days=days, limit=200)
-    pool_b = fetch_semantic_url_pool(topic_b, days=days, limit=200)
+    pool_a = fetch_hybrid_url_pool(topic_a, days=days, limit=200)
+    pool_b = fetch_hybrid_url_pool(topic_b, days=days, limit=200)
 
     sim_a = {url: sim for url, sim in pool_a}
     sim_b = {url: sim for url, sim in pool_b}

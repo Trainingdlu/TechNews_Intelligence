@@ -18,6 +18,7 @@ from agent.context_manager import (
     build_context_curator_messages,
     build_context_pack,
     build_history_manifest,
+    context_tool_profile_enabled,
     normalize_context_curator_result,
     render_context_for_prompt,
     should_use_context_curator,
@@ -275,7 +276,8 @@ class GraphNodeRunner:
     def tool_worker(self, state: AgentGraphState) -> dict[str, Any]:
         selected_tools = list(state.get("selected_tools") or [])
         user_message = active_question(state.get("context_pack"), str(state.get("user_message") or ""))
-        context_snippet = render_context_for_prompt(state.get("context_pack"))
+        tool_profile = "tool" if context_tool_profile_enabled() else "full"
+        context_snippet = render_context_for_prompt(state.get("context_pack"), tool_profile)
         tool_results = list(state.get("tool_results") or [])
         existing_calls = _normalize_tool_calls({"tool_calls": state.get("pending_tool_calls") or []})
         if existing_calls:

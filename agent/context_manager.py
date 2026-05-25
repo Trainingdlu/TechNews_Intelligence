@@ -10,7 +10,6 @@ from __future__ import annotations
 import copy
 import json
 import os
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -328,38 +327,61 @@ def build_context_pack(
     }
 
 
-def render_context_for_prompt(context_pack: dict[str, Any] | None) -> str:
+def render_context_for_prompt(
+    context_pack: dict[str, Any] | None, profile: str = "full"
+) -> str:
+    """Render the context pack for a model prompt.
+
+    profile="full" renders every section (default, unchanged). profile="tool"
+    renders only the candidate-URL sections the tool worker needs (the question
+    is injected separately as the curator-rewritten standalone question), dropping
+    the prose sections that dominate the pack's size.
+    """
     if not isinstance(context_pack, dict):
         return "(none)"
+    tool_only = str(profile or "full").strip().lower() == "tool"
     parts: list[str] = []
-    summary = str(context_pack.get("context_summary") or "").strip()
-    if summary:
-        parts.append(f"Context summary:\n{summary}")
+    rendered_url_norms: set[str] = set()
+    selected_norms = {
+        norm
+        for norm in (
+            normalize_url_for_match(str(item or "").strip())
+            for item in context_pack.get("selected_evidence_urls", [])
+        )
+        if norm
+    }
     memory = context_pack.get("thread_memory_summary")
-    if isinstance(memory, dict) and memory:
-        memory_text = str(memory.get("summary_text") or "").strip()
+    memory_text = (
+        str(memory.get("summary_text") or "").strip() if isinstance(memory, dict) else ""
+    )
+    summary = str(context_pack.get("context_summary") or "").strip()
+    if not tool_only and summary and not _summary_covered_by(summary, memory_text):
+        parts.append(f"Context summary:\n{summary}")
+    if not tool_only and isinstance(memory, dict) and memory:
         if memory_text:
             parts.append(f"Thread memory summary:\n{memory_text}")
         memory_evidence = [
             item for item in memory.get("evidence_index", [])
             if isinstance(item, dict) and str(item.get("url") or "").strip()
         ]
-        if memory_evidence:
-            lines = []
-            for item in memory_evidence[:8]:
-                title = str(item.get("title") or "").strip() or "previous evidence"
-                url = str(item.get("url") or "").strip()
-                excerpt = str(item.get("excerpt") or "").strip()
-                age = _evidence_age_label(item.get("created_at"))
-                header = f"- {title} | {url}" + (f" ({age})" if age else "")
-                if excerpt:
-                    lines.append(f"{header}\n  {excerpt}")
-                else:
-                    lines.append(header)
+        lines: list[str] = []
+        for item in memory_evidence[:8]:
+            url = str(item.get("url") or "").strip()
+            norm = normalize_url_for_match(url)
+            if norm and norm in selected_norms:
+                continue
+            title = str(item.get("title") or "").strip() or "previous evidence"
+            excerpt = str(item.get("excerpt") or "").strip()
+            age = _evidence_age_label(item.get("created_at"))
+            header = f"- {title} | {url}" + (f" ({age})" if age else "")
+            lines.append(f"{header}\n  {excerpt}" if excerpt else header)
+            if norm:
+                rendered_url_norms.add(norm)
+        if lines:
             parts.append("Thread evidence index:\n" + "\n".join(lines))
     turns = context_pack.get("selected_turns")
-    if isinstance(turns, list) and turns:
-        lines: list[str] = []
+    if not tool_only and isinstance(turns, list) and turns:
+        lines = []
         for turn in turns[:MAX_SELECTED_TURNS]:
             if not isinstance(turn, dict):
                 continue
@@ -369,7 +391,11 @@ def render_context_for_prompt(context_pack: dict[str, Any] | None) -> str:
                 str(item or "").strip()
                 for item in turn.get("evidence_urls", [])
                 if str(item or "").strip()
-            ]
+            ][:6]
+            for url in evidence_urls:
+                norm = normalize_url_for_match(url)
+                if norm:
+                    rendered_url_norms.add(norm)
             lines.append(
                 "\n".join(
                     part
@@ -377,7 +403,7 @@ def render_context_for_prompt(context_pack: dict[str, Any] | None) -> str:
                         f"Turn {turn.get('turn_id')}:",
                         f"User: {user}" if user else "",
                         f"Assistant excerpt: {assistant}" if assistant else "",
-                        f"Evidence URLs: {' '.join(evidence_urls[:6])}" if evidence_urls else "",
+                        f"Evidence URLs: {' '.join(evidence_urls)}" if evidence_urls else "",
                     ]
                     if part
                 )
@@ -396,16 +422,26 @@ def render_context_for_prompt(context_pack: dict[str, Any] | None) -> str:
             age = _evidence_age_label(item.get("created_at"))
             if url:
                 header = f"- {title} | {url}" + (f" ({age})" if age else "")
-                lines.append(header + (f"\n  {excerpt}" if excerpt else ""))
+                if tool_only:
+                    lines.append(header)
+                else:
+                    lines.append(header + (f"\n  {excerpt}" if excerpt else ""))
+                norm = normalize_url_for_match(url)
+                if norm:
+                    rendered_url_norms.add(norm)
         if lines:
             parts.append("Selected memory evidence:\n" + "\n".join(lines))
-    evidence_urls = [
-        str(item or "").strip()
-        for item in context_pack.get("selected_evidence_urls", [])
-        if str(item or "").strip()
-    ]
-    if evidence_urls:
-        parts.append("Prior evidence URLs:\n" + "\n".join(f"- {url}" for url in evidence_urls[:12]))
+    remaining_urls: list[str] = []
+    for item in context_pack.get("selected_evidence_urls", []):
+        url = str(item or "").strip()
+        if not url:
+            continue
+        norm = normalize_url_for_match(url)
+        if norm and norm in rendered_url_norms:
+            continue
+        remaining_urls.append(url)
+    if remaining_urls:
+        parts.append("Prior evidence URLs:\n" + "\n".join(f"- {url}" for url in remaining_urls[:12]))
     return "\n\n".join(parts).strip() or "(none)"
 
 
@@ -596,6 +632,18 @@ def _fallback_context_summary(selected_turns: list[dict[str, Any]], memory: dict
     return _clip("Recent relevant user questions: " + " | ".join([item for item in users if item]), 800)
 
 
+def _summary_covered_by(summary: str, memory_text: str) -> bool:
+    """True when the context summary merely repeats the thread memory summary."""
+    candidate = str(summary or "").strip()
+    full = str(memory_text or "").strip()
+    if not candidate or not full:
+        return False
+    if candidate == full:
+        return True
+    core = candidate[:-3].strip() if candidate.endswith("...") else candidate
+    return bool(core) and full.startswith(core)
+
+
 def _curator_text(curator_result: dict[str, Any] | None, key: str) -> str:
     if not isinstance(curator_result, dict):
         return ""
@@ -678,6 +726,11 @@ def _env_flag(name: str, *, default: bool) -> bool:
     if raw is None:
         return default
     return str(raw).strip().lower() not in {"", "0", "false", "no", "off"}
+
+
+def context_tool_profile_enabled() -> bool:
+    """Whether the tool worker receives the lean (URL-only) context profile (F2)."""
+    return _env_flag("AGENT_CONTEXT_TOOL_PROFILE", default=True)
 
 
 def context_curator_min_confidence() -> float:

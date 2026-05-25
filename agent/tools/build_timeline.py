@@ -1,4 +1,4 @@
-﻿"""Build-timeline tool implementation and structured adapter."""
+"""Build-timeline tool implementation and structured adapter."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build
 from .helpers import _clamp_int, _evidence_from_records
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .schemas import BuildTimelineToolInput
-from .semantic_pool import fetch_semantic_url_pool
+from .hybrid_pool import fetch_hybrid_url_pool
 
 
 def _format_timeline_result(result: dict) -> str:
@@ -54,13 +54,13 @@ def _build_timeline_structured(topic: str, days: int = 30, limit: int = 12) -> d
     limit = _clamp_int(limit, 3, 40)
 
     # Semantic vector pool replaces the old ILIKE + hardcoded dictionary approach
-    url_pool = fetch_semantic_url_pool(topic, days=days, limit=limit * 5)
+    url_pool = fetch_hybrid_url_pool(topic, days=days, limit=limit * 5)
 
     # Auto-retry with wider window if empty and original window is narrow
     if not url_pool and days < 90:
         retry_days = min(180, max(60, days * 2))
         print(f"[Tool] build_timeline: empty for {days}d, auto-retrying with {retry_days}d")
-        url_pool = fetch_semantic_url_pool(topic, days=retry_days, limit=limit * 5)
+        url_pool = fetch_hybrid_url_pool(topic, days=retry_days, limit=limit * 5)
         if url_pool:
             days = retry_days
 

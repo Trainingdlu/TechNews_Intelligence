@@ -1,4 +1,4 @@
-﻿"""Analyze-landscape tool implementation and structured adapter.
+"""Analyze-landscape tool implementation and structured adapter.
 
 Refactored to use semantic vector pools for entity matching and
 embedding-anchor classification for signal categorisation, replacing
@@ -18,7 +18,7 @@ from .helpers import _clamp_int, _evidence_from_records, _is_recent_timestamp
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .retrieval import _get_query_embedding
 from .schemas import AnalyzeLandscapeToolInput
-from .semantic_pool import fetch_semantic_url_pool
+from .hybrid_pool import fetch_hybrid_url_pool
 
 # ---------------------------------------------------------------------------
 # Default entity list (kept as sensible defaults; users may override)
@@ -204,7 +204,7 @@ def _fetch_entity_url_pools(
 
     for entity in entity_list:
         query = f"{entity} {topic}".strip() if topic else entity
-        pool = fetch_semantic_url_pool(query, days=days, limit=limit_per_entity)
+        pool = fetch_hybrid_url_pool(query, days=days, limit=limit_per_entity)
         entity_raw_pools[entity] = pool
 
         for url, match_score in pool:
@@ -374,7 +374,7 @@ def analyze_landscape(topic: str = "", days: int = 30, entities: str = "", limit
         topic_scope_params: list[Any] = [f"{days} days"]
         if topic:
             # Use semantic pool to estimate topic scope
-            topic_pool = fetch_semantic_url_pool(topic, days=days, limit=500)
+            topic_pool = fetch_hybrid_url_pool(topic, days=days, limit=500)
             topic_articles = len(topic_pool) if topic_pool else 0
         else:
             cur.execute(topic_scope_sql, tuple(topic_scope_params))
@@ -720,7 +720,7 @@ def _analyze_landscape_structured(
             signal_counts = _classify_signal_by_embedding(article_embeddings, anchors)
 
         if topic:
-            topic_articles = len(fetch_semantic_url_pool(topic, days=days, limit=500))
+            topic_articles = len(fetch_hybrid_url_pool(topic, days=days, limit=500))
         else:
             cur.execute(
                 """

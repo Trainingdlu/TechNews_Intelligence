@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
 
 from pydantic import BaseModel
 
-from .tool_contracts import ToolEnvelope
+from .tool_contracts import ToolHandler
 from ..tools.analyze_landscape import analyze_landscape_tool
 from ..tools.build_timeline import build_timeline_tool
 from ..tools.compare_sources import compare_sources_tool
@@ -35,8 +34,6 @@ from ..tools.basic_tools import (
     read_news_content_tool,
 )
 
-ToolHandler = Callable[[BaseModel], ToolEnvelope]
-
 
 @dataclass(frozen=True)
 class ToolDefinition:
@@ -44,8 +41,6 @@ class ToolDefinition:
     input_model: type[BaseModel]
     handler: ToolHandler
     description: str
-    capability: str
-    tool_group: str
     requires_evidence: bool
     mcp_name: str | None = None
     expose_in_mcp: bool = True
@@ -60,8 +55,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
             "Retrieve recent news records with optional query, source, category, sentiment, "
             "sort, time-window, and limit filters. Evidence items are the returned article URLs."
         ),
-        capability="news_retrieval",
-        tool_group="retrieval",
         requires_evidence=True,
         mcp_name="query_news_vector",
     ),
@@ -73,8 +66,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
             "Measure recent-vs-previous topic momentum from article counts and engagement. "
             "Evidence items are representative articles supporting the trend."
         ),
-        capability="trend_analysis",
-        tool_group="analysis",
         requires_evidence=True,
     ),
     ToolDefinition(
@@ -85,8 +76,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
             "Run hybrid semantic, lexical, and exact news search for a specific query. "
             "Evidence items are ranked matching article URLs with retrieval scores when available."
         ),
-        capability="hybrid_search",
-        tool_group="retrieval",
         requires_evidence=True,
     ),
     ToolDefinition(
@@ -97,8 +86,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
             "Compare source coverage, sentiment, and top articles for one topic across sources. "
             "Evidence items are source-attributed article URLs."
         ),
-        capability="source_comparison",
-        tool_group="analysis",
         requires_evidence=True,
     ),
     ToolDefinition(
@@ -109,8 +96,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
             "Compare two distinct topics or entities using non-overlapping evidence pools "
             "and match-score arbitration. Evidence items are assigned to the best matching side."
         ),
-        capability="topic_comparison",
-        tool_group="analysis",
         requires_evidence=True,
     ),
     ToolDefinition(
@@ -121,8 +106,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
             "Build a chronological timeline for one topic, company, or product. "
             "Evidence items are the article URLs backing individual timeline events."
         ),
-        capability="timeline",
-        tool_group="analysis",
         requires_evidence=True,
     ),
     ToolDefinition(
@@ -133,8 +116,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
             "Analyze a competitive landscape across entities with coverage, source mix, "
             "signals, confidence, and evidence URLs."
         ),
-        capability="landscape_analysis",
-        tool_group="analysis",
         requires_evidence=True,
     ),
     ToolDefinition(
@@ -145,8 +126,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
             "Read full text for explicit URLs, or auto-select relevant articles from a query. "
             "Evidence items are the URLs whose full text was read."
         ),
-        capability="fulltext_retrieval",
-        tool_group="content",
         requires_evidence=True,
     ),
     ToolDefinition(
@@ -154,8 +133,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         input_model=GetDbStatsInput,
         handler=get_db_stats_tool,
         description="Get database freshness stats and total article count; no article evidence is expected.",
-        capability="database_metadata",
-        tool_group="metadata",
         requires_evidence=False,
         expose_in_mcp=False,
     ),
@@ -164,8 +141,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         input_model=ListTopicsInput,
         handler=list_topics_tool,
         description="Get daily article volume distribution for recent 21 days; no article evidence is expected.",
-        capability="topic_distribution",
-        tool_group="metadata",
         requires_evidence=False,
         expose_in_mcp=False,
     ),
@@ -177,8 +152,6 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
             "Read full-text content for a URL already provided by the user or returned in prior tool evidence. "
             "Evidence is the same URL being read."
         ),
-        capability="article_reader",
-        tool_group="content",
         requires_evidence=True,
         expose_in_mcp=False,
     ),

@@ -53,7 +53,7 @@
 | 机制 | 实现 | 解决的问题 |
 |---|---|---|
 | 三级隔离 | 每题空 history + 独立 thread_id + 独立 request_id | 上下文 / 记忆串台污染 |
-| 断点续跑 | JSONL append，按 `status==success` 跳过 | 中断 / 配额耗尽不丢进度，并支持复用历史结果 |
+| 断点续跑 | JSONL append，按 `status==success` 跳过 | 中断 / 配额耗尽不丢进度，并支持复用历史结果（**代价**：改代码后须先清对应 `runs/*.jsonl` 才会重测，见 §8「强制重跑」） |
 | 限流退避 | 429 指数退避（共享 `eval_retry`）+ `--sleep-seconds` 案例间隔 | preview 模型配额限制下的大样本运行 |
 | 数据冻结 | G2/G3 手动暂停 n8n 采集 | 同一 DB 快照，结果可复现、跨配置可比 |
 | Trace 驱动 | `agent_runs / agent_trace_spans / agent_model_io` | 失败回溯 + G3 取真实证据喂给 judge |
@@ -132,6 +132,35 @@
 
 - **触库层（G1 / G2 / G3）** 跑真实链路或检索，运行前手动暂停 n8n 采集以冻结 DB 快照；脚本会弹确认，加 `--skip-confirm` 跳过。**G4 / G5** 只跑到意图与工具规划、不触库，无需暂停。
 - 所有 LLM / agent 脚本支持 429 指数退避与断点续跑（按 `status==success` 跳过），可加 `--sleep-seconds N` 拉大案例间隔避开配额；建议手动运行并观察输出。
+- **改动被测代码后想看真实新结果，必须先清对应层的断点文件**，否则会被全部跳过、只用旧缓存重建报告——见下「强制重跑」。
+
+### 强制重跑（改代码后必读）
+
+断点续跑的代价：每个 LLM / agent 脚本把对应的 `runs/*.jsonl` 当作续跑状态，按 `status==success` 跳过已完成用例。**当所有用例都已成功后，直接重跑不会重新测试**——脚本跳过全部、仅用旧缓存重建 `report.md`（终端打印 `Resume: N case(s) already succeeded; skipping them.` 且 `pending: 0`）。所以改动被测代码后要看真实新结果，**必须先清空对应层的断点文件**。
+
+| 阶段 | 断点文件（清它才会重跑） |
+|---|---|
+| G1 错误分析 | `eval/error_analysis/runs/g1_run.jsonl` |
+| G2 检索 | `eval/retrieval/runs/retrieval_results.jsonl` |
+| G2 相关性评判（LLM judge） | `eval/retrieval/runs/relevance_judgments.jsonl` |
+| G3 生成 | `eval/generation/runs/generation.jsonl` |
+| G3 忠实度评判（LLM judge） | `eval/generation/runs/faithfulness_judgments.jsonl` |
+| G4 意图 | `eval/intent_eval/runs/g4_predictions.jsonl` |
+| G5 工具选择 | `eval/tool_selection/runs/g5_predictions.jsonl` |
+
+- **G3 是多阶段链**（run → enrich → judge）：重测某一集需清掉该集的 run 与 judge 两个 `runs/*.jsonl`，再依次重跑三步；对抗 / ablation 集对应各自 `--output` 文件名。
+- **纯计算 / 转换阶段**（`compute_metrics` / `compute_kappa` / `enrich_evidence` / `build_*` / `summarize`）每次都从输入重算，无续跑、无需清理。
+- `--report-only`（部分脚本提供）是反向操作：完全不跑、只用现有断点重建报告。
+
+强制重跑示例（以 G5 为例，保留旧结果以便 before/after 对比）：
+
+```powershell
+Move-Item eval\tool_selection\runs\g5_predictions.jsonl eval\tool_selection\runs\g5_predictions.before.jsonl
+Copy-Item eval\tool_selection\report.md eval\tool_selection\report.before.md
+python eval\tool_selection\run_tool_selection_eval.py
+```
+
+> 判读提醒：LLM 阶段（意图 / 工具 / judge）有模型不确定性，清断点重跑出现 ±1~2 条波动属正常，不等于回归。若改的是**确定性代码**（如正则等价改写、启发式重构），单元测试才是权威回归闸门，无需为验证它重跑 LLM 阶段。
 
 ### G1 · 错误分析
 

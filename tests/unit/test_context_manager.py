@@ -221,3 +221,66 @@ def test_memory_evidence_max_age_filter_drops_old(monkeypatch) -> None:
     rendered = render_context_for_prompt(pack)
     assert "https://example.com/fresh" in rendered
     assert "https://example.com/old" not in rendered
+
+
+def test_tool_profile_drops_prose_keeps_candidate_urls() -> None:
+    history = [
+        {"role": "user", "parts": [{"text": "英伟达新卡怎么样"}]},
+        {
+            "role": "model",
+            "parts": [{"text": "英伟达发布新卡，性能提升明显"}],
+            "citation_urls": ["https://example.com/nv"],
+        },
+        {"role": "user", "parts": [{"text": "OpenAI 呢"}]},
+        {
+            "role": "model",
+            "parts": [{"text": "OpenAI 也发布了新模型"}],
+            "citation_urls": ["https://example.com/oa"],
+        },
+    ]
+    manifest = build_history_manifest(history)
+    memory = {
+        "summary_text": "PRIOR_SUMMARY_MARKER",
+        "evidence_index": [
+            {"url": "https://example.com/mem", "title": "历史证据", "excerpt": "MEM_EXCERPT_MARKER"}
+        ],
+    }
+    curator = {
+        "depends_on_history": True,
+        "standalone_question": "对比英伟达新卡与 OpenAI 模型",
+        "selected_turn_ids": [1, 2],
+        "selected_evidence_urls": ["https://example.com/nv", "https://example.com/mem"],
+        "context_summary": "CONTEXT_SUMMARY_MARKER",
+        "confidence": 0.85,
+    }
+    result = normalize_context_curator_result(curator, manifest, memory)
+    pack = build_context_pack(
+        user_message="它们俩对比",
+        history=history,
+        history_manifest=manifest,
+        memory_summary=memory,
+        curator_result=result,
+        curator_used=True,
+    )
+
+    full = render_context_for_prompt(pack, "full")
+    tool = render_context_for_prompt(pack, "tool")
+
+    # full keeps the prose-heavy sections
+    assert "PRIOR_SUMMARY_MARKER" in full
+    assert "Selected prior turns" in full
+    assert "CONTEXT_SUMMARY_MARKER" in full
+    assert "MEM_EXCERPT_MARKER" in full
+
+    # tool drops the prose sections but keeps every candidate URL the worker needs
+    assert "PRIOR_SUMMARY_MARKER" not in tool
+    assert "Thread memory summary" not in tool
+    assert "Selected prior turns" not in tool
+    assert "CONTEXT_SUMMARY_MARKER" not in tool
+    assert "MEM_EXCERPT_MARKER" not in tool
+    assert "https://example.com/mem" in tool
+    assert "https://example.com/nv" in tool
+    assert len(tool) < len(full)
+
+    # default profile is the unchanged full render (backward compatible)
+    assert render_context_for_prompt(pack) == full

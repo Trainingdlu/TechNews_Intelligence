@@ -1,6 +1,6 @@
 # G5 工具选择评测报告
 
-生成时间：2026-05-21T10:05:01.642667+00:00
+生成时间：2026-05-23T13:33:40.059557+00:00
 
 ## 核心结果：tool_selection_accuracy = **100.0%**  (97/97)
 
@@ -34,15 +34,15 @@
 
 ## 混淆矩阵（期望工具 -> 预测主工具）
 
-| 期望 \ 预测 | `analyze_landscape` | `build_timeline` | `compare_sources` | `compare_topics` | `fulltext_batch` | `get_db_stats` | `list_topics` | `query_news` | `read_news_content` | `search_news` | `trend_analysis` |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| `analyze_landscape` | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| `build_timeline` | 0 | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| `compare_sources` | 0 | 0 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| `compare_topics` | 0 | 0 | 0 | 13 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| `fulltext_batch` | 0 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 5 | 0 | 0 |
-| `get_db_stats` | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | 0 | 0 |
-| `list_topics` | 0 | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | 0 |
-| `query_news` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 9 | 0 |
-| `search_news` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 11 | 0 |
-| `trend_analysis` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 12 |
+| 期望 \ 预测 | `analyze_landscape` | `build_timeline` | `compare_sources` | `compare_topics` | `fulltext_batch` | `get_db_stats` | `list_topics` | `read_news_content` | `search_news` | `trend_analysis` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `analyze_landscape` | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `build_timeline` | 0 | 12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `compare_sources` | 0 | 0 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `compare_topics` | 0 | 0 | 0 | 13 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `fulltext_batch` | 0 | 0 | 0 | 0 | 5 | 0 | 0 | 3 | 0 | 0 |
+| `get_db_stats` | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 0 | 0 |
+| `list_topics` | 0 | 0 | 0 | 0 | 0 | 0 | 4 | 0 | 0 | 0 |
+| `query_news` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 10 | 0 |
+| `search_news` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 11 | 0 |
+| `trend_analysis` | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 12 |

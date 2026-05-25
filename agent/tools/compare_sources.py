@@ -1,4 +1,4 @@
-﻿"""Compare-sources tool implementation and structured adapter."""
+"""Compare-sources tool implementation and structured adapter."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from ..core.tool_contracts import ToolEnvelope, build_tool_empty_envelope, build
 from .helpers import _clamp_int, _evidence_from_records
 from .rerank_aggregation import format_reranked_evidence, retrieve_and_rerank
 from .schemas import CompareSourcesToolInput
-from .semantic_pool import fetch_semantic_url_pool
+from .hybrid_pool import fetch_hybrid_url_pool
 
 
 def _format_compare_sources_result(result: dict) -> str:
@@ -61,7 +61,7 @@ def _compare_sources_structured(topic: str, days: int = 14) -> dict:
     days = _clamp_int(days, 1, 90)
 
     # Semantic vector pool replaces the old ILIKE + hardcoded dictionary approach
-    url_pool = fetch_semantic_url_pool(topic, days=days, limit=200)
+    url_pool = fetch_hybrid_url_pool(topic, days=days, limit=200)
     if not url_pool:
         return {
             "status": "empty",

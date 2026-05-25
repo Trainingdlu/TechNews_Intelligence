@@ -68,8 +68,6 @@ def test_build_default_registry_has_descriptions_for_all_tools() -> None:
 
 def test_tool_catalog_exposes_graph_ready_metadata() -> None:
     for definition in iter_tool_definitions():
-        assert definition.capability.strip()
-        assert definition.tool_group.strip()
         assert isinstance(definition.requires_evidence, bool)
 
 

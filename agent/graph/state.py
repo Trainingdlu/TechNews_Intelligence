@@ -33,7 +33,6 @@ class AgentGraphState(TypedDict, total=False):
     valid_urls: list[str]
 
     clarification: dict[str, Any] | None
-    error: dict[str, Any] | None
 
     next_step: str
 

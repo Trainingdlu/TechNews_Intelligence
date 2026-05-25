@@ -1,4 +1,4 @@
-﻿"""Unit tests for structured outputs in tool modules."""
+"""Unit tests for structured outputs in tool modules."""
 
 from __future__ import annotations
 
@@ -318,7 +318,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         with (
             patch.object(
                 compare_sources_mod,
-                "fetch_semantic_url_pool",
+                "fetch_hybrid_url_pool",
                 lambda *_args, **_kwargs: [("https://example.com/hn", 0.91), ("https://example.com/tc", 0.83)],
             ),
             patch.object(compare_sources_mod, "get_conn", lambda: fake_conn),
@@ -345,7 +345,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
         with (
             patch.object(
                 timeline_mod,
-                "fetch_semantic_url_pool",
+                "fetch_hybrid_url_pool",
                 lambda *_args, **_kwargs: [("https://example.com/timeline", 0.77)],
             ),
             patch.object(timeline_mod, "get_conn", lambda: fake_conn),
@@ -368,7 +368,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
                 return [("https://example.com/shared", 0.40), ("https://example.com/a", 0.90)]
             return [("https://example.com/shared", 0.85), ("https://example.com/b", 0.70)]
 
-        with patch.object(compare_topics_mod, "fetch_semantic_url_pool", fake_pool):
+        with patch.object(compare_topics_mod, "fetch_hybrid_url_pool", fake_pool):
             pool_a, pool_b = compare_topics_mod._resolve_topic_pool_scores("OpenAI", "Anthropic", days=14)
 
         self.assertEqual([url for url, _score in pool_a], ["https://example.com/a"])
@@ -397,7 +397,7 @@ class ToolStructuredOutputTests(unittest.TestCase):
             return [("https://example.com/b", 0.81)]
 
         with (
-            patch.object(compare_topics_mod, "fetch_semantic_url_pool", fake_pool),
+            patch.object(compare_topics_mod, "fetch_hybrid_url_pool", fake_pool),
             patch.object(compare_topics_mod, "get_conn", lambda: fake_conn),
             patch.object(compare_topics_mod, "put_conn", lambda _conn: None),
         ):

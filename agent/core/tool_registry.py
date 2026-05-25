@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from .tool_contracts import ToolEnvelope, build_tool_error_envelope
-
-ToolHandler = Callable[[BaseModel], ToolEnvelope | dict[str, Any]]
+from .tool_contracts import ToolEnvelope, ToolHandler, build_tool_error_envelope
 
 
 @dataclass(frozen=True)
