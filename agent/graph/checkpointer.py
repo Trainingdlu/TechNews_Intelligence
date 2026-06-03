@@ -15,15 +15,23 @@ _disabled = False
 _lock = threading.Lock()
 
 
-def _dsn() -> str | None:
+def _conn_kwargs() -> dict | None:
+    """libpq connection params — avoids URL-encoding pitfalls (e.g. '@' in password)."""
     name = os.getenv("DB_NAME", "")
     user = os.getenv("DB_USER", "")
     if not (name and user):
         return None
-    host = os.getenv("DB_HOST", "127.0.0.1")
-    port = os.getenv("DB_PORT", "5555")
-    password = os.getenv("DB_PASS", "")
-    return f"postgresql://{user}:{password}@{host}:{port}/{name}"
+    try:
+        port = int(os.getenv("DB_PORT", "5432"))
+    except (TypeError, ValueError):
+        port = 5432
+    return {
+        "host": os.getenv("DB_HOST", "127.0.0.1"),
+        "port": port,
+        "dbname": name,
+        "user": user,
+        "password": os.getenv("DB_PASS", ""),
+    }
 
 
 def checkpointer_enabled() -> bool:
@@ -46,8 +54,8 @@ def get_checkpointer():
     if not checkpointer_enabled():
         _disabled = True
         return None
-    dsn = _dsn()
-    if not dsn:
+    conn_kwargs = _conn_kwargs()
+    if not conn_kwargs:
         _disabled = True
         return None
     with _lock:
@@ -59,12 +67,12 @@ def get_checkpointer():
             from psycopg_pool import ConnectionPool
 
             pool = ConnectionPool(
-                conninfo=dsn,
                 min_size=1,
                 max_size=4,
                 open=True,
                 timeout=5,
                 kwargs={
+                    **conn_kwargs,
                     "autocommit": True,
                     "prepare_threshold": 0,
                     "row_factory": dict_row,
