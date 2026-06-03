@@ -24,6 +24,7 @@ EXPECTED_TOOLS = {
     "get_db_stats",
     "list_topics",
     "read_news_content",
+    "fetch_external_url",
 }
 
 

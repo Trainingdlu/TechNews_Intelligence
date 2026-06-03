@@ -14,11 +14,14 @@ WORKDIR /app
 
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+# uv + external fetch MCP server (consumed as an MCP client over stdio)
+RUN pip install --no-cache-dir uv && uv tool install mcp-server-fetch
 
 COPY agent/ ./agent/
 COPY app/ ./app/
 COPY services/ ./services/
 COPY eval/ ./eval/
+COPY verify_checkpointer.py ./verify_checkpointer.py
 
 CMD ["python", "-m", "app.bot"]
 

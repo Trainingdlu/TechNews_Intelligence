@@ -74,6 +74,7 @@ def get_checkpointer():
             saver = PostgresSaver(pool)
             saver.setup()
             _saver = saver
+            print("[checkpointer] PostgresSaver ready (checkpoint tables ensured)")
         except Exception as exc:  # noqa: BLE001 - degrade to stateless on any failure
             print(f"[checkpointer] disabled ({type(exc).__name__}: {exc})")
             _disabled = True

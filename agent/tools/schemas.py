@@ -85,3 +85,9 @@ class ReadNewsContentInput(BaseModel):
     url: str = Field(min_length=1)
 
 
+class FetchExternalUrlInput(BaseModel):
+    """Typed input for fetching an external (non-corpus) URL via the fetch MCP server."""
+    url: str = Field(min_length=1)
+    max_length: int = Field(default=5000, ge=200, le=50000)
+
+

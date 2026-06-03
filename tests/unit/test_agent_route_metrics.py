@@ -218,6 +218,7 @@ class TestAgentStructure:
             "build_timeline",
             "analyze_landscape",
             "fulltext_batch",
+            "fetch_external_url",
         }
         assert tool_names == expected
 

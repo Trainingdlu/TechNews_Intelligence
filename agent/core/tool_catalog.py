@@ -25,6 +25,7 @@ from ..tools.schemas import (
     GetDbStatsInput,
     ListTopicsInput,
     ReadNewsContentInput,
+    FetchExternalUrlInput,
 )
 from ..tools.search_news import search_news_tool
 from ..tools.trend_analysis import trend_analysis_tool
@@ -33,6 +34,7 @@ from ..tools.basic_tools import (
     list_topics_tool,
     read_news_content_tool,
 )
+from ..tools.fetch_external import fetch_external_url_tool
 
 
 @dataclass(frozen=True)
@@ -151,6 +153,18 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         description=(
             "Read full-text content for a URL already provided by the user or returned in prior tool evidence. "
             "Evidence is the same URL being read."
+        ),
+        requires_evidence=True,
+        expose_in_mcp=False,
+    ),
+    ToolDefinition(
+        name="fetch_external_url",
+        input_model=FetchExternalUrlInput,
+        handler=fetch_external_url_tool,
+        description=(
+            "Read the readable content of an EXTERNAL web URL that is NOT in the news database "
+            "(e.g., a link the user pasted). Use only for user-provided external URLs; for corpus "
+            "articles use search / read_news_content. Evidence is the fetched URL."
         ),
         requires_evidence=True,
         expose_in_mcp=False,
