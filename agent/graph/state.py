@@ -36,6 +36,11 @@ class AgentGraphState(TypedDict, total=False):
 
     next_step: str
 
+    # Human-in-the-loop clarification (interrupt/resume) bookkeeping.
+    clarified: bool
+    clarify_count: int
+    clar_route: str
+
 
 @dataclass
 class AgentRunResult:

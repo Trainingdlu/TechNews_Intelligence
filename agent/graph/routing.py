@@ -19,6 +19,12 @@ def route_after_policy(state: AgentGraphState) -> str:
     return "blocked" if state.get("clarification") else "allowed"
 
 
+def route_after_clarification(state: AgentGraphState) -> str:
+    """After a clarification node runs: 'answer' continues to tools (HIL resume),
+    'end' terminates (legacy no-checkpointer mode or graceful give-up)."""
+    return "answer" if str(state.get("clar_route") or "").strip() == "answer" else "end"
+
+
 def route_after_loop_decider(state: AgentGraphState) -> str:
     next_step = str(state.get("next_step") or "").strip()
     if next_step in {"more_tools", "enough_evidence", "insufficient_evidence"}:

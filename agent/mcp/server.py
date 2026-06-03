@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel, ValidationError
 
 from ..core.runtime_factories import build_default_tool_runtime
 from ..core.tool_catalog import ToolDefinition, iter_tool_definitions
 from ..core.tool_contracts import ToolEnvelope, ToolHandler, build_tool_error_envelope
+from ..tools.news_ops import get_db_stats, list_topics
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,15 @@ class MCPToolSpec:
     description: str = ""
 
 
+@dataclass(frozen=True)
+class MCPResourceSpec:
+    uri: str
+    name: str
+    description: str
+    mime_type: str
+    reader: Callable[[], str]
+
+
 class InProcessMCPServer:
     """Minimal MCP-compatible server abstraction for local adapter phase."""
 
@@ -28,6 +38,7 @@ class InProcessMCPServer:
         if not self.server_name:
             raise ValueError("server_name is required")
         self._tools: dict[str, MCPToolSpec] = {}
+        self._resources: dict[str, MCPResourceSpec] = {}
 
     def register_tool(
         self,
@@ -62,6 +73,45 @@ class InProcessMCPServer:
                 }
             )
         return rows
+
+    def register_resource(
+        self,
+        *,
+        uri: str,
+        name: str,
+        description: str,
+        mime_type: str,
+        reader: Callable[[], str],
+    ) -> None:
+        resource_uri = str(uri).strip()
+        if not resource_uri:
+            raise ValueError("resource uri is required")
+        if resource_uri in self._resources:
+            raise ValueError(f"Resource '{resource_uri}' is already registered on server '{self.server_name}'")
+        self._resources[resource_uri] = MCPResourceSpec(
+            uri=resource_uri,
+            name=str(name),
+            description=str(description),
+            mime_type=str(mime_type),
+            reader=reader,
+        )
+
+    def list_resources(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "uri": spec.uri,
+                "name": spec.name,
+                "description": spec.description,
+                "mimeType": spec.mime_type,
+            }
+            for _, spec in sorted(self._resources.items())
+        ]
+
+    def read_resource(self, uri: str) -> dict[str, Any]:
+        spec = self._resources.get(str(uri).strip())
+        if spec is None:
+            raise KeyError(f"Unknown resource: {uri}")
+        return {"uri": spec.uri, "mimeType": spec.mime_type, "text": str(spec.reader())}
 
     def call_tool(self, tool_name: str, payload: dict[str, Any] | None = None) -> ToolEnvelope:
         request_payload = payload or {}
@@ -134,5 +184,20 @@ def build_newsdb_server(server_name: str = "newsdb") -> InProcessMCPServer:
                 handler=_build_delegated_handler(definition),
                 description=definition.description,
             )
+    # Read-only data snapshots are exposed as MCP resources (not tools).
+    server.register_resource(
+        uri="news://stats",
+        name="数据库新鲜度与规模",
+        description="Database freshness stats and total article count (read-only snapshot).",
+        mime_type="text/plain",
+        reader=get_db_stats,
+    )
+    server.register_resource(
+        uri="news://topics",
+        name="近 21 天话题分布",
+        description="Recent daily article volume distribution (read-only snapshot).",
+        mime_type="text/plain",
+        reader=list_topics,
+    )
     return server
 

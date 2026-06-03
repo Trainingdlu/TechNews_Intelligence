@@ -8,6 +8,9 @@ from functools import wraps
 from typing import Any
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langgraph.types import interrupt
+
+from agent.graph.checkpointer import get_checkpointer
 
 from agent.clarification import (
     build_clarification_payload,
@@ -501,10 +504,43 @@ class GraphNodeRunner:
         ) as guard_span:
             guard_span.set_output({"question_chars": len(str(payload.get("question") or ""))})
         emit_graph_progress("clarification_required", "需要补充信息", detail=str(payload.get("question") or ""))
+
+        clarify_count = int(state.get("clarify_count") or 0)
+
+        # Legacy mode (no checkpointer) or already clarified once this run:
+        # do not interrupt — return the clarification and terminate, as before.
+        if get_checkpointer() is None or clarify_count >= 1:
+            return {
+                "clarification": payload if clarify_count == 0 else None,
+                "final_text": (
+                    str(payload.get("question") or "")
+                    if clarify_count == 0
+                    else "补充后仍无法确定，请换一个更具体的问法。"
+                ),
+                "valid_urls": [],
+                "clar_route": "end",
+            }
+
+        # HIL mode: pause for the user's reply (interrupt), then continue to answer.
+        reply = interrupt(payload)
+        reply_text = reply if isinstance(reply, str) else str((reply or {}).get("text") or reply or "")
+        clarified_question = reply_text.strip() or str(
+            payload.get("original_question") or state.get("user_message") or ""
+        )
         return {
-            "clarification": payload,
-            "final_text": str(payload.get("question") or ""),
-            "valid_urls": [],
+            "user_message": clarified_question,
+            "clarification": None,
+            "clarified": True,
+            "clarify_count": clarify_count + 1,
+            "clar_route": "answer",
+            "intent": {},
+            "selected_tools": [],
+            "pending_tool_calls": [],
+            "tool_results": [],
+            "evidence_urls": [],
+            "evidence_brief": "",
+            "next_step": "",
+            "tool_round": 0,
         }
 
     @_graph_node_span("insufficient_evidence_response")

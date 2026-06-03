@@ -766,6 +766,12 @@ def get_current_thread_id() -> str | None:
     return trace.thread_id if trace else None
 
 
+def _is_control_flow_signal(exc: BaseException) -> bool:
+    """LangGraph interrupt/command exceptions are control flow, not errors."""
+    names = {cls.__name__ for cls in type(exc).__mro__}
+    return bool(names & {"GraphBubbleUp", "GraphInterrupt", "NodeInterrupt", "ParentCommand"})
+
+
 @contextmanager
 def trace_span(
     span_type: str,
@@ -793,11 +799,12 @@ def trace_span(
     try:
         yield span
     except Exception as exc:
-        span.set_error(
-            error_code=f"{span.span_type}_{type(exc).__name__.lower()}",
-            error_message=str(exc),
-            error=exc,
-        )
+        if not _is_control_flow_signal(exc):
+            span.set_error(
+                error_code=f"{span.span_type}_{type(exc).__name__.lower()}",
+                error_message=str(exc),
+                error=exc,
+            )
         raise
     finally:
         span.finish()

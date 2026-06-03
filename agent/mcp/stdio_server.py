@@ -43,7 +43,7 @@ def _handle_request(server: InProcessMCPServer, request: dict[str, Any]) -> dict
         result = {
             "protocolVersion": "2024-11-05",
             "serverInfo": {"name": f"{server.server_name}-stdio", "version": "0.1.0"},
-            "capabilities": {"tools": {}},
+            "capabilities": {"tools": {}, "resources": {}},
         }
         return _jsonrpc_result(request_id, result)
 
@@ -86,6 +86,15 @@ def _handle_request(server: InProcessMCPServer, request: dict[str, Any]) -> dict
                 "isError": envelope.status == "error",
             },
         )
+
+    if method == "resources/list":
+        return _jsonrpc_result(request_id, {"resources": server.list_resources()})
+
+    if method == "resources/read":
+        uri = str(params.get("uri") or "").strip()
+        if not uri:
+            raise ValueError("resources/read requires params.uri")
+        return _jsonrpc_result(request_id, {"contents": [server.read_resource(uri)]})
 
     raise ValueError(f"Unknown method: {method}")
 

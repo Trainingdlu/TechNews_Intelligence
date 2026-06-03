@@ -1,0 +1,40 @@
+{"case_id": "exq_ent_01_xai", "query": "xAI", "days": 180, "category": "entity"}
+{"case_id": "exq_ent_02_grok", "query": "Grok", "days": 180, "category": "entity"}
+{"case_id": "exq_ent_03_deepseek", "query": "DeepSeek", "days": 180, "category": "entity"}
+{"case_id": "exq_ent_04_cloudflare", "query": "Cloudflare", "days": 180, "category": "entity"}
+{"case_id": "exq_ent_05_copilot", "query": "Copilot", "days": 180, "category": "entity"}
+{"case_id": "exq_ent_06_ibm", "query": "IBM", "days": 180, "category": "entity"}
+{"case_id": "exq_ent_07_broadcom", "query": "Broadcom", "days": 180, "category": "entity"}
+{"case_id": "exq_ent_08_qualcomm", "query": "Qualcomm", "days": 180, "category": "entity"}
+{"case_id": "exq_ent_09_oracle", "query": "Oracle", "days": 180, "category": "entity"}
+{"case_id": "exq_ent_10_cisco", "query": "Cisco", "days": 180, "category": "entity"}
+{"case_id": "exq_mdl_01_gpt55", "query": "GPT-5.5", "days": 180, "category": "model"}
+{"case_id": "exq_mdl_02_gpt53codex", "query": "GPT-5.3-Codex", "days": 180, "category": "model"}
+{"case_id": "exq_mdl_03_opus46", "query": "Claude Opus 4.6", "days": 180, "category": "model"}
+{"case_id": "exq_mdl_04_sonnet46", "query": "Claude Sonnet 4.6", "days": 180, "category": "model"}
+{"case_id": "exq_mdl_05_gemini31pro", "query": "Gemini 3.1 Pro", "days": 180, "category": "model"}
+{"case_id": "exq_mdl_06_qwen36_27b", "query": "Qwen3.6-27B", "days": 180, "category": "model"}
+{"case_id": "exq_mdl_07_chatgpt_images2", "query": "ChatGPT Images 2.0", "days": 180, "category": "model"}
+{"case_id": "exq_mdl_08_gemini3_deepthink", "query": "Gemini 3 Deep Think", "days": 180, "category": "model"}
+{"case_id": "exq_mdl_09_qwen3_coder_next", "query": "Qwen3-Coder-Next", "days": 180, "category": "model"}
+{"case_id": "exq_mdl_10_opus47", "query": "Claude Opus 4.7", "days": 180, "category": "model"}
+{"case_id": "exq_cn_01_nvidia", "query": "英伟达", "days": 180, "category": "encn"}
+{"case_id": "exq_cn_02_tsmc", "query": "台积电", "days": 180, "category": "encn"}
+{"case_id": "exq_cn_03_microsoft", "query": "微软", "days": 180, "category": "encn"}
+{"case_id": "exq_cn_04_google", "query": "谷歌", "days": 180, "category": "encn"}
+{"case_id": "exq_cn_05_intel", "query": "英特尔", "days": 180, "category": "encn"}
+{"case_id": "exq_cn_06_oracle", "query": "甲骨文", "days": 180, "category": "encn"}
+{"case_id": "exq_cn_07_qualcomm", "query": "高通", "days": 180, "category": "encn"}
+{"case_id": "exq_cn_08_samsung", "query": "三星", "days": 180, "category": "encn"}
+{"case_id": "exq_cn_09_micron", "query": "美光", "days": 180, "category": "encn"}
+{"case_id": "exq_cn_10_broadcom", "query": "博通", "days": 180, "category": "encn"}
+{"case_id": "exq_rare_01_aws_bedrock", "query": "AWS Bedrock", "days": 180, "category": "rare"}
+{"case_id": "exq_rare_02_sagemaker", "query": "SageMaker", "days": 180, "category": "rare"}
+{"case_id": "exq_rare_03_tpu", "query": "TPU", "days": 180, "category": "rare"}
+{"case_id": "exq_rare_04_datacenter", "query": "datacenter", "days": 180, "category": "rare"}
+{"case_id": "exq_rare_05_googl", "query": "GOOGL", "days": 180, "category": "rare"}
+{"case_id": "exq_rare_06_goog", "query": "GOOG", "days": 180, "category": "rare"}
+{"case_id": "exq_rare_07_sk_hynix", "query": "SK hynix", "days": 180, "category": "rare"}
+{"case_id": "exq_rare_08_semiconductors", "query": "semiconductors", "days": 180, "category": "rare"}
+{"case_id": "exq_rare_09_robotics", "query": "robotics", "days": 180, "category": "rare"}
+{"case_id": "exq_rare_10_sagemaker_cn", "query": "亚马逊云", "days": 180, "category": "rare"}
