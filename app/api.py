@@ -54,7 +54,7 @@ app = FastAPI(title="TechNews Agent API", docs_url=None, redoc_url=None, lifespa
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
-    allow_methods=["POST", "GET", "OPTIONS"],
+    allow_methods=["POST", "GET", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -163,3 +163,19 @@ async def chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.get("/history/{thread_id}")
+def get_history(thread_id: str, token_info: dict = Depends(_verify_token)):
+    messages = chat_service.load_thread_history_or_404(
+        thread_id,
+        token_id=int(token_info["id"]),
+        limit=chat_service.WEB_HISTORY_DISPLAY_LIMIT,
+    )
+    return {"thread_id": thread_id, "messages": messages}
+
+
+@app.delete("/history/{thread_id}")
+def delete_history(thread_id: str, token_info: dict = Depends(_verify_token)):
+    chat_service.delete_thread_or_404(thread_id, token_id=int(token_info["id"]))
+    return {"status": "deleted", "thread_id": thread_id}

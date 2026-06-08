@@ -22,6 +22,7 @@ from services.conversations import (
     ConversationThreadNotFoundError,
     append_message_for_token,
     create_thread,
+    delete_thread_for_token,
     load_history_for_token,
 )
 from services.thread_memory import schedule_thread_memory_update
@@ -52,13 +53,25 @@ def normalize_request_thread_id(thread_id: str | None) -> str | None:
     return value or None
 
 
-def load_thread_history_or_404(thread_id: str, *, token_id: int) -> list[dict]:
+WEB_HISTORY_DISPLAY_LIMIT = 200
+
+
+def load_thread_history_or_404(
+    thread_id: str, *, token_id: int, limit: int | None = None
+) -> list[dict]:
     try:
         return load_history_for_token(
             thread_id,
             token_id,
-            limit=agent_memory_load_limit(),
+            limit=limit if limit is not None else agent_memory_load_limit(),
         )
+    except ConversationThreadNotFoundError:
+        raise HTTPException(status_code=404, detail="conversation_thread_not_found") from None
+
+
+def delete_thread_or_404(thread_id: str, *, token_id: int) -> None:
+    try:
+        delete_thread_for_token(thread_id, token_id)
     except ConversationThreadNotFoundError:
         raise HTTPException(status_code=404, detail="conversation_thread_not_found") from None
 

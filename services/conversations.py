@@ -227,6 +227,31 @@ def load_history_for_token(
     return [_history_item_from_row(row) for row in rows]
 
 
+def delete_thread_for_token(thread_id: str, token_id: int | str) -> None:
+    """Delete a web thread only when owned by the given token.
+
+    The FK constraints on conversation_messages, thread_memory_summaries, and
+    thread_evidence_index are ON DELETE CASCADE, so removing the thread row
+    purges the messages, rolling summary, and evidence index in one statement.
+    """
+    thread_key = _normalize_thread_id(thread_id, generate_if_missing=False)
+    token_key = _normalize_token_id(token_id)
+
+    with db_transaction() as (_, cur):
+        cur.execute(
+            """
+            DELETE FROM public.conversation_threads
+            WHERE thread_id = %s
+              AND channel = 'web'
+              AND metadata->>'token_id' = %s
+            RETURNING thread_id
+            """,
+            (thread_key, token_key),
+        )
+        if cur.fetchone() is None:
+            raise ConversationThreadNotFoundError(f"thread not found: {thread_id}")
+
+
 def list_recent_threads(
     *,
     limit: int = DEFAULT_RECENT_THREADS_LIMIT,

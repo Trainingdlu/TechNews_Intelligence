@@ -116,6 +116,7 @@
     if (token) {
         showChat();
         fetchQuota();
+        if (threadId) loadHistory();
     }
 
     // == View Switching ==
@@ -697,6 +698,60 @@
         });
     }
 
+    // == History Load (restore on refresh) ==
+    function _historyItemText(item) {
+        const parts = item && Array.isArray(item.parts) ? item.parts : [];
+        return parts.map((p) => String((p && p.text) || '')).join('').trim();
+    }
+
+    function renderHistory(items) {
+        const welcome = messagesEl.querySelector('.welcome-msg');
+        if (welcome) welcome.remove();
+        markChatStarted();
+        for (const item of items) {
+            const role = String((item && item.role) || '').toLowerCase();
+            if (role === 'user') {
+                appendMessage('user', _historyItemText(item));
+            } else if (role === 'model') {
+                const kind = String((item && item.kind) || 'answer').toLowerCase();
+                if (kind === 'clarification_required') {
+                    const clar = item.clarification && typeof item.clarification === 'object' ? item.clarification : {};
+                    const question = String(clar.question || _historyItemText(item) || '').trim();
+                    const hints = Array.isArray(clar.hints)
+                        ? clar.hints.map((h) => String(h || '').trim()).filter(Boolean)
+                        : [];
+                    const text = hints.length ? `${question}\n\n${hints.map((h) => `- ${h}`).join('\n')}` : question;
+                    appendMessage('agent', text || '请补充分析范围后我再继续。');
+                } else {
+                    const citationUrls = Array.isArray(item.citation_urls)
+                        ? item.citation_urls.map((u) => String(u || '').trim()).filter(Boolean)
+                        : [];
+                    appendMessage('agent', _historyItemText(item), { citationUrls });
+                }
+            }
+        }
+    }
+
+    async function loadHistory() {
+        try {
+            const res = await apiFetch('/history/' + encodeURIComponent(threadId));
+            if (res.status === 401) {
+                handleInvalidToken();
+                return;
+            }
+            if (res.status === 404) {
+                // Thread gone or not owned by this token — drop the stale id, start fresh.
+                threadId = '';
+                localStorage.removeItem('agent_thread_id');
+                return;
+            }
+            if (!res.ok) return;
+            const data = await res.json();
+            const messages = Array.isArray(data.messages) ? data.messages : [];
+            if (messages.length) renderHistory(messages);
+        } catch { /* silent: keep the welcome screen on network error */ }
+    }
+
     // == Typing Indicator ==
     function showTyping(statusText = defaultLoadingStatus) {
         const el = document.createElement('div');
@@ -732,11 +787,20 @@
     }
 
     // == Clear / Logout ==
-    clearBtn.addEventListener('click', () => {
+    clearBtn.addEventListener('click', async () => {
+        const prevThreadId = threadId;
         threadId = '';
         localStorage.removeItem('agent_thread_id');
         history = [];
         renderEmptyChatState();
+        if (prevThreadId) {
+            // True purge: delete the thread (cascades to messages + memory) server-side.
+            // Best-effort — client state is already cleared, so a failed delete just
+            // orphans the old thread (unreachable; a new thread starts next message).
+            try {
+                await apiFetch('/history/' + encodeURIComponent(prevThreadId), { method: 'DELETE' });
+            } catch { /* ignore */ }
+        }
     });
 
     logoutBtn.addEventListener('click', () => {
