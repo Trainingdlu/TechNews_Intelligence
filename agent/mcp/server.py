@@ -194,8 +194,8 @@ def build_newsdb_server(server_name: str = "newsdb") -> InProcessMCPServer:
     )
     server.register_resource(
         uri="news://topics",
-        name="近 21 天话题分布",
-        description="Recent daily article volume distribution (read-only snapshot).",
+        name="近 21 天发文量与分类占比",
+        description="Recent 21-day daily volume plus 6-tag category share (read-only snapshot).",
         mime_type="text/plain",
         reader=list_topics,
     )

@@ -259,6 +259,14 @@ def main() -> int:
             f"Intent router model: provider={handle.provider} model={handle.model} "
             f"client={'ready' if handle.client else 'MISSING'}"
         )
+        if getattr(handle, "fallback", False):
+            print(
+                "  [WARN] requested intent model FAILED to build and SILENTLY FELL BACK "
+                f"to {handle.provider}/{handle.model}.\n"
+                f"  [WARN] build error: {handle.error}\n"
+                "  [WARN] this run is NOT using the model you set — fix creds/config and re-run "
+                "(otherwise you are testing/billing the fallback provider)."
+            )
 
         pending = [c for c in cases if str(c.get("case_id")) not in done_ids]
         print(f"Total cases: {len(cases)}; pending: {len(pending)}")

@@ -61,7 +61,12 @@ def get_db_stats() -> str:
 
 
 def list_topics() -> str:
-    """Get daily article volume distribution for the most recent 21 days."""
+    """Get recent 21-day daily article volume plus category share.
+
+    Categories are the [Tag] prefix the ETL writes into title_cn
+    (one of [AI]/[安全]/[硬件]/[开发]/[商业]/[生态]); [系统] and untagged
+    rows are excluded from the category breakdown.
+    """
     print("\n[Tool] list_topics")
     conn = get_conn()
     try:
@@ -75,15 +80,35 @@ def list_topics() -> str:
             ORDER BY d DESC
             """
         )
-        rows = cur.fetchall()
+        daily_rows = cur.fetchall()
+
+        cur.execute(
+            r"""
+            SELECT substring(title_cn FROM '^\[(.+?)\]') AS tag, COUNT(*) AS c
+            FROM tech_news
+            WHERE created_at > NOW() - INTERVAL '21 days'
+              AND title_cn ~ '^\['
+            GROUP BY tag
+            ORDER BY c DESC
+            """
+        )
+        cat_rows = cur.fetchall()
         cur.close()
 
-        if not rows:
+        if not daily_rows:
             return "No articles in the last 21 days."
 
         lines = ["Recent 21-day daily counts:"]
-        for day, count in rows:
+        for day, count in daily_rows:
             lines.append(f"  {day.strftime('%Y-%m-%d')}: {count}")
+
+        categories = [(tag, c) for tag, c in cat_rows if tag and tag != "系统"]
+        total = sum(c for _, c in categories)
+        if total:
+            lines.append("")
+            lines.append(f"Category share over last 21 days (total {total}):")
+            for tag, c in categories:
+                lines.append(f"  [{tag}] {c} ({c / total * 100:.1f}%)")
         return "\n".join(lines)
     except Exception as exc:
         print(f"[Error] list_topics failed: {exc}")

@@ -373,21 +373,25 @@ def _generate_llm_summary_payload(
 
 
 def _build_memory_model() -> Any:
-    from services.llm_provider import DEFAULT_DEEPSEEK_MODEL, build_chat_model
+    from services.llm_provider import DEFAULT_VERTEX_MODEL, build_chat_model
 
-    provider = _first_env("AGENT_MEMORY_PROVIDER", "AGENT_GRAPH_CONTEXT_PROVIDER", default="deepseek")
-    model = _first_env("AGENT_MEMORY_MODEL", "AGENT_GRAPH_CONTEXT_MODEL", default=DEFAULT_DEEPSEEK_MODEL)
+    # Match the model that writes the answer (graph final-synthesizer role) so
+    # memory-summary fidelity tracks answer quality. AGENT_MEMORY_* still overrides.
+    provider = _first_env("AGENT_MEMORY_PROVIDER", "AGENT_GRAPH_FINAL_PROVIDER", default="vertex")
+    model = _first_env("AGENT_MEMORY_MODEL", "AGENT_GRAPH_FINAL_MODEL", default=DEFAULT_VERTEX_MODEL)
     return build_chat_model(
         provider=provider,
         model_name=model,
         temperature=_env_float("AGENT_MEMORY_TEMPERATURE", 0.1),
-        default_provider="deepseek",
-        default_model=DEFAULT_DEEPSEEK_MODEL,
+        default_provider="vertex",
+        default_model=DEFAULT_VERTEX_MODEL,
     )
 
 
 def _memory_llm_enabled() -> bool:
-    return _env_flag("AGENT_THREAD_MEMORY_LLM_ENABLED", default=False)
+    # On by default: LLM summaries capture the whole answer (incl. its tail)
+    # instead of head-clipping. Set AGENT_THREAD_MEMORY_LLM_ENABLED=0 to disable.
+    return _env_flag("AGENT_THREAD_MEMORY_LLM_ENABLED", default=True)
 
 
 def _first_env(*names: str, default: str = "") -> str:

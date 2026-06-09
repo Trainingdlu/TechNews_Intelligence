@@ -230,22 +230,22 @@ def normalize_context_curator_result(
     }
 
 
+# The rolling thread-memory summary already carries the last 4 turns
+# (MAX_ROLLING_SUMMARY_TURNS in thread_memory.py) into every prompt. The curator
+# only earns its extra LLM call when there is relevant history *beyond* that
+# window — i.e. >=5 prior turns. Below that threshold its turn-selection just
+# duplicates the rolling summary, so gate purely on turn count.
+CURATOR_MIN_HISTORY_TURNS = 5
+
+
 def should_use_context_curator(
     *,
     user_message: str,
     history_manifest: list[dict[str, Any]],
     memory_summary: dict[str, Any] | None = None,
 ) -> bool:
-    if not context_curator_enabled() or not history_manifest:
-        return False
-    if memory_summary:
-        return True
-    evidence_count = sum(int(item.get("evidence_count") or 0) for item in history_manifest)
-    if evidence_count > 0:
-        return True
-    if len(history_manifest) >= 3:
-        return True
-    return len(str(user_message or "").strip()) <= 80 and len(history_manifest) >= 2
+    del user_message, memory_summary  # interface kept stable; gating is turn-count only
+    return context_curator_enabled() and len(history_manifest) >= CURATOR_MIN_HISTORY_TURNS
 
 
 def build_context_pack(

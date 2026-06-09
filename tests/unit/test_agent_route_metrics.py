@@ -189,11 +189,11 @@ class TestEvidence:
 
 class TestPromptContract:
     def test_prompt_enforces_sentence_tail_url_mode(self):
-        from agent.prompts import SYSTEM_INSTRUCTION
+        from agent.graph.prompts import _FINAL_SYSTEM_PROMPT
 
-        assert "append the raw URL at sentence end using parentheses" in SYSTEM_INSTRUCTION
-        assert "Do NOT output numeric citations like [1], [2]" in SYSTEM_INSTRUCTION
-        assert "Do not use emoji" in SYSTEM_INSTRUCTION
+        assert "append the raw URL at sentence end using parentheses" in _FINAL_SYSTEM_PROMPT
+        assert "Do NOT output numeric citations like [1], [2]" in _FINAL_SYSTEM_PROMPT
+        assert "Do not use emoji" in _FINAL_SYSTEM_PROMPT
 
 
 # ---------------------------------------------------------------------------

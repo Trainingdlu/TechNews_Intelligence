@@ -142,7 +142,7 @@ TOOL_CATALOG: tuple[ToolDefinition, ...] = (
         name="list_topics",
         input_model=ListTopicsInput,
         handler=list_topics_tool,
-        description="Get daily article volume distribution for recent 21 days; no article evidence is expected.",
+        description="Get recent 21-day daily article volume and category (6-tag) share; no article evidence is expected.",
         requires_evidence=False,
         expose_in_mcp=False,
     ),
