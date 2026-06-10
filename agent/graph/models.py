@@ -6,6 +6,7 @@ import os
 from typing import Any
 
 from services.llm_provider import (
+    DEFAULT_DEEPSEEK_FLASH_MODEL,
     DEFAULT_DEEPSEEK_MODEL,
     DEFAULT_VERTEX_MODEL,
     build_chat_model,
@@ -45,13 +46,13 @@ def build_graph_models() -> GraphModels:
         ),
         intent_router=_build_role_model(
             role="intent",
-            default_provider="vertex",
-            default_model=DEFAULT_VERTEX_MODEL,
+            default_provider="deepseek",
+            default_model=DEFAULT_DEEPSEEK_FLASH_MODEL,
         ),
         tool_worker=_build_role_model(
             role="tool",
             default_provider="deepseek",
-            default_model=DEFAULT_DEEPSEEK_MODEL,
+            default_model=DEFAULT_DEEPSEEK_FLASH_MODEL,
         ),
         final_synthesizer=_build_role_model(
             role="final",

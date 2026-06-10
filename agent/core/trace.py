@@ -410,6 +410,10 @@ def extract_token_usage(messages: list[Any]) -> dict[str, int] | None:
             prompt_total += normalized.get("prompt_tokens", 0)
             completion_total += normalized.get("completion_tokens", 0)
             total_total += normalized.get("total_tokens", 0)
+            # One message reports the same usage in several metadata locations
+            # (usage_metadata + response_metadata.usage_metadata, etc.); count it
+            # once per message. Summing still happens across distinct messages.
+            break
 
     if not seen:
         return None

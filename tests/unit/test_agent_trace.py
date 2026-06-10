@@ -2,18 +2,66 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage
 import pytest
 
 from agent.core.trace import (
+    extract_token_usage,
     finalize_request_trace,
     request_trace_context,
     trace_span,
 )
 
 pytestmark = pytest.mark.usefixtures("agent_dependency_stubs")
+
+
+def test_extract_token_usage_counts_gemini_usage_once() -> None:
+    # Gemini reports the SAME usage in both message.usage_metadata and
+    # response_metadata.usage_metadata. It must be counted once, not summed.
+    message = SimpleNamespace(
+        usage_metadata={
+            "input_tokens": 6758,
+            "output_tokens": 708,
+            "total_tokens": 9178,
+            "output_token_details": {"reasoning": 1712},
+        },
+        response_metadata={
+            "usage_metadata": {
+                "prompt_token_count": 6758,
+                "candidates_token_count": 708,
+                "total_token_count": 9178,
+                "thoughts_token_count": 1712,
+            }
+        },
+        additional_kwargs={},
+    )
+    assert extract_token_usage([message]) == {
+        "prompt_tokens": 6758,
+        "completion_tokens": 708,
+        "total_tokens": 9178,
+    }
+
+
+def test_extract_token_usage_sums_across_messages() -> None:
+    # Distinct LLM calls in one turn must still be summed (don't over-dedupe).
+    m1 = SimpleNamespace(
+        usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+        response_metadata={},
+        additional_kwargs={},
+    )
+    m2 = SimpleNamespace(
+        usage_metadata={"input_tokens": 50, "output_tokens": 10, "total_tokens": 60},
+        response_metadata={},
+        additional_kwargs={},
+    )
+    assert extract_token_usage([m1, m2]) == {
+        "prompt_tokens": 150,
+        "completion_tokens": 30,
+        "total_tokens": 180,
+    }
 
 
 def test_trace_records_tool_call_spans_and_chain() -> None:

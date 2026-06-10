@@ -9,6 +9,7 @@ from typing import Any
 DEFAULT_GEMINI_API_MODEL = "gemini-2.5-pro"
 DEFAULT_VERTEX_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
+DEFAULT_DEEPSEEK_FLASH_MODEL = "deepseek-v4-flash"
 DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 GEMINI_API_PROVIDERS = {"gemini", "gemini_api", "google_ai_studio", "developer_api"}
