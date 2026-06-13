@@ -64,6 +64,22 @@ def test_extract_token_usage_sums_across_messages() -> None:
     }
 
 
+def test_request_token_usage_accumulates_across_model_calls() -> None:
+    from agent.core.trace import set_request_token_usage
+
+    with request_trace_context(user_message="multi node run", request_id="req-token-sum"):
+        set_request_token_usage({"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 150})
+        set_request_token_usage({"prompt_tokens": 30, "completion_tokens": 5, "total_tokens": 60})
+        summary = finalize_request_trace(final_status="success")
+
+    assert summary is not None
+    assert summary["token_usage"] == {
+        "prompt_tokens": 130,
+        "completion_tokens": 25,
+        "total_tokens": 210,
+    }
+
+
 def test_trace_records_tool_call_spans_and_chain() -> None:
     with request_trace_context(user_message="latest ai updates", request_id="req-trace-001"):
         with trace_span("tool_call", "query_news", input_summary={"args": {"query": "openai", "days": 7}}) as span:
@@ -100,7 +116,7 @@ def test_generate_response_finalizes_success_trace() -> None:
 
     expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
     with (
-        patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"})),
+        patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}, {"https://a.example.com"})),
         patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})),
     ):
         out = generate_response([], "summarize recent ai updates")
@@ -118,7 +134,7 @@ def test_generate_response_finalizes_blocked_trace() -> None:
     from agent.agent import AgentGenerationError, generate_response, get_last_request_trace_summary
 
     with (
-        patch("agent.agent._run_generation_core", return_value=("Main analysis body.", {"https://a.example.com"})),
+        patch("agent.agent._run_generation_core", return_value=("Main analysis body.", {"https://a.example.com"}, {"https://a.example.com"})),
         patch(
             "agent.agent._decorate_response_with_sources",
             return_value=("Main analysis body.\n\n## Sources\n- [1] https://a.example.com", {}),
@@ -143,7 +159,7 @@ def test_generate_response_eval_payload_preserves_tool_call_sequence() -> None:
     with (
         patch(
             "agent.agent._generate_response_core",
-            return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}),
+            return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}, {"https://a.example.com"}),
         ),
         patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})),
         patch(

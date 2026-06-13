@@ -51,7 +51,6 @@ def build_custom_graph(
     graph.add_node("evidence_normalizer", runner.evidence_normalizer)
     graph.add_node("tool_loop_decider", runner.tool_loop_decider)
     graph.add_node("final_synthesizer", runner.final_synthesizer)
-    graph.add_node("output_guard", runner.output_guard)
     graph.add_node("clarification_response", runner.clarification_response)
     graph.add_node("insufficient_evidence_response", runner.insufficient_evidence_response)
 
@@ -84,14 +83,13 @@ def build_custom_graph(
             "insufficient_evidence": "insufficient_evidence_response",
         },
     )
-    graph.add_edge("final_synthesizer", "output_guard")
-    graph.add_edge("output_guard", END)
+    graph.add_edge("final_synthesizer", END)
     graph.add_conditional_edges(
         "clarification_response",
         route_after_clarification,
         {"answer": "tool_selection", "end": END},
     )
-    graph.add_edge("insufficient_evidence_response", "output_guard")
+    graph.add_edge("insufficient_evidence_response", END)
     resolved_checkpointer = (
         get_checkpointer() if checkpointer is _USE_DEFAULT_CHECKPOINTER else checkpointer
     )
@@ -164,6 +162,7 @@ def invoke_custom_graph(
     return AgentRunResult(
         text=str(final_state.get("final_text") or "").strip(),
         urls=[str(url).strip() for url in (final_state.get("valid_urls") or final_state.get("evidence_urls") or []) if str(url).strip()],
+        citable_urls=[str(url).strip() for url in (final_state.get("citable_urls") or []) if str(url).strip()],
         clarification=clarification if isinstance(clarification, dict) else None,
     )
 

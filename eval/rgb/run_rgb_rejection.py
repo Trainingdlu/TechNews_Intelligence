@@ -253,6 +253,33 @@ def _judge_answer(
     }
 
 
+def _resolve_judge_config(
+    *,
+    synth_provider: str,
+    synth_model: str,
+    judge_provider: str | None,
+    judge_model: str | None,
+) -> tuple[str, str]:
+    """Judge provider/model, defaulting to the synth client when not overridden.
+
+    Leaving --judge-provider/--judge-model unset reuses the synth client exactly
+    (current shared-client behavior). Setting them lets a deepseek synthesizer be
+    scored by a vertex judge — a clean, non-self-eval comparison.
+    """
+    return (judge_provider or synth_provider, judge_model or synth_model)
+
+
+def _resolve_final_prompt(prompt_file: Path | None, *, default: str) -> str:
+    """Final-synthesizer prompt: external file when given, else production default.
+
+    Lets a grounding-hardened prompt be A/B-tested via --synth-prompt-file without
+    touching agent/graph/prompts.py.
+    """
+    if prompt_file is None:
+        return default
+    return prompt_file.read_text(encoding="utf-8").strip()
+
+
 def _parse_args() -> argparse.Namespace:
     here = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="RGB negative-rejection runner.")
@@ -264,8 +291,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--only-id", type=str, default=None)
     parser.add_argument("--report-only", action="store_true")
     parser.add_argument("--sleep-seconds", type=float, default=2.0, help="Delay between cases (RPM quota).")
-    parser.add_argument("--provider", type=str, default=None, help="Override model provider (e.g. gemini_api). Default: production.")
-    parser.add_argument("--model", type=str, default=None, help="Override model name (e.g. a flash model). Default: production.")
+    parser.add_argument("--provider", type=str, default=None, help="Override synthesizer provider (e.g. deepseek). Default: production.")
+    parser.add_argument("--model", type=str, default=None, help="Override synthesizer model name. Default: production.")
+    parser.add_argument("--judge-provider", type=str, default=None, help="Separate judge provider (e.g. vertex) to avoid self-eval. Default: same as synthesizer.")
+    parser.add_argument("--judge-model", type=str, default=None, help="Separate judge model name. Default: same as synthesizer.")
+    parser.add_argument("--synth-prompt-file", type=Path, default=None, help="Override the final-synthesizer prompt with this file (grounding-hardening A/B). Default: production prompt.")
     return parser.parse_args()
 
 
@@ -342,7 +372,7 @@ def _build_report(
     lines.append("|---|---|---|")
     lines.append(
         f"| **误归因/伪造率（LLM judge）** | **{misattr_rate*100:.1f}%** "
-        "| ← 简历用这个：把证据外内容冒充成证据支撑（标了“假设/外部知识”的不算） |"
+        "| 把证据外内容冒充成证据支撑（标了“假设/外部知识”的不算） |"
     )
     lines.append(
         f"| 硬拒答率（确定性，gold 未出现） | {hard_reject*100:.1f}% "
@@ -436,6 +466,16 @@ def main() -> int:
         from agent.graph.prompts import _FINAL_SYSTEM_PROMPT  # noqa: E402
         from services.llm_provider import build_chat_model, resolve_agent_model_config  # noqa: E402
 
+        prompt_file = args.synth_prompt_file
+        if prompt_file is not None:
+            prompt_file = prompt_file.resolve()
+            if not prompt_file.exists():
+                _safe_print(f"Synth prompt file not found: {prompt_file}")
+                return 1
+        final_prompt = _resolve_final_prompt(prompt_file, default=_FINAL_SYSTEM_PROMPT)
+        if prompt_file is not None:
+            _safe_print(f"Using OVERRIDE final prompt from {prompt_file} ({len(final_prompt)} chars)")
+
         config = resolve_agent_model_config()
         provider = args.provider or config.provider
         model = args.model or config.model
@@ -452,7 +492,27 @@ def main() -> int:
             client.max_retries = 0
         except Exception:  # noqa: BLE001 - not all providers expose this field
             pass
-        _safe_print(f"Model: provider={provider} model={model} (temp=0.0, inner-retry off)")
+        _safe_print(f"Synth model: provider={provider} model={model} (temp=0.0, inner-retry off)")
+
+        judge_provider, judge_model = _resolve_judge_config(
+            synth_provider=provider, synth_model=model,
+            judge_provider=args.judge_provider, judge_model=args.judge_model,
+        )
+        if (judge_provider, judge_model) == (provider, model):
+            judge_client = client
+        else:
+            judge_client = build_chat_model(
+                provider=judge_provider,
+                model_name=judge_model,
+                temperature=0.0,
+                default_provider=config.provider,
+                default_model=config.model,
+            )
+            try:
+                judge_client.max_retries = 0
+            except Exception:  # noqa: BLE001
+                pass
+        _safe_print(f"Judge model: provider={judge_provider} model={judge_model}")
 
         done = _read_done(output_path)
         pending = [c for c in cases if str(c.get("id")) not in done]
@@ -470,14 +530,14 @@ def main() -> int:
                 answer = call_with_retry(
                     lambda: _synthesize(
                         question, evidence_block,
-                        client=client, coerce_text_fn=_coerce_to_text, final_prompt=_FINAL_SYSTEM_PROMPT,
+                        client=client, coerce_text_fn=_coerce_to_text, final_prompt=final_prompt,
                     ),
                     label=f"{case_id} synth",
                 )
                 verdict = call_with_retry(
                     lambda: _judge_answer(
                         question, evidence_block, answer,
-                        client=client, coerce_text_fn=_coerce_to_text, extract_json_fn=_extract_json_object,
+                        client=judge_client, coerce_text_fn=_coerce_to_text, extract_json_fn=_extract_json_object,
                     ),
                     label=f"{case_id} judge",
                 )

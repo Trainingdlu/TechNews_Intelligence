@@ -1,47 +1,9 @@
-"""Output URL guard and final fallback helpers for graph nodes."""
+"""Final fallback text helper for graph nodes."""
 
 from __future__ import annotations
 
 import re
 from typing import Any
-
-from agent.core.evidence import extract_urls, normalize_url_for_match
-
-
-def _guard_output_urls(text: str, valid_urls: list[str]) -> tuple[str, dict[str, Any]]:
-    raw = str(text or "").strip()
-    allowed: dict[str, str] = {}
-    for item in valid_urls or []:
-        url = str(item or "").strip()
-        normalized = normalize_url_for_match(url)
-        if normalized and normalized not in allowed:
-            allowed[normalized] = url
-
-    output_urls = extract_urls(raw)
-    removed_count = 0
-    has_valid_body_url = False
-    guarded = raw
-    for url in output_urls:
-        normalized = normalize_url_for_match(url)
-        if normalized and normalized in allowed:
-            has_valid_body_url = True
-            continue
-        guarded = guarded.replace(url, "").strip()
-        removed_count += 1
-
-    guarded = re.sub(r"[ \t]+([，,。.;；:：!?！？])", r"\1", guarded)
-    guarded = re.sub(r"\n{3,}", "\n\n", guarded).strip()
-
-    appended_evidence_url = False
-    if allowed and not has_valid_body_url:
-        first_url = next(iter(allowed.values()))
-        guarded = f"{guarded.rstrip()}\n\n来源：{first_url}".strip()
-        appended_evidence_url = True
-
-    return guarded, {
-        "removed_unknown_url_count": removed_count,
-        "appended_evidence_url": appended_evidence_url,
-    }
 
 
 def _fallback_final_text(user_message: str, state: dict[str, Any]) -> str:

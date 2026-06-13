@@ -31,7 +31,7 @@ def test_generate_response_core_wide_query_appends_soft_hitl_followup() -> None:
     with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult(response_text, urls)):
         with patch("agent.agent._get_accumulated_tool_calls", return_value={"query_news", "compare_sources"}):
             with patch("agent.agent._build_hitl_soft_followup", return_value="你更希望先限定时间范围还是来源范围？"):
-                text, valid_urls = _generate_response_core([], "帮我做 AI 行业全景总结")
+                text, valid_urls, _ = _generate_response_core([], "帮我做 AI 行业全景总结")
 
     assert text.startswith(response_text)
     assert text.endswith("你更希望先限定时间范围还是来源范围？")
@@ -54,7 +54,7 @@ def test_generate_response_core_conflict_risk_appends_soft_hitl_followup() -> No
     with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult(response_text, urls)):
         with patch("agent.agent._get_accumulated_tool_calls", return_value={"compare_sources"}):
             with patch("agent.agent._build_hitl_soft_followup", return_value="是否只看单一来源后再给结论？"):
-                text, valid_urls = _generate_response_core([], "OpenAI 现在前景怎么样？")
+                text, valid_urls, _ = _generate_response_core([], "OpenAI 现在前景怎么样？")
 
     assert text.startswith(response_text)
     assert text.endswith("是否只看单一来源后再给结论？")
@@ -74,7 +74,7 @@ def test_generate_response_core_specific_query_keeps_original_answer() -> None:
     with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult(response_text, urls)):
         with patch("agent.agent._get_accumulated_tool_calls", return_value={"query_news", "trend_analysis"}):
             with patch("agent.agent._build_hitl_soft_followup") as followup_mock:
-                text, valid_urls = _generate_response_core([], "最近30天只看TechCrunch，分析OpenAI趋势")
+                text, valid_urls, _ = _generate_response_core([], "最近30天只看TechCrunch，分析OpenAI趋势")
 
     assert text == response_text
     assert valid_urls == urls

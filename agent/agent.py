@@ -487,8 +487,14 @@ def _build_dynamic_clarification_payload(
 def _generate_response_core(
     history: list[dict],
     user_message: str,
-) -> tuple[str, list[str]]:
-    """Core generation: invoke the custom LangGraph agent with metrics tracking."""
+) -> tuple[str, list[str], list[str]]:
+    """Core generation: invoke the custom LangGraph agent with metrics tracking.
+
+    Returns (text, valid_urls, citable_urls). valid_urls is this turn's retrieved
+    evidence (drives empty-evidence/risk guards and evidence_count); citable_urls
+    additionally includes context-pack sources the model was shown (drives the
+    body-URL guard and source decoration).
+    """
     _metrics_inc("requests_total")
 
     try:
@@ -528,6 +534,7 @@ def _generate_response_core(
             )
         result = graph_result.text
         valid_urls = list(graph_result.urls)
+        citable_urls = list(graph_result.citable_urls or valid_urls)
         tool_calls = _get_accumulated_tool_calls()
 
         if _should_block_empty_evidence(user_message, valid_urls, tool_calls):
@@ -575,7 +582,7 @@ def _generate_response_core(
                 result = f"{result.rstrip()}\n\n{followup.strip()}".strip()
 
         _metrics_inc("graph_success")
-        return result, valid_urls
+        return result, valid_urls, citable_urls
     except Exception as exc:
         _metrics_inc("graph_error")
         if isinstance(exc, (AgentGenerationError, ClarificationRequiredError)):
@@ -654,15 +661,15 @@ def _run_generation_core(
     history: list[dict],
     user_message: str,
     progress_callback: Callable[[dict[str, str]], None] | None = None,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], list[str]]:
     """Run core generation with optional progress callback lifecycle."""
     with agent_run_context(progress_callback=progress_callback):
         _emit_progress("understanding")
-        core_text, valid_urls = _generate_response_core(
+        core_text, valid_urls, citable_urls = _generate_response_core(
             history,
             user_message,
         )
-        return core_text, valid_urls
+        return core_text, valid_urls, citable_urls
 
 
 def generate_response(
@@ -685,16 +692,16 @@ def generate_response(
         request_id=request_id,
     ):
         try:
-            core_text, valid_urls = _run_generation_core(
+            core_text, valid_urls, citable_urls = _run_generation_core(
                 history,
                 user_message,
                 progress_callback=progress_callback,
             )
             core_text = _strip_generic_analysis_leadin(core_text)
             core_text = _strip_emoji(core_text)
-            _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
-            _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
-            final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+            _enforce_output_urls_in_valid_set(core_text, user_message, citable_urls)
+            _enforce_body_valid_url_guard(core_text, user_message, citable_urls)
+            final_text, _ = _decorate_response_with_sources(core_text, user_message, citable_urls)
             final_text = _strip_emoji(final_text)
             _finalize_request_trace(
                 final_status="success",
@@ -749,16 +756,16 @@ def generate_response_payload(
         request_id=request_id,
     ):
         try:
-            core_text, valid_urls = _run_generation_core(
+            core_text, valid_urls, citable_urls = _run_generation_core(
                 history,
                 user_message,
                 progress_callback=progress_callback,
             )
             core_text = _strip_generic_analysis_leadin(core_text)
             core_text = _strip_emoji(core_text)
-            _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
-            _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
-            final_text, title_map = _decorate_response_with_sources(core_text, user_message, valid_urls)
+            _enforce_output_urls_in_valid_set(core_text, user_message, citable_urls)
+            _enforce_body_valid_url_guard(core_text, user_message, citable_urls)
+            final_text, title_map = _decorate_response_with_sources(core_text, user_message, citable_urls)
             final_text = _strip_emoji(final_text)
             title_map = _strip_emoji_from_title_map(title_map)
             _finalize_request_trace(
@@ -832,15 +839,15 @@ def generate_response_eval_payload(
             with agent_run_context():
                 eval_request_id = _get_current_request_id()
 
-                core_text, valid_urls = _generate_response_core(
+                core_text, valid_urls, citable_urls = _generate_response_core(
                     history,
                     user_message,
                 )
                 core_text = _strip_generic_analysis_leadin(core_text)
                 core_text = _strip_emoji(core_text)
-                _enforce_output_urls_in_valid_set(core_text, user_message, valid_urls)
-                _enforce_body_valid_url_guard(core_text, user_message, valid_urls)
-                final_text, _ = _decorate_response_with_sources(core_text, user_message, valid_urls)
+                _enforce_output_urls_in_valid_set(core_text, user_message, citable_urls)
+                _enforce_body_valid_url_guard(core_text, user_message, citable_urls)
+                final_text, _ = _decorate_response_with_sources(core_text, user_message, citable_urls)
                 final_text = _strip_emoji(final_text)
                 tool_calls = _ordered_tool_calls_for_eval(None)
                 trace_summary = _finalize_request_trace(

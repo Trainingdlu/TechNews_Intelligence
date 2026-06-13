@@ -60,7 +60,9 @@ def _read_done(path: Path) -> set[str]:
     if not path.exists():
         return done
     for rec in _read_jsonl(path):
-        if rec.get("status") == "success":
+        # refusal is terminal and deterministic (temp 0, same prompt/evidence) —
+        # treat as done so resume doesn't retry it forever.
+        if rec.get("status") in {"success", "refusal"}:
             done.add(str(rec.get("case_id") or ""))
     return done
 
@@ -136,7 +138,7 @@ def main() -> int:
     if done:
         print(f"Resume: {len(done)} case(s) already done; skipping them.")
 
-    from agent import generate_response_eval_payload  # noqa: E402
+    from agent import AgentGenerationError, generate_response_eval_payload  # noqa: E402
     from agent.clarification import ClarificationRequiredError  # noqa: E402
     from services.db import db_cursor  # noqa: E402
 
@@ -159,6 +161,7 @@ def main() -> int:
     run_token = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     success = 0
     skipped = 0
+    refused = 0
     error = 0
     for idx, case in enumerate(pending, start=1):
         case_id = str(case.get("case_id") or "")
@@ -204,6 +207,32 @@ def main() -> int:
             }
             print("  -> clarification (skipped for faithfulness)")
             skipped += 1
+        except AgentGenerationError as exc:
+            code = getattr(exc, "code", "") or ""
+            if code == "graph_inline_citation_missing":
+                # Evidence was retrieved but the (hardened) synthesizer produced no
+                # citable URL, so the body-URL guard blocked it. This is a correct
+                # refusal, not a failure — bucket as refusal so it doesn't inflate error.
+                record = {
+                    "case_id": case_id,
+                    "question": question,
+                    "status": "refusal",
+                    "code": code,
+                    "note": str(exc),
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                print("  -> refusal/no-data (correct refusal, no citable URL; skipped for faithfulness)")
+                refused += 1
+            else:
+                record = {
+                    "case_id": case_id,
+                    "question": question,
+                    "status": "error",
+                    "error_message": f"{type(exc).__name__}[{code}]: {exc}",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                print(f"  -> ERROR: {record['error_message']}")
+                error += 1
         except Exception as exc:  # noqa: BLE001
             record = {
                 "case_id": case_id,
@@ -219,7 +248,7 @@ def main() -> int:
             time.sleep(args.sleep_seconds)
 
     print("=" * 60)
-    print(f"Done. success={success}, clarification={skipped}, error={error}, output={output_path}")
+    print(f"Done. success={success}, clarification={skipped}, refusal={refused}, error={error}, output={output_path}")
     return 0
 
 

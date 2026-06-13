@@ -1,6 +1,6 @@
 # 评测体系
 
-分层评测（G1–G5），复用线上链路定位并量化智能体在每一层的失效。系统架构见 [系统架构](ARCHITECTURE.md)。
+分层评测（G1–G6），复用线上链路定位并量化智能体在每一层的失效。系统架构见 [系统架构](ARCHITECTURE.md)。
 
 > 本文是耐久的方法论与运行说明。**具体数值不写在正文里**——每层的实时结果由脚本生成在各自的 `report.md`，正文只指向它们；§6 给一份带日期的结果快照，会随重跑过期。
 
@@ -10,7 +10,7 @@
 
 被评测对象是一个 **LangGraph StateGraph 智能体**：意图判断 → 工具选择 → 工具规划 → 策略检查 → 工具执行 → 证据归一 → 是否继续 → 最终综合 → 输出守卫。它读取 PostgreSQL + pgvector 的科技新闻库，回答必须由工具证据支撑。
 
-评测目标不是"答案读起来好不好"，而是 **用实打实的数据，定位并量化智能体在每一层会在哪里翻车**。为此把评测拆成五层（G1–G5），每层锁定一个能力层，用独立构造的题集 + 复用线上链路 + 可回溯 Trace，产出单一可辩护的核心指标。
+评测目标不是"答案读起来好不好"，而是 **用实打实的数据，定位并量化智能体在每一层会在哪里翻车**。为此把评测拆成六层（G1–G6），每层锁定一个能力层，用独立构造的题集 + 复用线上链路 + 可回溯 Trace，产出单一可辩护的核心指标。
 
 ---
 
@@ -35,6 +35,7 @@
 | **G3 生成忠实度** | `eval/generation/` | 答案是否被证据支撑、是否幻觉？ | Faithfulness(1-5) / 幻觉率 / URL 泄漏 |
 | **G4 意图分类** | `eval/intent_eval/` | 问题类型判得准不准？ | intent_type accuracy |
 | **G5 工具选择** | `eval/tool_selection/` | 选对工具了吗？错在哪一层？ | tool_selection accuracy |
+| **G6 RGB 拒答** | `eval/rgb/` | 只给干扰文档时会不会冒充证据？ | 误归因/伪造率 |
 
 ---
 
@@ -84,7 +85,7 @@
 - **证据对齐**：judge 评分依据是 `synthesizer_evidence`（模型真实输入），而非从 DB 重抓的摘要——保证评的是模型实际所见，避免"评委上下文错位"造成的假阳性幻觉。
 - **对抗集（幻觉诱饵）**：用"不存在的型号 / 精确数字 / 完整名单"等诱饵压测诚实性。扩大对抗集曾暴露一个真实缺陷：面对无数据问题，检索靠实体匹配仍返回沾边证据，synthesizer 正确地拒绝编造（返回空），但确定性兜底文案曾误称"已找到相关证据"并指向无关来源——修复兜底文案（output_guard）后，对抗集忠实度恢复、幻觉归零。剩余少量案例转为"诚实拒答"（见 §7 限制 C）。
 - **Prompt ablation（grounding 的价值，两层防御）**：用弱 grounding 提示词替换生产提示词，量化提示词的边际贡献。结论：忠实度是**双层防御**——① 提示词诱导：去掉"证据优先 / 只用证据 / 不足要明说"后 faithfulness 温和下降，掉分源于外部知识漂移而非编造；② 确定性 output_guard：再去掉"正文必须引用来源 URL"时，大部分回答被 output_guard 直接拦截、到不了用户。不是单点保证。
-- **文件**：`queries.jsonl` · `queries_adversarial.jsonl` · `run_generation.py`（带 `--synth-prompt-file` 做 ablation）· `enrich_evidence.py` · `judge_faithfulness.py` · `synth_prompt_weak.txt` · `report.md` · `report_adversarial.md` · `report_ablation.md`
+- **文件**：`queries.jsonl` · `queries_adversarial.jsonl` · `run_generation.py`（带 `--synth-prompt-file` 做 ablation）· `enrich_evidence.py` · `judge_faithfulness.py` · `synth_prompt_weak.txt` · `report.md` · `report_adversarial.md` · `report_ablation.md` · `report_final.md`（加固提示词 before→after，对应 `../synth_prompt_final_hardened.txt`，已接入生产 `_FINAL_SYSTEM_PROMPT`）
 
 ### G4 · 意图分类评测
 
@@ -99,9 +100,16 @@
 - **价值**：评测驱动修复的闭环——量化根因、归因到正确层、提示词修复、复测确认无回归。
 - **文件**：`queries.jsonl` · `run_tool_selection_eval.py`（支持 `--intent-router-prompt-file` / `--tool-worker-prompt-file` 覆盖做提示词 A/B）· `report.md`
 
+### G6 · RGB negative-rejection（对抗性拒答 + grounding 加固 delta）
+
+- **方法**：取 RGB 中文子集，每条只喂 `negative`（不含答案）文档 top-5，经生产接地 prompt 合成答案，压测"无证据时会不会冒充出处"。确定性剔除答案泄漏进所喂文档的 case（数字归一），避免把标注噪声误判为幻觉。
+- **指标三分**：`misattributed`（把证据外内容冒充成证据支撑 = 真·幻觉，标注假设的不算）是核心失败量；`gold_present`（确定性字串匹配）、`answered`（LLM judge）用于区分"干净拒答 / 标注假设补充 / 冒充出处"三种行为。
+- **grounding 加固 delta**：final 节点加入 Grounding & Refusal 硬规则后，误归因率在同题集上近乎砍半（配对：修好多于新坏），代价是回答率下降、模型更保守。换模型（gemini→deepseek）会显著抬高误归因，加固是迁移的缓解手段而非追平 gemini。
+- **文件**：`run_rgb_rejection.py`（带 `--provider` / `--synth-prompt-file` 做模型与提示词 A/B）· `data/zh.json` · `report_final.md`（合并 before→after）· 各单 run `report.md` / `runs/rgb_deepseek*.md`
+
 ---
 
-## 6. 结果快照（@2026-05-22）
+## 6. 结果快照（@2026-05-22；G3 标准、G6 @2026-06-12 刷新）
 
 > 某次运行的快照，**会随重跑过期；实时 / 完整数字以各层 `report.md` 为准**。
 
@@ -110,10 +118,11 @@
 | G1 错误分析 | OK / tool_wrong / 幻觉 | 74% / 26% / **0** | 50 |
 | G2 检索 | nDCG@10（rerank 前→后） | **0.68 → 0.86（+26%）** | 130 |
 | G2 检索 | P@5 / MRR@10（rerank 后） | 85.5% / 0.98 | 130 |
-| G3 生成（标准） | faithfulness / 幻觉 / URL 泄漏 | **5.0 / 0% / 0%** | 47 |
+| G3 生成（标准，deepseek+加固） | faithfulness（同 45 题，加固前→后）/ 幻觉 / URL 泄漏 | **4.73 → 4.82 / 0% / 0%** | 45 |
 | G3 生成（对抗） | faithfulness / 幻觉 / URL 泄漏 | 4.87 / 0% / 0%（4 个引用闸拦截） | 46 |
 | G4 意图 | intent_type accuracy | **98.7%** | 150 |
 | G5 工具选择 | accuracy（修复前→后） | **30% → 100%** | 97 |
+| G6 RGB 拒答（deepseek，加固前→后） | 误归因/伪造率（同 299 题） | **21.7% → 11.4%** | 299 |
 | judge 校准 | kappa 名义 / QWK / 二元 | 0.356 / **0.514** / 0.515 | 100 |
 
 ---
@@ -147,6 +156,7 @@
 | G3 忠实度评判（LLM judge） | `eval/generation/runs/faithfulness_judgments.jsonl` |
 | G4 意图 | `eval/intent_eval/runs/g4_predictions.jsonl` |
 | G5 工具选择 | `eval/tool_selection/runs/g5_predictions.jsonl` |
+| G6 RGB 拒答 | `eval/rgb/runs/rgb_rejection.jsonl`（或对应 `--output`） |
 
 - **G3 是多阶段链**（run → enrich → judge）：重测某一集需清掉该集的 run 与 judge 两个 `runs/*.jsonl`，再依次重跑三步；对抗 / ablation 集对应各自 `--output` 文件名。
 - **纯计算 / 转换阶段**（`compute_metrics` / `compute_kappa` / `enrich_evidence` / `build_*` / `summarize`）每次都从输入重算，无续跑、无需清理。
@@ -210,4 +220,13 @@ python eval/intent_eval/run_intent_eval.py                            # -> runs/
 
 ```powershell
 python eval/tool_selection/run_tool_selection_eval.py                 # -> runs/g5_predictions.jsonl + report.md
+```
+
+### G6 · RGB 拒答（对抗性 negative-rejection；用自带 `data/zh.json`，不触新闻库，无需暂停 n8n）
+
+```powershell
+# deepseek 基线
+python eval/rgb/run_rgb_rejection.py --provider deepseek --limit 0 --output eval/rgb/runs/rgb_deepseek.jsonl --report eval/rgb/runs/rgb_deepseek.md
+# deepseek + 加固提示词（--synth-prompt-file 覆盖 final 节点提示词）
+python eval/rgb/run_rgb_rejection.py --provider deepseek --limit 0 --synth-prompt-file eval/synth_prompt_final_hardened.txt --output eval/rgb/runs/rgb_deepseek_hardened.jsonl --report eval/rgb/runs/rgb_deepseek_hardened.md
 ```

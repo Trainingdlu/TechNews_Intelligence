@@ -12,6 +12,7 @@ from agent.graph.builder import invoke_custom_graph
 from agent.graph.nodes import (
     GraphDependencies,
     GraphNodeRunner,
+    _citable_urls_for_state,
     _heuristic_intent,
     _heuristic_tool_calls,
     _recent_context_snippet,
@@ -145,17 +146,23 @@ def test_evidence_normalizer_uses_tool_envelope_evidence() -> None:
     assert "TechCrunch" in update["evidence_brief"]
 
 
-def test_output_guard_keeps_only_evidence_urls_and_adds_source_url() -> None:
-    update = _runner().output_guard(
-        {
-            "final_text": "结论参考 https://unknown.example.com/x",
-            "evidence_urls": ["https://example.com/source"],
-        }
-    )
+def test_citable_urls_union_context_and_evidence() -> None:
+    state = {"evidence_urls": ["https://fresh.example.com/a"]}
+    context_text = "Prior evidence URLs:\n- https://carried.example.com/b"
 
-    assert "https://unknown.example.com/x" not in update["final_text"]
-    assert "https://example.com/source" in update["final_text"]
-    assert update["valid_urls"] == ["https://example.com/source"]
+    citable = _citable_urls_for_state(state, context_text)
+
+    assert "https://fresh.example.com/a" in citable
+    assert "https://carried.example.com/b" in citable
+
+
+def test_citable_urls_dedupe_normalized_variants() -> None:
+    state = {"evidence_urls": ["https://x.example.com/p"]}
+    context_text = "again see https://x.example.com/p/ here"
+
+    citable = _citable_urls_for_state(state, context_text)
+
+    assert sum(1 for u in citable if "x.example.com" in u) == 1
 
 
 def test_followup_evidence_url_drives_single_article_read() -> None:

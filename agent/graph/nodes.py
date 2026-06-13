@@ -26,7 +26,7 @@ from agent.context_manager import (
     render_context_for_prompt,
     should_use_context_curator,
 )
-from agent.core.evidence import normalize_url_for_match
+from agent.core.evidence import extract_urls, normalize_url_for_match
 from agent.core.runtime_factories import build_default_registry, build_default_tool_runtime
 from agent.core.tool_contracts import ToolEnvelope
 from agent.core.tool_runtime import (
@@ -53,7 +53,7 @@ from .message_history import (
     _recent_context_snippet,
 )
 from .model_io import _invoke_json_model, _invoke_text_model
-from .output_guard import _fallback_final_text, _guard_output_urls
+from .output_guard import _fallback_final_text
 from .prompts import (
     _FINAL_SYSTEM_PROMPT,
     _INTENT_ROUTER_SYSTEM_PROMPT,
@@ -146,6 +146,27 @@ def _synthesis_progress_copy(route: str) -> tuple[str, str]:
     if route == "needs_clarification":
         return "正在确认分析范围", "需要补充信息"
     return "正在生成回答", "输出回答"
+
+
+def _citable_urls_for_state(state: AgentGraphState, context_pack_text: str) -> list[str]:
+    """URLs the model may cite: this turn's evidence plus context-pack sources.
+
+    The guard/decorate layer only renders sources the model actually cites, so
+    widening the allowlist to match what was shown in the prompt lets legitimate
+    carried-over citations survive without inflating the source list.
+    """
+    citable: list[str] = []
+    seen: set[str] = set()
+    for url in list(state.get("evidence_urls") or state.get("valid_urls") or []) + extract_urls(context_pack_text):
+        url = str(url or "").strip()
+        if not url:
+            continue
+        norm = normalize_url_for_match(url) or url
+        if norm in seen:
+            continue
+        seen.add(norm)
+        citable.append(url)
+    return citable
 
 
 class GraphNodeRunner:
@@ -472,23 +493,7 @@ class GraphNodeRunner:
             text = _fallback_final_text(user_message, state)
         return {
             "final_text": text,
-        }
-
-    @_graph_node_span("output_guard")
-    def output_guard(self, state: AgentGraphState) -> dict[str, Any]:
-        text = str(state.get("final_text") or "").strip()
-        valid_urls = list(state.get("evidence_urls") or state.get("valid_urls") or [])
-        with trace_span(
-            "postprocess",
-            "output_guard",
-            input_summary={"text_chars": len(text), "valid_url_count": len(valid_urls)},
-            metadata={"node": "output_guard"},
-        ) as guard_span:
-            guarded_text, guard_metadata = _guard_output_urls(text, valid_urls)
-            guard_span.set_output({"guarded_text_chars": len(guarded_text), **guard_metadata})
-        return {
-            "final_text": guarded_text,
-            "valid_urls": valid_urls,
+            "citable_urls": _citable_urls_for_state(state, context_pack_text),
         }
 
     @_graph_node_span("clarification_response")

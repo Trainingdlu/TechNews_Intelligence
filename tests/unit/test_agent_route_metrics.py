@@ -86,6 +86,18 @@ class TestEvidence:
         assert result == text
         assert title_map == {}
 
+    def test_decorate_strips_parenthesized_nonevidence_url_without_empty_parens(self):
+        from agent.core.evidence import decorate_response_with_sources
+
+        text = "微软等企业开始配额限制内部AI使用 (https://a.example.com/x) (https://b.example.com/y)。"
+        valid_urls = ["https://kept.example.com/z"]
+        result, _ = decorate_response_with_sources(text, "测试问题", valid_urls=valid_urls)
+
+        assert "()" not in result
+        assert "（）" not in result
+        assert "https://a.example.com/x" not in result
+        assert "https://b.example.com/y" not in result
+
     def test_decorate_fallback_respects_valid_url_order(self):
         from agent.core.evidence import decorate_response_with_sources
 
@@ -194,6 +206,14 @@ class TestPromptContract:
         assert "append the raw URL at sentence end using parentheses" in _FINAL_SYSTEM_PROMPT
         assert "Do NOT output numeric citations like [1], [2]" in _FINAL_SYSTEM_PROMPT
         assert "Do not use emoji" in _FINAL_SYSTEM_PROMPT
+
+    def test_prompt_contains_grounding_refusal_hardening(self):
+        # Guards the hardened grounding block against silent removal/regression.
+        from agent.graph.prompts import _FINAL_SYSTEM_PROMPT
+
+        assert "# Grounding & Refusal" in _FINAL_SYSTEM_PROMPT
+        assert "the ONLY source of truth" in _FINAL_SYSTEM_PROMPT
+        assert "you MUST say the evidence is insufficient" in _FINAL_SYSTEM_PROMPT
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +413,7 @@ class TestAgentSafety:
         from agent.core.metrics import get_route_metrics_snapshot, reset_route_metrics
 
         reset_route_metrics()
-        with patch("agent.agent._run_generation_core", return_value=("Main analysis body.", {"https://a.example.com"})):
+        with patch("agent.agent._run_generation_core", return_value=("Main analysis body.", {"https://a.example.com"}, {"https://a.example.com"})):
             with patch(
                 "agent.agent._decorate_response_with_sources",
                 return_value=("Main analysis body.\n\n## Sources\n- [1] https://a.example.com", {}),
@@ -409,7 +429,7 @@ class TestAgentSafety:
         from agent.agent import generate_response
 
         expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
-        with patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"})):
+        with patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}, {"https://a.example.com"})):
             with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
                 with patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}):
                     out = generate_response([], "最近AI动态")
@@ -420,7 +440,7 @@ class TestAgentSafety:
         from agent.agent import generate_response_payload
 
         expected = "Main analysis [1].\n\n## Sources\n- [1] https://a.example.com"
-        with patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"})):
+        with patch("agent.agent._run_generation_core", return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}, {"https://a.example.com"})):
             with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
                 with patch.dict("os.environ", {"AGENT_STRICT_INLINE_CITATIONS": "true"}):
                     payload = generate_response_payload([], "recent ai updates")
@@ -436,7 +456,7 @@ class TestAgentSafety:
         )
         with patch(
             "agent.agent._run_generation_core",
-            return_value=("Main analysis \U0001F600 cites https://a.example.com. \u2705", {"https://a.example.com"}),
+            return_value=("Main analysis \U0001F600 cites https://a.example.com. \u2705", {"https://a.example.com"}, {"https://a.example.com"}),
         ):
             with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
                 out = generate_response([], "recent ai updates")
@@ -452,7 +472,7 @@ class TestAgentSafety:
         expected = "Main analysis cites https://a.example.com.\n\n## Sources\n- [1] https://a.example.com"
         with patch(
             "agent.agent._run_generation_core",
-            return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}),
+            return_value=("Main analysis cites https://a.example.com.", {"https://a.example.com"}, {"https://a.example.com"}),
         ):
             with patch(
                 "agent.agent._decorate_response_with_sources",
@@ -470,7 +490,7 @@ class TestAgentSafety:
         reset_route_metrics()
         with patch(
             "agent.agent._run_generation_core",
-            return_value=("Main analysis cites https://evil.example.com/x", {"https://a.example.com"}),
+            return_value=("Main analysis cites https://evil.example.com/x", {"https://a.example.com"}, {"https://a.example.com"}),
         ):
             with pytest.raises(AgentGenerationError) as ei:
                 generate_response([], "recent ai updates")
@@ -484,7 +504,7 @@ class TestAgentSafety:
 
         with patch(
             "agent.agent._run_generation_core",
-            return_value=("Main analysis references https://a.example.com only.", {"https://a.example.com", "https://b.example.com"}),
+            return_value=("Main analysis references https://a.example.com only.", {"https://a.example.com", "https://b.example.com"}, {"https://a.example.com", "https://b.example.com"}),
         ):
             with patch(
                 "agent.agent._decorate_response_with_sources",
@@ -503,6 +523,7 @@ class TestAgentSafety:
             return_value=(
                 "Main analysis references https://techcrunch.com/2026/04/16/openai-update/.",
                 {"https://techcrunch.com/2026/04/16/openai-update"},
+                {"https://techcrunch.com/2026/04/16/openai-update"},
             ),
         ):
             with patch("agent.agent._decorate_response_with_sources", return_value=(expected, {})):
@@ -518,7 +539,7 @@ class TestAgentSafety:
 
         with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult("Hello, I can help with tech intelligence analysis.", [])):
             with patch("agent.agent._get_accumulated_tool_calls", return_value=set()):
-                text, urls = _generate_response_core([], "hello")
+                text, urls, _ = _generate_response_core([], "hello")
         assert "help" in text.lower()
         assert urls == []
 
@@ -529,7 +550,7 @@ class TestAgentSafety:
 
         with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult("I can do trend, comparison, timeline and landscape analysis.", [])):
             with patch("agent.agent._get_accumulated_tool_calls", return_value=set()):
-                text, urls = _generate_response_core([], "assistant what can you do")
+                text, urls, _ = _generate_response_core([], "assistant what can you do")
         assert "compar" in text.lower()
         assert urls == []
 

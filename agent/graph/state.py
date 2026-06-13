@@ -31,6 +31,7 @@ class AgentGraphState(TypedDict, total=False):
     evidence_brief: str
     final_text: str
     valid_urls: list[str]
+    citable_urls: list[str]
 
     clarification: dict[str, Any] | None
 
@@ -46,6 +47,7 @@ class AgentGraphState(TypedDict, total=False):
 class AgentRunResult:
     text: str
     urls: list[str]
+    citable_urls: list[str] | None = None
     clarification: dict[str, Any] | None = None
     trace_summary: dict[str, Any] | None = None
 

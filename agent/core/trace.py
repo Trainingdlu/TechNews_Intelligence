@@ -843,10 +843,20 @@ def set_model_io(
 
 
 def set_request_token_usage(token_usage: dict[str, int] | None) -> None:
+    """Accumulate one model call's token usage into the request-level total.
+
+    Called once per model invocation; summing (not overwriting) keeps the total
+    across every node instead of only the last call's usage.
+    """
     trace = get_current_request_trace()
-    if trace is None or token_usage is None:
+    if trace is None or not isinstance(token_usage, dict):
         return
-    trace.token_usage = dict(token_usage)
+    merged = dict(trace.token_usage) if isinstance(trace.token_usage, dict) else {}
+    for key, value in token_usage.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        merged[key] = int(merged.get(key, 0)) + int(value)
+    trace.token_usage = merged
 
 
 def finalize_request_trace(

@@ -15,7 +15,7 @@ def test_generate_response_core_uses_custom_graph_path() -> None:
     from agent.graph.state import AgentRunResult
 
     with patch("agent.agent.invoke_custom_graph", return_value=AgentRunResult("structured answer", ["https://a.com"])) as mock_graph:
-        text, urls = _generate_response_core([], "OpenAI trend")
+        text, urls, _ = _generate_response_core([], "OpenAI trend")
 
     assert text == "structured answer"
     assert urls == ["https://a.com"]

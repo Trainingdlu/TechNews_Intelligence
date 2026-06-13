@@ -11,6 +11,8 @@ from eval.rgb.run_rgb_rejection import (
     _gold_answer_present,
     _int_to_cn,
     _load_cases,
+    _resolve_final_prompt,
+    _resolve_judge_config,
 )
 
 
@@ -74,3 +76,35 @@ def test_answer_leaks_respects_docs_limit():
     # leak sits in the 6th doc; with docs_limit=5 it is not fed, so no leak
     docs = ["无关"] * 5 + ["答案是十二人"]
     assert not _answer_leaks_into_docs(["12人"], docs, docs_limit=5)
+
+
+def test_resolve_judge_config_defaults_to_synth_client():
+    # no override -> judge reuses the synth provider/model (current shared-client behavior)
+    assert _resolve_judge_config(
+        synth_provider="deepseek",
+        synth_model="deepseek-v4-pro",
+        judge_provider=None,
+        judge_model=None,
+    ) == ("deepseek", "deepseek-v4-pro")
+
+
+def test_resolve_judge_config_override_separates_judge_from_synth():
+    # deepseek synth + vertex judge -> clean, non-self-eval comparison
+    assert _resolve_judge_config(
+        synth_provider="deepseek",
+        synth_model="deepseek-v4-pro",
+        judge_provider="vertex",
+        judge_model="gemini-3.1-pro-preview",
+    ) == ("vertex", "gemini-3.1-pro-preview")
+
+
+def test_resolve_final_prompt_defaults_to_production():
+    # no override file -> production _FINAL_SYSTEM_PROMPT is used unchanged
+    assert _resolve_final_prompt(None, default="PROD_PROMPT") == "PROD_PROMPT"
+
+
+def test_resolve_final_prompt_reads_override_file(tmp_path: Path):
+    # external hardened prompt file overrides, without touching project prompts
+    f = tmp_path / "hardened.txt"
+    f.write_text("  HARDENED GROUNDING PROMPT\n", encoding="utf-8")
+    assert _resolve_final_prompt(f, default="PROD_PROMPT") == "HARDENED GROUNDING PROMPT"
