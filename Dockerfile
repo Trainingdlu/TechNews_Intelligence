@@ -21,7 +21,6 @@ COPY agent/ ./agent/
 COPY app/ ./app/
 COPY services/ ./services/
 COPY eval/ ./eval/
-COPY verify_checkpointer.py ./verify_checkpointer.py
 
 CMD ["python", "-m", "app.bot"]
 
