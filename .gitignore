@@ -52,8 +52,7 @@ agents/__pycache__/
 
 # Editor / IDE
 .idea/
-.vscode/*
-!.vscode/settings.json
+.vscode/
 
 # Agent / skills install artifacts
 .agents/
@@ -63,6 +62,8 @@ agents/__pycache__/
 skills-lock.json
 
 # Local AI assistant metadata
+CLAUDE.md
+claude.md
 .claude/
 .codex-ui-check/
 

@@ -317,7 +317,7 @@ const activeSpan = computed(() => {
   if (!selectedId) return null;
   return spanMap.value[selectedId] || selectedSpan.value;
 });
-const spanNavigatorSteps = computed(() => buildSpanNavigatorSteps(detailSpans.value));
+const spanNavigatorSteps = computed(() => buildLogicalSteps(detailSpans.value));
 const errorToast = computed(() => {
   const message = String(errorMessage.value || "").trim();
   if (!message) return null;
@@ -341,46 +341,101 @@ function cloneDemo(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function buildSpanNavigatorSteps(spans) {
-  const entries = (spans || [])
-    .map((span, index) => ({ span, index }))
-    .filter(({ span }) => span?.span_id);
-  const byId = new Map(entries.map(({ span }) => [String(span.span_id), span]));
-  const stepBySpanId = new Map();
+function buildLogicalSteps(spans) {
+  const entries = (spans || []).filter((span) => span?.span_id);
+  const byId = new Map(entries.map((span) => [String(span.span_id), span]));
+
+  const childrenByGraph = new Map();
+  for (const span of entries) {
+    if (span.span_type === "graph_node") continue;
+    const ancestor = closestGraphNodeAncestor(span, byId);
+    if (!ancestor) continue;
+    const key = String(ancestor.span_id);
+    if (!childrenByGraph.has(key)) childrenByGraph.set(key, []);
+    childrenByGraph.get(key).push(span);
+  }
+
   const repeatByName = new Map();
   const steps = [];
-
-  for (const { span, index } of entries) {
-    const isGraphNode = span.span_type === "graph_node";
-    const graphAncestor = isGraphNode ? null : closestGraphNodeAncestor(span, byId);
-    if (!isGraphNode && graphAncestor) continue;
-
-    const repeatKey = span.name || span.display_name || span.span_id;
-    const repeatIndex = isGraphNode ? (repeatByName.get(repeatKey) || 0) + 1 : 1;
-    if (isGraphNode) repeatByName.set(repeatKey, repeatIndex);
-
-    const step = {
-      step_id: String(span.span_id),
-      span,
+  for (const span of entries) {
+    if (span.span_type !== "graph_node") continue;
+    const children = childrenByGraph.get(String(span.span_id)) || [];
+    const primary =
+      children.find((c) => c.span_type === "model_call") ||
+      children.find((c) => c.span_type === "tool_call") ||
+      null;
+    const secondary = children.filter((c) => c !== primary);
+    let kind = "plumbing";
+    if (primary?.span_type === "model_call") kind = "llm";
+    else if (primary?.span_type === "tool_call") kind = "tool";
+    const hasError =
+      isErrorStatus(span.status) || children.some((c) => isErrorStatus(c.status));
+    const anchor = primary || span;
+    const repeatKey = span.name || span.span_id;
+    const repeatIndex = (repeatByName.get(repeatKey) || 0) + 1;
+    repeatByName.set(repeatKey, repeatIndex);
+    steps.push({
+      id: String(anchor.span_id),
+      anchor,
+      graphNode: span,
+      primary,
+      secondary,
+      kind,
+      hasError,
       title: navigatorStepTitle(span),
+      status: span.status,
+      latency_ms: span.latency_ms,
       repeat_index: repeatIndex,
-      source_index: index,
-      items: []
-    };
-    steps.push(step);
-    stepBySpanId.set(String(span.span_id), step);
+      signal: computeStepSignal(span, primary, secondary, kind)
+    });
   }
-
-  for (const { span } of entries) {
-    if (span.span_type === "graph_node") continue;
-    const graphAncestor = closestGraphNodeAncestor(span, byId);
-    const owningStep = graphAncestor ? stepBySpanId.get(String(graphAncestor.span_id)) : null;
-    if (owningStep) {
-      owningStep.items.push(span);
-    }
-  }
-
   return steps;
+}
+
+function isErrorStatus(status) {
+  const value = String(status || "").toLowerCase();
+  return value === "error" || value === "failed" || value === "blocked";
+}
+
+function computeStepSignal(graphNode, primary, secondary, kind) {
+  const g = graphNode?.output_summary || {};
+  if (g.intent_route) return `→ ${g.intent_route}`;
+  if (g.next_step) return `→ ${g.next_step}`;
+  if (kind === "tool" && primary) {
+    const o = primary.output_summary || {};
+    const n = o.result_count ?? o.evidence_count;
+    if (typeof n === "number") return `命中 ${n}`;
+  }
+  for (const child of secondary || []) {
+    const o = child.output_summary || {};
+    if (typeof o.allowed === "boolean") return o.allowed ? "放行" : (o.reason || "拦截");
+    if (typeof o.removed_unknown_url_count === "number") return `删 ${o.removed_unknown_url_count} URL`;
+    if (typeof o.evidence_count === "number") return `证据 ${o.evidence_count}`;
+  }
+  return "";
+}
+
+function stepKindLabel(kind) {
+  if (kind === "llm") return "模型调用";
+  if (kind === "tool") return "工具执行";
+  return "流程节点";
+}
+
+function childTypeLabel(child) {
+  const map = { context: "上下文", postprocess: "后处理", guard: "检查", model_call: "模型", tool_call: "工具" };
+  return map[child?.span_type] || child?.span_type || "子步骤";
+}
+
+function stepErrorCode(step) {
+  const all = [step?.graphNode, step?.primary, ...(step?.secondary || [])].filter(Boolean);
+  const errored = all.find((s) => isErrorStatus(s.status) || s.error_code);
+  return errored?.error_code || "";
+}
+
+function stepErrorMessage(step) {
+  const all = [step?.graphNode, step?.primary, ...(step?.secondary || [])].filter(Boolean);
+  const errored = all.find((s) => s.error_message);
+  return errored?.error_message || "";
 }
 
 function closestGraphNodeAncestor(span, byId) {
@@ -557,11 +612,10 @@ async function selectRun(run, options = {}) {
 }
 
 function findDefaultSpan(spans) {
-  return (
-    spans.find((span) => span.error_code || ["error", "failed", "blocked"].includes(String(span.status).toLowerCase())) ||
-    spans[0] ||
-    null
-  );
+  const steps = buildLogicalSteps(spans);
+  if (!steps.length) return null;
+  const errored = steps.find((step) => step.hasError);
+  return (errored || steps[0]).anchor;
 }
 
 async function selectSpan(span, options = {}) {
@@ -737,22 +791,6 @@ function statusClass(status) {
   return `status-${String(status || "unknown").toLowerCase()}`;
 }
 
-function isModelSpanFor(span) {
-  return span?.span_type === "model_call";
-}
-
-function isToolSpanFor(span) {
-  return span?.span_type === "tool_call";
-}
-
-function isGuardSpanFor(span) {
-  return ["guard", "postprocess"].includes(span?.span_type);
-}
-
-function isContextSpanFor(span) {
-  return span?.span_type === "context";
-}
-
 function formatLatency(ms) {
   if (ms === null || ms === undefined) return "-";
   const value = Number(ms);
@@ -818,6 +856,15 @@ function messageContent(message) {
   const cleanContent = sanitizeProviderInternalPayload(content);
   if (typeof cleanContent === "string") return cleanContent;
   return JSON.stringify(cleanContent, null, 2);
+}
+
+function modelOutputContent(span) {
+  const io = modelIoBySpanId.value[span?.span_id];
+  const raw = io?.raw_output;
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && "content" in raw) {
+    return raw.content;
+  }
+  return raw ?? null;
 }
 
 function collectUrls(span) {
@@ -1062,125 +1109,141 @@ onBeforeUnmount(() => {
         </div>
 
         <template v-else>
-          <article
-            v-for="span in detailSpans"
-            :id="`span-detail-${span.span_id}`"
-            :key="span.span_id"
-            class="span-detail-card"
-            :class="{ active: span.span_id === activeSpan?.span_id }"
-            :data-span-id="span.span_id"
-            :data-span-type="span.span_type"
-          >
-            <section class="detail-title">
-              <div>
-                <h3>{{ span.display_name }}</h3>
-                <p>{{ span.name }} · {{ span.span_id }}</p>
-              </div>
-              <div class="detail-badges">
-                <span class="status-pill" :class="statusClass(span.status)">
-                  {{ statusLabel(span.status) }}
-                </span>
-                <span>{{ formatLatency(span.latency_ms) }}</span>
-              </div>
-            </section>
-
-            <details v-if="span.error_code || span.error_message" class="error-box" open>
-              <summary>
-                <strong>{{ span.error_code || "执行失败" }}</strong>
+          <template v-for="step in spanNavigatorSteps" :key="step.id">
+            <details
+              v-if="step.kind === 'plumbing' && !step.hasError"
+              :id="`span-detail-${step.id}`"
+              class="span-detail-card plumbing"
+              :class="{ active: step.id === activeSpan?.span_id }"
+              :data-span-id="step.anchor.span_id"
+              :data-span-type="step.anchor.span_type"
+            >
+              <summary class="plumbing-summary">
+                <span class="plumbing-name">{{ step.title }}</span>
+                <span v-if="step.repeat_index > 1" class="span-repeat">第 {{ step.repeat_index }} 次</span>
+                <span v-if="step.signal" class="plumbing-signal">{{ step.signal }}</span>
+                <span class="plumbing-latency">{{ formatLatency(step.latency_ms) }}</span>
               </summary>
-              <p>{{ span.error_message || "该节点记录了异常状态。" }}</p>
+              <JsonBlock title="输出摘要" :value="step.graphNode.output_summary" :open="false" />
               <JsonBlock
-                v-if="span.exception_chain && span.exception_chain.length"
-                title="异常链"
-                :value="span.exception_chain"
+                v-for="child in step.secondary"
+                :key="child.span_id"
+                :title="`${childTypeLabel(child)} · 输出摘要`"
+                :value="child.output_summary"
                 :open="false"
               />
             </details>
 
-            <section v-if="isModelSpanFor(span)" class="model-section">
-              <details class="info-block" open>
-                <summary>模型信息</summary>
-                <div class="kv-grid">
-                  <span>Provider</span><strong>{{ modelIoBySpanId[span.span_id]?.provider || "-" }}</strong>
-                  <span>Model</span><strong>{{ modelIoBySpanId[span.span_id]?.model || "-" }}</strong>
-                  <span>Node</span><strong>{{ modelIoBySpanId[span.span_id]?.node || span.name }}</strong>
-                  <span>Token</span><strong>{{ modelIoBySpanId[span.span_id]?.token_usage?.total_tokens ?? "-" }}</strong>
+            <article
+              v-else
+              :id="`span-detail-${step.id}`"
+              class="span-detail-card"
+              :class="[`span-kind-${step.kind}`, { active: step.id === activeSpan?.span_id }]"
+              :data-span-id="step.anchor.span_id"
+              :data-span-type="step.anchor.span_type"
+            >
+              <section class="detail-title">
+                <div>
+                  <h3>{{ step.title }}</h3>
+                  <p>
+                    {{ stepKindLabel(step.kind) }}
+                    <span v-if="step.signal"> · {{ step.signal }}</span>
+                    <span v-if="step.repeat_index > 1"> · 第 {{ step.repeat_index }} 次</span>
+                  </p>
                 </div>
+                <div class="detail-badges">
+                  <span class="status-pill" :class="statusClass(step.status)">
+                    {{ statusLabel(step.status) }}
+                  </span>
+                  <span>{{ formatLatency(step.latency_ms) }}</span>
+                </div>
+              </section>
+
+              <details v-if="step.hasError" class="error-box" open>
+                <summary>
+                  <strong>{{ stepErrorCode(step) || "执行失败" }}</strong>
+                </summary>
+                <p>{{ stepErrorMessage(step) || "该步骤记录了异常状态。" }}</p>
               </details>
 
-              <div v-if="modelIoBySpanId[span.span_id]" class="message-stack">
-                <h4>模型输入 messages</h4>
-                <details
-                  v-for="(message, index) in normalizeMessages(modelIoBySpanId[span.span_id].input_messages)"
-                  :key="index"
-                  class="message-card"
-                  open
-                >
-                  <summary>{{ messageRole(message) }}</summary>
-                  <pre>{{ messageContent(message) }}</pre>
+              <section v-if="step.kind === 'llm' && step.primary" class="model-section">
+                <JsonBlock
+                  v-if="modelIoBySpanId[step.primary.span_id]"
+                  title="模型输出 · 决策"
+                  :value="modelOutputContent(step.primary)"
+                />
+                <div v-else class="empty-state compact">
+                  <span v-if="loadingModelIoBySpanId[step.primary.span_id]">模型 I/O 加载中。</span>
+                  <span v-else-if="modelIoErrorsBySpanId[step.primary.span_id]">模型 I/O 加载失败：{{ modelIoErrorsBySpanId[step.primary.span_id] }}</span>
+                  <span v-else>模型 I/O 尚未加载，滚动到该节点或点击右侧节点后加载。</span>
+                </div>
+
+                <details class="info-block">
+                  <summary>模型信息</summary>
+                  <div class="kv-grid">
+                    <span>Provider</span><strong>{{ modelIoBySpanId[step.primary.span_id]?.provider || "-" }}</strong>
+                    <span>Model</span><strong>{{ modelIoBySpanId[step.primary.span_id]?.model || "-" }}</strong>
+                    <span>Node</span><strong>{{ modelIoBySpanId[step.primary.span_id]?.node || step.graphNode.name }}</strong>
+                    <span>Token</span><strong>{{ modelIoBySpanId[step.primary.span_id]?.token_usage?.total_tokens ?? "-" }}</strong>
+                  </div>
                 </details>
-              </div>
-              <div v-else class="empty-state compact">
-                <span v-if="loadingModelIoBySpanId[span.span_id]">模型 I/O 加载中。</span>
-                <span v-else-if="modelIoErrorsBySpanId[span.span_id]">模型 I/O 加载失败：{{ modelIoErrorsBySpanId[span.span_id] }}</span>
-                <span v-else>模型 I/O 尚未加载，滚动到该节点或点击右侧节点后加载。</span>
-              </div>
 
-              <JsonBlock v-if="modelIoBySpanId[span.span_id]" title="模型原始输出 raw_output" :value="modelIoBySpanId[span.span_id].raw_output" />
-              <JsonBlock v-if="modelIoBySpanId[span.span_id]?.parsed_output" title="解析结果 parsed_output" :value="modelIoBySpanId[span.span_id].parsed_output" />
-              <JsonBlock v-if="modelIoBySpanId[span.span_id]?.token_usage" title="Token Usage" :value="modelIoBySpanId[span.span_id].token_usage" :open="false" />
-            </section>
+                <details v-if="modelIoBySpanId[step.primary.span_id]" class="info-block">
+                  <summary>模型输入 messages</summary>
+                  <div class="message-stack">
+                    <details
+                      v-for="(message, index) in normalizeMessages(modelIoBySpanId[step.primary.span_id].input_messages)"
+                      :key="index"
+                      class="message-card"
+                    >
+                      <summary>{{ messageRole(message) }}</summary>
+                      <pre>{{ messageContent(message) }}</pre>
+                    </details>
+                  </div>
+                </details>
 
-            <section v-else-if="isToolSpanFor(span)" class="tool-section">
-              <details class="info-block" open>
-                <summary>工具信息</summary>
-                <div class="kv-grid">
-                  <span>工具</span><strong>{{ span.name }}</strong>
-                  <span>状态</span><strong>{{ statusLabel(span.status) }}</strong>
-                  <span>错误码</span><strong>{{ span.error_code || "-" }}</strong>
-                  <span>耗时</span><strong>{{ formatLatency(span.latency_ms) }}</strong>
-                </div>
+                <JsonBlock v-if="modelIoBySpanId[step.primary.span_id]" title="模型原始输出 raw_output" :value="modelIoBySpanId[step.primary.span_id].raw_output" :open="false" />
+                <JsonBlock v-if="modelIoBySpanId[step.primary.span_id]?.parsed_output" title="解析结果 parsed_output" :value="modelIoBySpanId[step.primary.span_id].parsed_output" :open="false" />
+                <JsonBlock v-if="modelIoBySpanId[step.primary.span_id]?.token_usage" title="Token Usage" :value="modelIoBySpanId[step.primary.span_id].token_usage" :open="false" />
+              </section>
+
+              <section v-else-if="step.kind === 'tool' && step.primary" class="tool-section">
+                <details class="info-block" open>
+                  <summary>工具信息</summary>
+                  <div class="kv-grid">
+                    <span>工具</span><strong>{{ step.primary.name }}</strong>
+                    <span>状态</span><strong>{{ statusLabel(step.primary.status) }}</strong>
+                    <span>错误码</span><strong>{{ step.primary.error_code || "-" }}</strong>
+                    <span>耗时</span><strong>{{ formatLatency(step.primary.latency_ms) }}</strong>
+                  </div>
+                </details>
+                <details v-if="collectUrls(step.primary).length" class="url-list" open>
+                  <summary>证据 URL</summary>
+                  <div class="url-items">
+                    <a v-for="url in collectUrls(step.primary)" :key="url" :href="url" target="_blank" rel="noreferrer">{{ url }}</a>
+                  </div>
+                </details>
+                <JsonBlock title="工具输入摘要" :value="step.primary.input_summary" />
+                <JsonBlock title="工具输出摘要" :value="step.primary.output_summary" />
+                <JsonBlock v-if="diagnosticsFor(step.primary)" title="Diagnostics" :value="diagnosticsFor(step.primary)" />
+              </section>
+
+              <section v-else class="generic-section">
+                <JsonBlock title="输出摘要" :value="step.graphNode.output_summary" />
+              </section>
+
+              <details v-if="step.secondary.length" class="info-block">
+                <summary>子步骤（{{ step.secondary.length }}）</summary>
+                <JsonBlock
+                  v-for="child in step.secondary"
+                  :key="child.span_id"
+                  :title="`${childTypeLabel(child)} · ${child.name}`"
+                  :value="child.output_summary"
+                  :open="false"
+                />
               </details>
-              <details v-if="collectUrls(span).length" class="url-list" open>
-                <summary>证据 URL</summary>
-                <div class="url-items">
-                  <a v-for="url in collectUrls(span)" :key="url" :href="url" target="_blank" rel="noreferrer">{{ url }}</a>
-                </div>
-              </details>
-              <JsonBlock title="工具输入摘要" :value="span.input_summary" />
-              <JsonBlock title="工具输出摘要" :value="span.output_summary" />
-              <JsonBlock v-if="diagnosticsFor(span)" title="Diagnostics" :value="diagnosticsFor(span)" />
-            </section>
-
-            <section v-else-if="isGuardSpanFor(span)" class="guard-section">
-              <JsonBlock title="检查输入摘要" :value="span.input_summary" />
-              <JsonBlock title="检查输出摘要" :value="span.output_summary" />
-              <JsonBlock title="调试元数据" :value="span.metadata" />
-            </section>
-
-            <section v-else-if="isContextSpanFor(span)" class="context-section">
-              <details class="info-block" open>
-                <summary>上下文信息</summary>
-                <div class="kv-grid">
-                  <span>策略</span><strong>{{ span.output_summary?.strategy || "-" }}</strong>
-                  <span>选中历史</span><strong>{{ span.output_summary?.selected_turn_count ?? "-" }}</strong>
-                  <span>选中证据</span><strong>{{ span.output_summary?.selected_evidence_count ?? "-" }}</strong>
-                  <span>依赖历史</span><strong>{{ span.output_summary?.depends_on_history ?? "-" }}</strong>
-                </div>
-              </details>
-              <JsonBlock title="上下文输入摘要" :value="span.input_summary" />
-              <JsonBlock title="上下文输出摘要" :value="span.output_summary" />
-              <JsonBlock title="调试元数据" :value="span.metadata" />
-            </section>
-
-            <section v-else class="generic-section">
-              <JsonBlock title="输入摘要" :value="span.input_summary" />
-              <JsonBlock title="输出摘要" :value="span.output_summary" />
-              <JsonBlock title="调试元数据" :value="span.metadata" />
-            </section>
-
-            <JsonBlock title="完整节点记录" :value="span" :open="false" />
-          </article>
+            </article>
+          </template>
         </template>
       </section>
 
@@ -1216,7 +1279,7 @@ onBeforeUnmount(() => {
           v-else
           :steps="spanNavigatorSteps"
           :selected-span-id="activeSpan?.span_id || ''"
-          @select="(span) => selectSpan(span, { nextMobileView: 'detail' })"
+          @select="(step) => selectSpan(step.anchor, { nextMobileView: 'detail' })"
         />
       </aside>
     </section>

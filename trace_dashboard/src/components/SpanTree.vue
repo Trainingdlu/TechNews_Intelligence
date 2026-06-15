@@ -34,50 +34,32 @@ function formatLatency(ms) {
 
 <template>
   <ol class="span-flow-list">
-    <li v-for="step in steps" :key="step.step_id" class="span-flow-step">
+    <li v-for="step in steps" :key="step.id" class="span-flow-step">
       <button
         type="button"
         class="span-node span-flow-node"
         :class="[
-          `span-status-${step.span.status || 'unknown'}`,
-          { selected: step.span.span_id === selectedSpanId }
+          `span-kind-${step.kind || 'plumbing'}`,
+          `span-status-${step.status || 'unknown'}`,
+          { selected: step.id === selectedSpanId, 'is-plumbing': step.kind === 'plumbing' && !step.hasError }
         ]"
-        :aria-current="step.span.span_id === selectedSpanId ? 'true' : undefined"
-        @click="emit('select', step.span)"
+        :aria-current="step.id === selectedSpanId ? 'true' : undefined"
+        @click="emit('select', step)"
       >
         <span class="span-rail" aria-hidden="true"></span>
         <span class="span-main">
-          <span class="span-title">{{ step.title }}</span>
-          <span class="span-meta">
-            <span class="span-kind">{{ step.span.span_type_label }}</span>
-            <span class="span-state">{{ statusLabel(step.span.status) }}</span>
-            <span class="span-duration">{{ formatLatency(step.span.latency_ms) }}</span>
+          <span class="span-title">
+            <span class="span-kind-dot" :class="`kind-${step.kind || 'plumbing'}`" aria-hidden="true"></span>
+            {{ step.title }}
             <span v-if="step.repeat_index > 1" class="span-repeat">第 {{ step.repeat_index }} 次</span>
+          </span>
+          <span class="span-meta">
+            <span v-if="step.signal" class="span-signal">{{ step.signal }}</span>
+            <span class="span-state">{{ statusLabel(step.status) }}</span>
+            <span class="span-duration">{{ formatLatency(step.latency_ms) }}</span>
           </span>
         </span>
       </button>
-
-      <ol v-if="step.items.length" class="span-detail-list">
-        <li v-for="item in step.items" :key="item.span_id" class="span-detail-item">
-          <button
-            type="button"
-            class="span-node span-detail-node"
-            :class="[`span-status-${item.status || 'unknown'}`, { selected: item.span_id === selectedSpanId }]"
-            :aria-current="item.span_id === selectedSpanId ? 'true' : undefined"
-            @click="emit('select', item)"
-          >
-            <span class="span-rail" aria-hidden="true"></span>
-            <span class="span-main">
-              <span class="span-title">{{ item.display_name }}</span>
-              <span class="span-meta">
-                <span class="span-kind">{{ item.span_type_label }}</span>
-                <span class="span-state">{{ statusLabel(item.status) }}</span>
-                <span class="span-duration">{{ formatLatency(item.latency_ms) }}</span>
-              </span>
-            </span>
-          </button>
-        </li>
-      </ol>
     </li>
   </ol>
 </template>

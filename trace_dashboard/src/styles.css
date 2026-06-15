@@ -1239,6 +1239,80 @@ button {
   color: var(--muted-soft);
 }
 
+/* unified logical-step view (tree + plumbing one-liners) */
+.span-kind-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  margin-right: 5px;
+  vertical-align: middle;
+  background: var(--muted-soft);
+}
+
+.span-kind-dot.kind-llm {
+  background: color-mix(in srgb, var(--accent, #6366f1) 85%, transparent);
+}
+
+.span-kind-dot.kind-tool {
+  background: color-mix(in srgb, #16a34a 80%, transparent);
+}
+
+.span-kind-dot.kind-plumbing {
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+
+.span-signal {
+  flex: 1 1 100%;
+  color: color-mix(in srgb, var(--accent, #6366f1) 80%, var(--muted));
+  font-weight: 600;
+}
+
+.span-flow-node.is-plumbing {
+  opacity: 0.62;
+}
+
+.span-flow-node.is-plumbing .span-title {
+  font-weight: 500;
+}
+
+.span-detail-card.plumbing {
+  padding: 6px 10px;
+  border-style: dashed;
+}
+
+.span-detail-card.plumbing > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.span-detail-card.plumbing > summary::-webkit-details-marker {
+  display: none;
+}
+
+.plumbing-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.plumbing-name {
+  font-weight: 600;
+  color: var(--text, inherit);
+}
+
+.plumbing-signal {
+  color: color-mix(in srgb, var(--accent, #6366f1) 80%, var(--muted));
+}
+
+.plumbing-latency {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-soft);
+}
+
 .run-list,
 .detail-panel,
 .tree-panel {

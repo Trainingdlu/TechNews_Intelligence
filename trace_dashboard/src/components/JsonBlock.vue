@@ -24,6 +24,20 @@ function providerInternalPlaceholder(key, value) {
 }
 
 function sanitizeDisplayValue(value) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length > 1 && (trimmed[0] === "{" || trimmed[0] === "[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === "object") {
+          return sanitizeDisplayValue(parsed);
+        }
+      } catch (err) {
+        // not JSON-encoded; show the original string
+      }
+    }
+    return value;
+  }
   if (Array.isArray(value)) {
     return value.map((item) => sanitizeDisplayValue(item));
   }
