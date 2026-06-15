@@ -663,34 +663,28 @@ button {
   font-size: 12px;
 }
 
-.status-success,
-.span-status-success .span-rail {
+.status-success {
   color: var(--success);
   border-color: color-mix(in srgb, var(--success) 45%, var(--line));
 }
 
 .status-error,
-.status-failed,
-.span-status-error .span-rail,
-.span-status-failed .span-rail {
+.status-failed {
   color: var(--error);
   border-color: color-mix(in srgb, var(--error) 45%, var(--line));
 }
 
-.status-blocked,
-.span-status-blocked .span-rail {
+.status-blocked {
   color: var(--blocked);
   border-color: color-mix(in srgb, var(--blocked) 45%, var(--line));
 }
 
-.status-running,
-.span-status-running .span-rail {
+.status-running {
   color: var(--running);
   border-color: color-mix(in srgb, var(--running) 45%, var(--line));
 }
 
-.status-unknown,
-.span-status-unknown .span-rail {
+.status-unknown {
   color: var(--unknown);
 }
 
@@ -1098,8 +1092,7 @@ button {
   scroll-margin: 72px 0;
   width: 100%;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -1131,49 +1124,6 @@ button {
 .span-detail-node .span-title {
   font-size: 12px;
   font-weight: 650;
-}
-
-.span-detail-node .span-rail {
-  width: 13px;
-  min-height: 34px;
-}
-
-.span-detail-node .span-rail::before {
-  width: 7px;
-  height: 7px;
-  border-width: 2px;
-}
-
-.span-rail {
-  width: 16px;
-  min-height: 38px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 2px;
-  color: var(--unknown);
-}
-
-.span-rail::before {
-  content: "";
-  width: 9px;
-  height: 9px;
-  border: 2px solid currentColor;
-  border-radius: 999px;
-  background: var(--surface);
-  transition:
-    transform 120ms ease,
-    background 120ms ease,
-    box-shadow 120ms ease;
-}
-
-.span-node:hover .span-rail::before {
-  transform: scale(1.08);
-}
-
-.span-node.selected .span-rail::before {
-  background: currentColor;
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 14%, transparent);
 }
 
 .span-main {
@@ -1219,17 +1169,6 @@ button {
   flex: 0 0 auto;
 }
 
-.span-state::before,
-.span-duration::before {
-  content: "";
-  width: 3px;
-  height: 3px;
-  display: inline-block;
-  margin: 0 6px 2px 0;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--muted) 56%, transparent);
-}
-
 .span-duration {
   color: var(--muted-soft);
   font-variant-numeric: tabular-nums;
@@ -1237,6 +1176,19 @@ button {
 
 .span-repeat {
   color: var(--muted-soft);
+}
+
+/* exception-only color: failed / blocked nodes turn red, everything else stays gray */
+.span-status-error .span-kind-dot,
+.span-status-failed .span-kind-dot,
+.span-status-blocked .span-kind-dot {
+  background: var(--error);
+}
+
+.span-status-error .span-state,
+.span-status-failed .span-state,
+.span-status-blocked .span-state {
+  color: var(--error);
 }
 
 /* unified logical-step view (tree + plumbing one-liners) */
@@ -1250,22 +1202,13 @@ button {
   background: var(--muted-soft);
 }
 
-.span-kind-dot.kind-llm {
-  background: color-mix(in srgb, var(--accent, #6366f1) 85%, transparent);
-}
-
-.span-kind-dot.kind-tool {
-  background: color-mix(in srgb, #16a34a 80%, transparent);
-}
-
 .span-kind-dot.kind-plumbing {
   background: color-mix(in srgb, var(--muted) 50%, transparent);
 }
 
 .span-signal {
   flex: 1 1 100%;
-  color: color-mix(in srgb, var(--accent, #6366f1) 80%, var(--muted));
-  font-weight: 600;
+  color: var(--muted);
 }
 
 .span-flow-node.is-plumbing {
@@ -1278,7 +1221,6 @@ button {
 
 .span-detail-card.plumbing {
   padding: 6px 10px;
-  border-style: dashed;
 }
 
 .span-detail-card.plumbing > summary {
@@ -1304,7 +1246,7 @@ button {
 }
 
 .plumbing-signal {
-  color: color-mix(in srgb, var(--accent, #6366f1) 80%, var(--muted));
+  color: var(--muted);
 }
 
 .plumbing-latency {

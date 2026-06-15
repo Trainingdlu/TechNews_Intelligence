@@ -46,12 +46,11 @@ function formatLatency(ms) {
         :aria-current="step.id === selectedSpanId ? 'true' : undefined"
         @click="emit('select', step)"
       >
-        <span class="span-rail" aria-hidden="true"></span>
         <span class="span-main">
           <span class="span-title">
             <span class="span-kind-dot" :class="`kind-${step.kind || 'plumbing'}`" aria-hidden="true"></span>
             {{ step.title }}
-            <span v-if="step.repeat_index > 1" class="span-repeat">第 {{ step.repeat_index }} 次</span>
+            <span v-if="step.repeat_index > 1" class="span-repeat">{{ step.repeat_index }}</span>
           </span>
           <span class="span-meta">
             <span v-if="step.signal" class="span-signal">{{ step.signal }}</span>

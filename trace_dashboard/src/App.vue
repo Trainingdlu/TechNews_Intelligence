@@ -399,8 +399,8 @@ function isErrorStatus(status) {
 
 function computeStepSignal(graphNode, primary, secondary, kind) {
   const g = graphNode?.output_summary || {};
-  if (g.intent_route) return `→ ${g.intent_route}`;
-  if (g.next_step) return `→ ${g.next_step}`;
+  if (g.intent_route) return g.intent_route;
+  if (g.next_step) return g.next_step;
   if (kind === "tool" && primary) {
     const o = primary.output_summary || {};
     const n = o.result_count ?? o.evidence_count;
@@ -1120,15 +1120,20 @@ onBeforeUnmount(() => {
             >
               <summary class="plumbing-summary">
                 <span class="plumbing-name">{{ step.title }}</span>
-                <span v-if="step.repeat_index > 1" class="span-repeat">第 {{ step.repeat_index }} 次</span>
+                <span v-if="step.repeat_index > 1" class="span-repeat">{{ step.repeat_index }}</span>
                 <span v-if="step.signal" class="plumbing-signal">{{ step.signal }}</span>
                 <span class="plumbing-latency">{{ formatLatency(step.latency_ms) }}</span>
               </summary>
-              <JsonBlock title="输出摘要" :value="step.graphNode.output_summary" :open="false" />
+              <JsonBlock
+                v-if="!step.secondary.length"
+                title="输出摘要"
+                :value="step.graphNode.output_summary"
+                :open="false"
+              />
               <JsonBlock
                 v-for="child in step.secondary"
                 :key="child.span_id"
-                :title="`${childTypeLabel(child)} · 输出摘要`"
+                :title="`${childTypeLabel(child)} · ${child.name}`"
                 :value="child.output_summary"
                 :open="false"
               />
@@ -1148,7 +1153,7 @@ onBeforeUnmount(() => {
                   <p>
                     {{ stepKindLabel(step.kind) }}
                     <span v-if="step.signal"> · {{ step.signal }}</span>
-                    <span v-if="step.repeat_index > 1"> · 第 {{ step.repeat_index }} 次</span>
+                    <span v-if="step.repeat_index > 1"> · {{ step.repeat_index }}</span>
                   </p>
                 </div>
                 <div class="detail-badges">

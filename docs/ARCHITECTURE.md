@@ -4,50 +4,7 @@ TechNews Intelligence 由采集链路、存储层、Agent 运行时、交互入�
 
 ## 总览
 
-```mermaid
-flowchart LR
-    subgraph ingest["数据采集"]
-        n8n["n8n 工作流"]
-        reader["Jina Reader"]
-        etl_llm["摘要/分类/情绪模型"]
-        embed["Jina Embeddings"]
-    end
-
-    subgraph storage["PostgreSQL"]
-        news["tech_news"]
-        vectors["news_embeddings"]
-        conv["conversation_threads/messages"]
-        memory["thread_memory_summaries/thread_evidence_index"]
-        trace["agent_runs/agent_trace_spans/agent_model_io"]
-    end
-
-    subgraph runtime["Agent Runtime"]
-        agent_graph["LangGraph StateGraph"]
-        tools["ToolRuntime + ToolRegistry"]
-        guard["Tool Policy / Output Guard"]
-    end
-
-    subgraph entry["入口"]
-        api["FastAPI"]
-        bot["Telegram Bot"]
-        cli["CLI"]
-        trace_ui["Trace Console"]
-        metabase["Metabase"]
-    end
-
-    n8n --> reader --> etl_llm --> news
-    n8n --> embed --> vectors
-    api --> agent_graph
-    bot --> agent_graph
-    cli --> agent_graph
-    agent_graph --> tools --> storage
-    agent_graph --> guard
-    agent_graph --> trace
-    agent_graph --> conv
-    agent_graph --> memory
-    trace_ui --> trace
-    metabase --> news
-```
+![系统总览](architecture_overview.svg)
 
 ## 数据采集链路
 
