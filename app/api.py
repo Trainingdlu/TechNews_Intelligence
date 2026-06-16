@@ -103,6 +103,7 @@ def get_quota(token: str):
 @app.get("/approve/{record_id}", response_class=HTMLResponse)
 def approve_page(
     record_id: int,
+    tier: int | None = Query(default=None),
     exp: int | None = Query(default=None),
     sig: str | None = Query(default=None),
 ):
@@ -110,14 +111,15 @@ def approve_page(
     if not security.APPROVE_LINK_SECRET.strip():
         logger.error("APPROVE_LINK_SECRET 未配置，拒绝审批请求")
         return HTMLResponse("<h2>服务配置错误</h2><p>审批密钥未配置。</p>", status_code=503)
-    if not security.is_valid_approve_signature(record_id, exp, sig):
+    if not security.is_valid_approve_signature(record_id, tier, exp, sig):
         return HTMLResponse("<h2>审批链接无效或已过期</h2>", status_code=403)
-    return HTMLResponse(security.render_approve_confirmation_page(record_id, int(exp), str(sig)))
+    return HTMLResponse(security.render_approve_confirmation_page(record_id, int(tier), int(exp), str(sig)))
 
 
 @app.post("/approve/{record_id}", response_class=HTMLResponse)
 def approve(
     record_id: int,
+    tier: int | None = Query(default=None),
     exp: int | None = Query(default=None),
     sig: str | None = Query(default=None),
 ):
@@ -125,10 +127,10 @@ def approve(
     if not security.APPROVE_LINK_SECRET.strip():
         logger.error("APPROVE_LINK_SECRET 未配置，拒绝审批请求")
         return HTMLResponse("<h2>服务配置错误</h2><p>审批密钥未配置。</p>", status_code=503)
-    if not security.is_valid_approve_signature(record_id, exp, sig):
+    if not security.is_valid_approve_signature(record_id, tier, exp, sig):
         return HTMLResponse("<h2>审批链接无效或已过期</h2>", status_code=403)
 
-    html, status_code = access_token_service.approve_access_request(record_id)
+    html, status_code = access_token_service.approve_access_request(record_id, int(tier))
     return HTMLResponse(html, status_code=status_code)
 
 

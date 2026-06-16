@@ -44,10 +44,11 @@ def test_approve_signature_validation(api_state) -> None:  # noqa: ANN001
     security_mod, _ = api_state
     security_mod.APPROVE_LINK_SECRET = "unit-test-secret"
     with patch.object(security_mod.time, "time", return_value=1000.0):
-        sig = security_mod.build_approve_signature(7, 1060)
-        assert security_mod.is_valid_approve_signature(7, 1060, sig)
-        assert not security_mod.is_valid_approve_signature(7, 999, sig)
-        assert not security_mod.is_valid_approve_signature(7, 1060, sig + "00")
+        sig = security_mod.build_approve_signature(7, 1, 1060)
+        assert security_mod.is_valid_approve_signature(7, 1, 1060, sig)
+        assert not security_mod.is_valid_approve_signature(7, 0, 1060, sig)
+        assert not security_mod.is_valid_approve_signature(7, 1, 999, sig)
+        assert not security_mod.is_valid_approve_signature(7, 1, 1060, sig + "00")
 
 
 def test_signed_approve_url_contains_exp_and_valid_signature(api_state) -> None:  # noqa: ANN001
@@ -56,10 +57,11 @@ def test_signed_approve_url_contains_exp_and_valid_signature(api_state) -> None:
     security_mod.APPROVE_LINK_TTL_SEC = 120
 
     with patch.object(security_mod.time, "time", return_value=2000.0):
-        url = security_mod.build_signed_approve_url(12)
+        url = security_mod.build_signed_approve_url(12, 2)
 
     assert url is not None
     assert "/approve/12" in str(url)
+    assert "tier=2" in str(url)
     assert "exp=2120" in str(url)
 
     query = str(url).split("?", maxsplit=1)[1]
@@ -67,6 +69,7 @@ def test_signed_approve_url_contains_exp_and_valid_signature(api_state) -> None:
     with patch.object(security_mod.time, "time", return_value=2000.0):
         assert security_mod.is_valid_approve_signature(
             12,
+            int(parts["tier"]),
             int(parts["exp"]),
             parts["sig"],
         )
@@ -74,9 +77,33 @@ def test_signed_approve_url_contains_exp_and_valid_signature(api_state) -> None:
 
 def test_confirmation_page_uses_post_form(api_state) -> None:  # noqa: ANN001
     security_mod, _ = api_state
-    html_doc = security_mod.render_approve_confirmation_page(9, 123456, "abc123")
+    html_doc = security_mod.render_approve_confirmation_page(9, 1, 123456, "abc123")
     assert '<form method="post"' in html_doc
-    assert '/approve/9?exp=123456&sig=abc123' in html_doc
+    assert '/approve/9?tier=1&exp=123456&sig=abc123' in html_doc
+
+
+def test_approve_route_validates_and_passes_tier(api_mod, api_state, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    security_mod, _ = api_state
+    security_mod.APPROVE_LINK_SECRET = "route-secret"
+    with patch.object(security_mod.time, "time", return_value=1000.0):
+        sig = security_mod.build_approve_signature(7, 1, 1060)
+
+    calls: list[tuple[int, int]] = []
+    monkeypatch.setattr(
+        api_mod.access_token_service,
+        "approve_access_request",
+        lambda record_id, tier: calls.append((record_id, tier)) or ("<h2>ok</h2>", 200),
+    )
+
+    client = TestClient(api_mod.app)
+    try:
+        with patch.object(security_mod.time, "time", return_value=1000.0):
+            response = client.post(f"/approve/7?tier=1&exp=1060&sig={sig}")
+    finally:
+        client.close()
+
+    assert response.status_code == 200
+    assert calls == [(7, 1)]
 
 
 class _QuotaNotifyCursor:
@@ -86,7 +113,7 @@ class _QuotaNotifyCursor:
 
     def execute(self, sql, params):  # noqa: ANN001
         self.conn.executed.append((str(sql), tuple(params or ())))
-        if "RETURNING email, notified" in str(sql):
+        if "RETURNING email" in str(sql):
             self.row = self.conn.first_row
         else:
             self.row = None
@@ -123,16 +150,270 @@ def _install_quota_notify_conn(quota_mod, monkeypatch: pytest.MonkeyPatch, first
     return conn
 
 
+class _AccessApprovalCursor:
+    def __init__(self, conn):  # noqa: ANN001
+        self.conn = conn
+        self.row = None
+
+    def execute(self, sql, params=None):  # noqa: ANN001
+        self.conn.executed.append((str(sql), tuple(params or ())))
+        if "FROM access_tokens" in str(sql) and "WHERE id = %s" in str(sql):
+            self.row = self.conn.select_row
+        else:
+            self.row = None
+
+    def fetchone(self):  # noqa: ANN001
+        return self.row
+
+    def close(self) -> None:
+        self.conn.closed_cursors += 1
+
+
+class _AccessApprovalConn:
+    def __init__(self, select_row):  # noqa: ANN001
+        self.select_row = select_row
+        self.executed: list[tuple[str, tuple]] = []
+        self.commits = 0
+        self.rollbacks = 0
+        self.closed_cursors = 0
+
+    def cursor(self):  # noqa: ANN001
+        return _AccessApprovalCursor(self)
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+
+
+class _ReserveQuotaCursor:
+    def __init__(self, conn):  # noqa: ANN001
+        self.conn = conn
+        self.row = None
+
+    def execute(self, sql, params=None):  # noqa: ANN001
+        self.conn.executed.append((str(sql), tuple(params or ())))
+        self.row = self.conn.update_row
+
+    def fetchone(self):  # noqa: ANN001
+        return self.row
+
+    def close(self) -> None:
+        self.conn.closed_cursors += 1
+
+
+class _ReserveQuotaConn:
+    def __init__(self, update_row):  # noqa: ANN001
+        self.update_row = update_row
+        self.executed: list[tuple[str, tuple]] = []
+        self.commits = 0
+        self.rollbacks = 0
+        self.closed_cursors = 0
+
+    def cursor(self):  # noqa: ANN001
+        return _ReserveQuotaCursor(self)
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+
+
+class _QuotaLookupCursor:
+    def __init__(self, conn):  # noqa: ANN001
+        self.conn = conn
+
+    def execute(self, sql, params=None):  # noqa: ANN001
+        self.conn.executed.append((str(sql), tuple(params or ())))
+
+    def fetchone(self):  # noqa: ANN001
+        return self.conn.fetchone_row
+
+    def close(self) -> None:
+        self.conn.closed_cursors += 1
+
+
+class _QuotaLookupConn:
+    def __init__(self, fetchone_row):  # noqa: ANN001
+        self.fetchone_row = fetchone_row
+        self.executed: list[tuple[str, tuple]] = []
+        self.closed_cursors = 0
+
+    def cursor(self):  # noqa: ANN001
+        return _QuotaLookupCursor(self)
+
+
+class _RequestAccessCursor:
+    def __init__(self, conn):  # noqa: ANN001
+        self.conn = conn
+        self.row = None
+
+    def execute(self, sql, params=None):  # noqa: ANN001
+        self.conn.executed.append((str(sql), tuple(params or ())))
+        if "SELECT id, token" in str(sql):
+            self.row = self.conn.existing_row
+        elif "INSERT INTO access_tokens" in str(sql):
+            self.row = (99,)
+        else:
+            self.row = None
+
+    def fetchone(self):  # noqa: ANN001
+        return self.row
+
+    def close(self) -> None:
+        self.conn.closed_cursors += 1
+
+
+class _RequestAccessConn:
+    def __init__(self, existing_row):  # noqa: ANN001
+        self.existing_row = existing_row
+        self.executed: list[tuple[str, tuple]] = []
+        self.commits = 0
+        self.rollbacks = 0
+        self.closed_cursors = 0
+
+    def cursor(self):  # noqa: ANN001
+        return _RequestAccessCursor(self)
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def rollback(self) -> None:
+        self.rollbacks += 1
+
+
+def test_request_access_resends_existing_unlimited_token(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    service = api_mod.access_token_service
+    conn = _RequestAccessConn((1, "existing-token", 200, 201, "active", False, 3, True))
+    monkeypatch.setattr(service, "get_conn", lambda: conn)
+    monkeypatch.setattr(service, "put_conn", lambda _conn: None)
+    sent: list[tuple[str, str, int]] = []
+    monkeypatch.setattr(service, "send_token_email", lambda email, token, quota: sent.append((email, token, quota)) or True)
+
+    result = service.request_access_token("admin@example.com")
+
+    assert result["request_id"] is None
+    assert sent == [("admin@example.com", "existing-token", 200)]
+    assert not any("INSERT INTO access_tokens" in sql for sql, _params in conn.executed)
+
+
+def test_get_quota_returns_unlimited_flag_and_nonnegative_remaining(
+    api_mod,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # noqa: ANN001
+    service = api_mod.access_token_service
+    conn = _QuotaLookupConn((200, 201, "active", True))
+    monkeypatch.setattr(service, "get_conn", lambda: conn)
+    monkeypatch.setattr(service, "put_conn", lambda _conn: None)
+
+    result = service.get_quota("token")
+
+    assert result.quota == 200
+    assert result.used == 201
+    assert result.remaining == 0
+    assert result.status == "active"
+    assert result.unlimited is True
+    assert "unlimited" in conn.executed[0][0]
+
+
+def test_verify_token_returns_tier_and_unlimited(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    service = api_mod.access_token_service
+    conn = _QuotaLookupConn((7, "admin@example.com", 200, 201, "active", False, 3, True))
+    monkeypatch.setattr(service, "get_conn", lambda: conn)
+    monkeypatch.setattr(service, "put_conn", lambda _conn: None)
+
+    result = service.verify_token("token")
+
+    assert result["id"] == 7
+    assert result["tier"] == 3
+    assert result["unlimited"] is True
+    assert "tier" in conn.executed[0][0]
+    assert "unlimited" in conn.executed[0][0]
+
+
+def test_chat_response_includes_unlimited_from_reservation(api_mod) -> None:  # noqa: ANN001
+    chat_mod = api_mod.chat_service
+    turn = chat_mod.ChatTurn(
+        body=api_mod.ChatRequest(message="hello"),
+        token_info={"id": 7, "email": "admin@example.com"},
+        request_id="req-1",
+        thread_id="thread-1",
+        history=[],
+        effective_message="hello",
+        reservation={"remaining": 0, "quota": 200, "used": 201, "unlimited": True},
+    )
+
+    result = chat_mod.chat_response_from_payload(turn, {"kind": "answer", "text": "ok", "citation_urls": []})
+
+    assert result.unlimited is True
+
+
+def test_reserve_quota_allows_unlimited_accounts(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    quota_mod = api_mod.chat_service.quota_service
+    conn = _ReserveQuotaConn((201, 200, 3, False, True))
+    monkeypatch.setattr(quota_mod, "get_conn", lambda: conn)
+    monkeypatch.setattr(quota_mod, "put_conn", lambda _conn: None)
+
+    result = quota_mod.reserve_quota_or_403({"id": 7, "email": "admin@example.com"})
+
+    assert result["used"] == 201
+    assert result["quota"] == 200
+    assert result["tier"] == 3
+    assert result["unlimited"] is True
+    assert any("unlimited OR used < quota" in sql for sql, _params in conn.executed)
+    assert conn.commits == 1
+
+
+def test_unlimited_reservation_skips_exhaustion_notifications(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
+    quota_mod = api_mod.chat_service.quota_service
+    monkeypatch.setattr(quota_mod, "get_conn", lambda: pytest.fail("unlimited accounts must not enter exhaustion DB flow"))
+
+    quota_mod.maybe_send_quota_exhausted_notifications(
+        {"id": 7, "email": "admin@example.com", "unlimited": True},
+        {"remaining": 0, "unlimited": True},
+    )
+
+
+def test_approve_access_request_advances_current_tier_and_resets_notified(
+    api_mod,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # noqa: ANN001
+    service = api_mod.access_token_service
+    conn = _AccessApprovalConn(("user@example.com", 1))
+    monkeypatch.setattr(service, "get_conn", lambda: conn)
+    monkeypatch.setattr(service, "put_conn", lambda _conn: None)
+    upgrade_calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(service, "send_quota_upgraded", lambda email, quota: upgrade_calls.append((email, quota)) or True)
+
+    html, status_code = service.approve_access_request(7, 1)
+
+    assert status_code == 200
+    assert "user@example.com" in html
+    assert upgrade_calls == [("user@example.com", 100)]
+    update_sql, update_params = conn.executed[1]
+    assert "tier = %s" in update_sql
+    assert "quota = %s" in update_sql
+    assert "notified = FALSE" in update_sql
+    assert update_params == (2, 100, 7)
+    assert conn.commits == 1
+
+
 def test_quota_exhausted_sends_admin_then_marks_notified(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
     quota_mod = api_mod.chat_service.quota_service
-    conn = _install_quota_notify_conn(quota_mod, monkeypatch, ("user@example.com", False))
+    conn = _install_quota_notify_conn(quota_mod, monkeypatch, ("user@example.com", 1, 50, False))
     calls: list[tuple[str, str]] = []
     quota_mod.ADMIN_EMAIL = "admin@example.com"
-    monkeypatch.setattr(quota_mod.security, "build_signed_approve_url", lambda _record_id: "https://api.example.com/approve/7")
+    monkeypatch.setattr(
+        quota_mod.security,
+        "build_signed_approve_url",
+        lambda record_id, tier: f"https://api.example.com/approve/{record_id}?tier={tier}",
+    )
     monkeypatch.setattr(
         quota_mod,
         "send_quota_exhausted_to_admin",
-        lambda admin, user, _record_id, _url: calls.append(("admin", f"{admin}|{user}")) or True,
+        lambda admin, user, _record_id, url: calls.append(("admin", f"{admin}|{user}|{url}")) or True,
     )
     monkeypatch.setattr(
         quota_mod,
@@ -146,17 +427,62 @@ def test_quota_exhausted_sends_admin_then_marks_notified(api_mod, monkeypatch: p
     )
 
     assert calls == [
-        ("admin", "admin@example.com|user@example.com"),
+        ("admin", "admin@example.com|user@example.com|https://api.example.com/approve/7?tier=1"),
         ("user", "user@example.com"),
     ]
+    assert any("'pending'" in sql for sql, _params in conn.executed)
+    assert any("SET notified = TRUE" in sql for sql, _params in conn.executed)
+
+
+def test_quota_exhausted_top_tier_sends_capped_notice_once(
+    api_mod,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # noqa: ANN001
+    quota_mod = api_mod.chat_service.quota_service
+    conn = _install_quota_notify_conn(
+        quota_mod,
+        monkeypatch,
+        ("user@example.com", quota_mod.TOP_TIER, 200, False),
+    )
+    calls: list[tuple[str, str]] = []
+    quota_mod.ADMIN_EMAIL = "admin@example.com"
+    monkeypatch.setattr(
+        quota_mod.security,
+        "build_signed_approve_url",
+        lambda *_args, **_kwargs: pytest.fail("top tier notification must not include an approval link"),
+    )
+    monkeypatch.setattr(
+        quota_mod,
+        "send_quota_exhausted_to_admin",
+        lambda *_args, **_kwargs: pytest.fail("top tier must not send approval request"),
+    )
+    monkeypatch.setattr(
+        quota_mod,
+        "send_quota_exhausted_to_user",
+        lambda *_args, **_kwargs: pytest.fail("top tier must not send pending user mail"),
+    )
+    monkeypatch.setattr(
+        quota_mod,
+        "send_quota_capped_to_admin",
+        lambda admin, user, quota: calls.append(("capped", f"{admin}|{user}|{quota}")) or True,
+        raising=False,
+    )
+
+    quota_mod.maybe_send_quota_exhausted_notifications(
+        {"id": 7, "email": "fallback@example.com"},
+        {"remaining": 0},
+    )
+
+    assert calls == [("capped", "admin@example.com|user@example.com|200")]
+    assert any("'capped'" in sql for sql, _params in conn.executed)
     assert any("SET notified = TRUE" in sql for sql, _params in conn.executed)
 
 
 def test_quota_exhausted_missing_admin_does_not_mark_notified(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
     quota_mod = api_mod.chat_service.quota_service
-    conn = _install_quota_notify_conn(quota_mod, monkeypatch, ("user@example.com", False))
+    conn = _install_quota_notify_conn(quota_mod, monkeypatch, ("user@example.com", 0, 10, False))
     quota_mod.ADMIN_EMAIL = ""
-    monkeypatch.setattr(quota_mod.security, "build_signed_approve_url", lambda _record_id: "https://api.example.com/approve/7")
+    monkeypatch.setattr(quota_mod.security, "build_signed_approve_url", lambda _record_id, _tier: "https://api.example.com/approve/7")
     monkeypatch.setattr(
         quota_mod,
         "send_quota_exhausted_to_admin",
@@ -178,9 +504,9 @@ def test_quota_exhausted_missing_admin_does_not_mark_notified(api_mod, monkeypat
 
 def test_quota_exhausted_admin_send_failure_does_not_notify_user_or_mark(api_mod, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: ANN001
     quota_mod = api_mod.chat_service.quota_service
-    conn = _install_quota_notify_conn(quota_mod, monkeypatch, ("user@example.com", False))
+    conn = _install_quota_notify_conn(quota_mod, monkeypatch, ("user@example.com", 0, 10, False))
     quota_mod.ADMIN_EMAIL = "admin@example.com"
-    monkeypatch.setattr(quota_mod.security, "build_signed_approve_url", lambda _record_id: "https://api.example.com/approve/7")
+    monkeypatch.setattr(quota_mod.security, "build_signed_approve_url", lambda _record_id, _tier: "https://api.example.com/approve/7")
     monkeypatch.setattr(quota_mod, "send_quota_exhausted_to_admin", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(
         quota_mod,

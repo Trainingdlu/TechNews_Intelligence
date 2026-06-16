@@ -240,6 +240,8 @@ def chat_response_from_payload(turn: ChatTurn, payload: dict) -> ChatResponse:
             citation_urls=[],
             remaining=quota_service.remaining_after_refund(turn.reservation),
             quota=int(turn.reservation["quota"]),
+            unlimited=bool(turn.reservation.get("unlimited", False)),
+            status="active",
         )
 
     reply = str(payload.get("text", "")).strip()
@@ -253,6 +255,8 @@ def chat_response_from_payload(turn: ChatTurn, payload: dict) -> ChatResponse:
         citation_urls=[str(url).strip() for url in citation_urls if str(url).strip()],
         remaining=max(int(turn.reservation["remaining"]), 0),
         quota=int(turn.reservation["quota"]),
+        unlimited=bool(turn.reservation.get("unlimited", False)),
+        status=quota_service.status_from_reservation(turn.reservation),
     )
 
 
@@ -404,6 +408,8 @@ async def stream_chat_events(turn: ChatTurn) -> AsyncIterator[str]:
                 "citation_urls": [],
                 "remaining": quota_service.remaining_after_refund(turn.reservation),
                 "quota": int(turn.reservation["quota"]),
+                "unlimited": bool(turn.reservation.get("unlimited", False)),
+                "status": "active",
             })
             return
 
@@ -420,6 +426,8 @@ async def stream_chat_events(turn: ChatTurn) -> AsyncIterator[str]:
             "citation_urls": [str(url).strip() for url in citation_urls if str(url).strip()],
             "remaining": max(int(turn.reservation["remaining"]), 0),
             "quota": int(turn.reservation["quota"]),
+            "unlimited": bool(turn.reservation.get("unlimited", False)),
+            "status": quota_service.status_from_reservation(turn.reservation),
         })
     finally:
         if worker_task is not None and not worker_task.done():

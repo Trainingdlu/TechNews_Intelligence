@@ -30,6 +30,8 @@ class ChatResponse(BaseModel):
     citation_urls: list[str] = Field(default_factory=list)
     remaining: int
     quota: int
+    unlimited: bool = False
+    status: str = "active"
 
 
 class QuotaResponse(BaseModel):
@@ -37,6 +39,7 @@ class QuotaResponse(BaseModel):
     used: int
     remaining: int
     status: str
+    unlimited: bool = False
 
 
 class SubscriptionRequest(BaseModel):

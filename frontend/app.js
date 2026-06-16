@@ -32,7 +32,8 @@
     const quotaOverlay = document.getElementById('quota-overlay');
     const inputBarInner = document.querySelector('.input-bar-inner');
     const defaultChatPlaceholder = chatInput.placeholder || '你想知道什么？';
-    const exhaustedChatPlaceholder = '额度已耗尽，请求邮件已发送，通过后将通过邮件告知';
+    const exhaustedChatPlaceholder = '额度已耗尽，申请提额邮件已发送，通过后将通过邮件告知';
+    const cappedChatPlaceholder = '已达最高额度上限，如需更多请直接联系管理员';
 
     function renderEmptyChatState() {
         messagesEl.innerHTML = `
@@ -218,27 +219,39 @@
                 return;
             }
             const data = await res.json();
-            updateQuotaUI(data.remaining, data.quota, data.status);
+            updateQuotaUI(data.remaining, data.quota, data.status, Boolean(data.unlimited));
         } catch { /* silent */ }
     }
 
-    function updateQuotaUI(rem, total, status) {
-        remaining = rem;
-        quotaDisplay.textContent = `剩余 ${rem}/${total} 次`;
-        quotaDisplay.classList.toggle('low', rem <= 3);
+    function updateQuotaUI(rem, total, status, unlimited = false) {
+        remaining = Number.isFinite(rem) ? rem : null;
 
-        if (status === 'exhausted' && rem <= 0) {
-            showQuotaExhausted();
+        if (unlimited) {
+            quotaDisplay.textContent = '额度 无限';
+            quotaDisplay.classList.remove('low');
+            setQuotaInputLocked(false);
+            return;
+        }
+
+        const safeRemaining = Number.isFinite(rem) ? rem : 0;
+        const safeTotal = Number.isFinite(total) ? total : 0;
+        quotaDisplay.textContent = `剩余 ${safeRemaining}/${safeTotal} 次`;
+        quotaDisplay.classList.toggle('low', safeRemaining <= 3);
+
+        if ((status === 'pending' || status === 'exhausted') && safeRemaining <= 0) {
+            showQuotaExhausted('pending');
+        } else if (status === 'capped' && safeRemaining <= 0) {
+            showQuotaExhausted('capped');
         } else {
             setQuotaInputLocked(false);
         }
     }
 
-    function showQuotaExhausted() {
-        setQuotaInputLocked(true);
+    function showQuotaExhausted(status = 'pending') {
+        setQuotaInputLocked(true, status === 'capped' ? cappedChatPlaceholder : exhaustedChatPlaceholder);
     }
 
-    function setQuotaInputLocked(locked) {
+    function setQuotaInputLocked(locked, placeholder = exhaustedChatPlaceholder) {
         quotaOverlay.classList.remove('visible');
 
         if (inputBarInner) {
@@ -246,7 +259,7 @@
         }
 
         chatInput.disabled = locked;
-        chatInput.placeholder = locked ? exhaustedChatPlaceholder : defaultChatPlaceholder;
+        chatInput.placeholder = locked ? placeholder : defaultChatPlaceholder;
 
         if (locked) {
             chatInput.value = '';
@@ -301,6 +314,11 @@
         localStorage.setItem('agent_thread_id', threadId);
     }
 
+    function quotaStatusFromChatPayload(data) {
+        if (data && data.unlimited) return 'active';
+        return Number(data && data.remaining) > 0 ? 'active' : 'pending';
+    }
+
     function applyChatSuccess(text, data) {
         const reply = String(data.reply || '').trim();
         const citationUrls = Array.isArray(data.citation_urls)
@@ -312,7 +330,7 @@
         appendMessage('agent', reply, { citationUrls });
         const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
         const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
-        updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
+        updateQuotaUI(data.remaining, totalQuota, data.status || quotaStatusFromChatPayload(data), Boolean(data.unlimited));
     }
 
     function applyChatClarification(text, data) {
@@ -336,7 +354,7 @@
         appendMessage('agent', clarificationText || '请补充分析范围后我再继续。');
         const fallbackTotal = remaining !== null ? parseInt(quotaDisplay.textContent.split('/')[1]) : 10;
         const totalQuota = Number.isFinite(data.quota) ? data.quota : fallbackTotal;
-        updateQuotaUI(data.remaining, totalQuota, data.remaining > 0 ? 'active' : 'exhausted');
+        updateQuotaUI(data.remaining, totalQuota, data.status || quotaStatusFromChatPayload(data), Boolean(data.unlimited));
     }
 
     function applyChatPayload(text, data) {

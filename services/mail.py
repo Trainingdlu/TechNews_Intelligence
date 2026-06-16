@@ -91,6 +91,21 @@ def send_quota_exhausted_to_admin(admin_email: str, user_email: str, request_id:
     )
 
 
+def send_quota_capped_to_admin(admin_email: str, user_email: str, quota: int) -> bool:
+    """向管理员发送封顶通知。"""
+    return _send(
+        admin_email,
+        f"TechNews Agent - 已达最高额度档位 ({user_email})",
+        f"""
+        <div style="font-family:sans-serif; max-width:480px; margin:auto; padding:20px;">
+            <h2>已达最高额度档位</h2>
+            <p>用户 <b>{user_email}</b> 已用完最高档的全部 <b>{quota}</b> 次对话额度。</p>
+            <p>该账号已在最高档，本邮件不含审批链接。</p>
+        </div>
+        """,
+    )
+
+
 def send_quota_exhausted_to_user(to: str) -> bool:
     """向访客发送等待审批通知。"""
     return _send(

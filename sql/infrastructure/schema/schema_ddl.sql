@@ -229,10 +229,12 @@ CREATE TABLE IF NOT EXISTS access_tokens (
     token       VARCHAR(64)  NOT NULL UNIQUE,
     quota       INT          NOT NULL DEFAULT 10,
     used        INT          NOT NULL DEFAULT 0,
-    status      VARCHAR(20)  NOT NULL DEFAULT 'active',   -- active / exhausted / upgraded
+    status      VARCHAR(20)  NOT NULL DEFAULT 'active',   -- active / pending / capped
     notified    BOOLEAN      NOT NULL DEFAULT FALSE,
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    upgraded_at TIMESTAMPTZ
+    upgraded_at TIMESTAMPTZ,
+    tier        SMALLINT     NOT NULL DEFAULT 0,
+    unlimited   BOOLEAN      NOT NULL DEFAULT FALSE
 );
 
 -- 9. Conversation Threads (persistent chat sessions)

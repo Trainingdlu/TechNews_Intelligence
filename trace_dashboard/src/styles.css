@@ -978,6 +978,11 @@ button {
   margin: 0 0 14px;
 }
 
+/* 子步骤是 .span-detail-card 的直接子块，未在 section 内，单独补 14px 缩进与其它框等宽 */
+.span-detail-card > .info-block {
+  margin: 0 14px 14px;
+}
+
 .ghost-button {
   height: 26px;
   border-radius: 3px;
