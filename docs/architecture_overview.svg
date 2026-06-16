@@ -1,17 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" font-family="'Segoe UI','Microsoft YaHei','PingFang SC','Hiragino Sans GB','Noto Sans CJK SC',sans-serif">
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
-      <path d="M0,0 L8,3 L0,6 Z" fill="#333333"/>
+      <path d="M0,0 L8,3 L0,6 Z" fill="#d7dde5"/>
     </marker>
     <marker id="arrowLight" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
-      <path d="M0,0 L8,3 L0,6 Z" fill="#999999"/>
+      <path d="M0,0 L8,3 L0,6 Z" fill="#8b949e"/>
     </marker>
   </defs>
 
-  <rect width="1000" height="700" fill="#ffffff"/>
+  <rect width="1000" height="700" fill="#05070a"/>
 
   <!-- ===== ZONE TITLES ===== -->
-  <g font-size="15" font-weight="700" fill="#1a1a1a">
+  <g font-size="15" font-weight="700" fill="#f4f7fb">
     <text x="44"  y="54">数据生产</text>
     <text x="368" y="54">智能体核心</text>
     <text x="692" y="240">可信输出</text>
@@ -19,7 +19,7 @@
   </g>
 
   <!-- ===== EDGES: main flow (solid) ===== -->
-  <g stroke="#333333" stroke-width="1.6" fill="none" marker-end="url(#arrow)">
+  <g stroke="#d7dde5" stroke-width="1.6" fill="none" marker-end="url(#arrow)">
     <!-- DATA column -->
     <line x1="174" y1="129" x2="174" y2="164"/>
     <line x1="174" y1="210" x2="174" y2="257"/>
@@ -37,7 +37,7 @@
   </g>
 
   <!-- ===== EDGES: taps (dashed) ===== -->
-  <g stroke="#999999" stroke-width="1.6" fill="none" stroke-dasharray="6 4" marker-end="url(#arrowLight)">
+  <g stroke="#8b949e" stroke-width="1.6" fill="none" stroke-dasharray="6 4" marker-end="url(#arrowLight)">
     <!-- store -> tools (读取) -->
     <path d="M274,408 C330,408 345,428 396,428"/>
     <!-- runtime -> trace (写) -->
@@ -49,20 +49,20 @@
   </g>
 
   <!-- ===== EDGE LABELS ===== -->
-  <g font-size="12" fill="#444444" text-anchor="middle">
-    <rect x="318" y="392" width="40" height="18" rx="4" fill="#ffffff"/>
+  <g font-size="12" fill="#c9d1d9" text-anchor="middle">
+    <rect x="318" y="392" width="40" height="18" rx="4" fill="#11161d"/>
     <text x="338" y="405">读取</text>
-    <rect x="612" y="447" width="28" height="18" rx="4" fill="#ffffff"/>
+    <rect x="612" y="447" width="28" height="18" rx="4" fill="#11161d"/>
     <text x="626" y="460">写</text>
-    <rect x="128" y="497" width="28" height="18" rx="4" fill="#ffffff"/>
+    <rect x="128" y="497" width="28" height="18" rx="4" fill="#11161d"/>
     <text x="142" y="510">读</text>
-    <rect x="286" y="497" width="28" height="18" rx="4" fill="#ffffff"/>
+    <rect x="286" y="497" width="28" height="18" rx="4" fill="#11161d"/>
     <text x="300" y="510">读</text>
   </g>
 
   <!-- ===== NODES ===== -->
-  <g font-size="14" fill="#1a1a1a" text-anchor="middle">
-    <g stroke="#333333" stroke-width="1.5" fill="#ffffff">
+  <g font-size="14" fill="#f4f7fb" text-anchor="middle">
+    <g stroke="#d7dde5" stroke-width="1.5" fill="#0b1017">
       <!-- DATA -->
       <rect x="114" y="88"  width="120" height="40" rx="20"/>
       <rect x="74"  y="166" width="200" height="44" rx="8"/>

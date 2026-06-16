@@ -661,8 +661,50 @@
         return map;
     }
 
+    // Normalize section headings so they reliably render as styled (blue) <h2/h3>.
+    // Only h1-h3 are styled (style.css), and marked needs a space after '#'. The model
+    // drifts between forms, so coerce them into the styled range deterministically:
+    //   "##标题"  (missing space)   -> "## 标题"
+    //   "#### 标题" (h4-h6)          -> "### 标题"
+    //   standalone "**标题**[:：]"   -> "## 标题"   (never a list item or labelled line)
+    function _normalizeAgentHeadings(text) {
+        const lines = String(text || '').split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+
+            // ATX heading missing the required space after '#', e.g. "##演讲核心内容".
+            // Title must start with a letter/CJK char so "#1" / "#2024" stay untouched.
+            let m = line.match(/^(\s{0,3})(#{1,6})([^\s#].*)$/);
+            if (m && /^[\p{L}]/u.test(m[3])) {
+                const hashes = m[2].length > 3 ? '###' : m[2];
+                lines[i] = `${m[1]}${hashes} ${m[3]}`;
+                continue;
+            }
+
+            // Well-formed heading deeper than h3 (h4-h6 are not styled blue) -> clamp to h3.
+            m = line.match(/^(\s{0,3})#{4,6}(\s+.*)$/);
+            if (m) {
+                lines[i] = `${m[1]}###${m[2]}`;
+                continue;
+            }
+
+            // Standalone bold line used as a section header: whole line is just "**title**"
+            // optionally with a trailing colon. List items (start with -/*) and labelled
+            // lines with content after the colon never match.
+            m = line.match(/^\s{0,3}\*\*([^*\n]+?)\*\*[：:]?\s*$/);
+            if (m) {
+                const title = m[1].trim();
+                if (title && title.length <= 30 && !/[。.!?！？]$/.test(title)) {
+                    lines[i] = `## ${title}`;
+                }
+            }
+        }
+        return lines.join('\n');
+    }
+
     function _prepareAgentMarkdown(rawText, citationUrls = []) {
         const { body, source } = _splitBodyAndSource(rawText);
+        const normalizedBody = _normalizeAgentHeadings(body);
         const citationMap = _extractCitationUrlMap(source);
         if (Array.isArray(citationUrls) && citationUrls.length) {
             citationUrls.forEach((url, i) => {
@@ -674,7 +716,7 @@
         }
 
         // Body: [n] -> linked [n](url) when url exists; otherwise keep as literal [n].
-        const linkedBody = String(body || '').replace(/\[(\d{1,3})\](?!\()/g, (full, idx) => {
+        const linkedBody = String(normalizedBody || '').replace(/\[(\d{1,3})\](?!\()/g, (full, idx) => {
             const url = citationMap[idx];
             if (!url) return `\\[${idx}\\]`;
             return `[${idx}](${url})`;
